@@ -1,0 +1,186 @@
+name: LalKhata Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # FLUTTER
+      # ============================================================
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.7'
+          channel: stable
+          cache: true
+
+      - name: Enable Windows
+        run: flutter config --enable-windows-desktop
+
+      # ============================================================
+      # DEPENDENCIES
+      # ============================================================
+      - name: Get Dependencies
+        run: flutter pub get
+
+      # ============================================================
+      # BUILD WINDOWS
+      # ============================================================
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      # ============================================================
+      # INSTALL INNO SETUP
+      # ============================================================
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup -y --no-progress
+
+      # ============================================================
+      # FIND FLUTTER EXE
+      # ============================================================
+      - name: Find Application EXE
+        shell: powershell
+        run: |
+          $releasePath = "build/windows/x64/runner/Release"
+
+          $exe = Get-ChildItem `
+            -Path $releasePath `
+            -Filter "*.exe" `
+            -File |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            Write-Error "No EXE file found in Flutter Release folder."
+            exit 1
+          }
+
+          Write-Host "Application EXE: $($exe.Name)"
+
+          "APP_EXE_NAME=$($exe.Name)" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8
+
+      # ============================================================
+      # CREATE INNO SETUP SCRIPT
+      # ============================================================
+      - name: Create Inno Setup Script
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "installer" | Out-Null
+
+          $iss = @"
+          #define MyAppName "LalKhata"
+          #define MyAppVersion "1.0.0"
+          #define MyAppPublisher "LalKhata"
+          #define MyAppExeName "$env:APP_EXE_NAME"
+
+          [Setup]
+          AppId={{A7B7E3C1-7D2E-4F0D-9C4E-LALKHATA2026}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          AppPublisher={#MyAppPublisher}
+
+          DefaultDirName={autopf}\LalKhata
+          DefaultGroupName=LalKhata
+
+          OutputDir=installer
+          OutputBaseFilename=LalKhata-Setup
+
+          Compression=lzma
+          SolidCompression=yes
+
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=admin
+
+          Uninstallable=yes
+          UninstallDisplayName=LalKhata
+
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{autoprograms}\LalKhata"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\LalKhata"; Filename: "{app}\{#MyAppExeName}"
+
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "Launch LalKhata"; Flags: nowait postinstall skipifsilent
+          "@
+
+          $iss | Out-File `
+            -FilePath "LalKhata.iss" `
+            -Encoding utf8
+
+          Write-Host "LalKhata.iss created successfully."
+
+      # ============================================================
+      # BUILD INSTALLER
+      # ============================================================
+      - name: Build LalKhata Installer
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+
+          if (-not (Test-Path $iscc)) {
+            Write-Error "Inno Setup compiler not found."
+            exit 1
+          }
+
+          & $iscc "LalKhata.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Inno Setup compilation failed."
+            exit $LASTEXITCODE
+          }
+
+          Write-Host "LalKhata installer created successfully."
+
+      # ============================================================
+      # VERIFY INSTALLER
+      # ============================================================
+      - name: Verify Installer
+        shell: powershell
+        run: |
+          $installer = "installer\LalKhata-Setup.exe"
+
+          if (-not (Test-Path $installer)) {
+            Write-Error "LalKhata-Setup.exe was not created."
+            exit 1
+          }
+
+          $size = (Get-Item $installer).Length
+
+          Write-Host "Installer found successfully."
+          Write-Host "Size: $size bytes"
+
+          if ($size -lt 100000) {
+            Write-Error "Installer appears suspiciously small."
+            exit 1
+          }
+
+      # ============================================================
+      # UPLOAD INSTALLER
+      # ============================================================
+      - name: Upload LalKhata Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LalKhata-Setup
+          path: installer/LalKhata-Setup.exe
+          if-no-files-found: error
