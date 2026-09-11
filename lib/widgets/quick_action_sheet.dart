@@ -33,21 +33,21 @@ class QuickActionSheet {
 
                 _item(
                   context,
-                  Icons.inventory_2,
-                  "Add Product",
+                  Icons.account_balance_wallet,
+                  "Add Account",
                   () => _open(
                     context,
-                    const AddProductScreen(),
+                    const AddAccountScreen(),
                   ),
                 ),
 
                 _item(
                   context,
-                  Icons.people,
-                  "Add Customer",
+                  Icons.inventory_2,
+                  "Add Product",
                   () => _open(
                     context,
-                    const AddCustomerScreen(),
+                    const AddProductScreen(),
                   ),
                 ),
 
@@ -73,6 +73,16 @@ class QuickActionSheet {
 
                 _item(
                   context,
+                  Icons.people,
+                  "Add Customer",
+                  () => _open(
+                    context,
+                    const AddCustomerScreen(),
+                  ),
+                ),
+
+                _item(
+                  context,
                   Icons.shopping_cart,
                   "New Sale",
                   () => _open(
@@ -83,31 +93,24 @@ class QuickActionSheet {
 
                 _item(
                   context,
-                  Icons.account_balance_wallet,
-                  "Add Account",
+                  Icons.payments,
+                  "Add Income",
                   () => _open(
                     context,
-                    const AddAccountScreen(),
+                    const AddIncomeScreen(),
                   ),
                 ),
+
                 _item(
-  context,
-  Icons.money_off,
-  "Add Expense",
-  () => _open(
-    context,
-    const AddExpenseScreen(),
-  ),
-),
-_item(
-  context,
-  Icons.payments,
-  "Add Income",
-  () => _open(
-    context,
-    const AddIncomeScreen(),
-  ),
-),
+                  context,
+                  Icons.money_off,
+                  "Add Expense",
+                  () => _open(
+                    context,
+                    const AddExpenseScreen(),
+                  ),
+                ),
+
               ],
             ),
           ),

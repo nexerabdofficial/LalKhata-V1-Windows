@@ -5,13 +5,14 @@ import '../gab/gab_branding.dart';
 
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../models/sale.dart';
 import '../models/sale_item.dart';
+import '../services/license_service.dart';
 import '../services/storage_service.dart';
 
 class SaleInvoicePdf {
@@ -23,6 +24,41 @@ class SaleInvoicePdf {
       StorageService.instance;
 
   // ============================================================
+  // CUSTOMER LOGO
+  // ============================================================
+
+  static Future<pw.MemoryImage?> _loadCustomerLogo() async {
+    try {
+      final logoPath =
+          await LicenseService.getCustomerLogoPath();
+
+      if (logoPath == null ||
+          logoPath.trim().isEmpty) {
+        return null;
+      }
+
+      final file =
+          File(logoPath);
+
+      if (!await file.exists()) {
+        return null;
+      }
+
+      final bytes =
+          await file.readAsBytes();
+
+      if (bytes.isEmpty) {
+        return null;
+      }
+
+      return pw.MemoryImage(bytes);
+    } catch (_) {
+      // Logo must never break invoice generation.
+      return null;
+    }
+  }
+
+  // ============================================================
   // GENERATE PDF
   // ============================================================
 
@@ -31,7 +67,8 @@ class SaleInvoicePdf {
     required Map<String, dynamic> saleInfo,
     required List<SaleItem> items,
   }) async {
-    final pdf = pw.Document();
+    final pdf =
+        pw.Document();
 
     // ==========================================================
     // FONTS
@@ -44,6 +81,13 @@ class SaleInvoicePdf {
         await PdfGoogleFonts.notoSansBold();
 
     // ==========================================================
+    // CUSTOMER LOGO
+    // ==========================================================
+
+    final customerLogo =
+        await _loadCustomerLogo();
+
+    // ==========================================================
     // FORMAT
     // ==========================================================
 
@@ -52,24 +96,22 @@ class SaleInvoicePdf {
 
     final invoiceDate =
         DateFormat(
-      "dd MMM yyyy  hh:mm a",
-    ).format(
-      DateTime.parse(
-        sale.saleDate,
-      ),
-    );
+          "dd MMM yyyy  hh:mm a",
+        ).format(
+          DateTime.parse(
+            sale.saleDate,
+          ),
+        );
 
     // ==========================================================
     // ITEM COUNT
     // ==========================================================
 
-    final itemCount = items.length;
+    final itemCount =
+        items.length;
 
     // ==========================================================
     // RESPONSIVE SETTINGS
-    //
-    // কম item = বড় সুন্দর layout
-    // বেশি item = progressively compact
     // ==========================================================
 
     double headerFontSize;
@@ -138,19 +180,22 @@ class SaleInvoicePdf {
     final companyEmail =
         GABBranding.email;
 
+    final companyTagline =
+        GABBranding.tagline;
+
     // ==========================================================
     // CUSTOMER
     // ==========================================================
 
     final customerName =
         saleInfo["customer_name"]
-                ?.toString()
-                .trim()
-                .isNotEmpty ==
-            true
-        ? saleInfo["customer_name"]
-            .toString()
-        : "Walk-in Customer";
+                    ?.toString()
+                    .trim()
+                    .isNotEmpty ==
+                true
+            ? saleInfo["customer_name"]
+                .toString()
+            : "Walk-in Customer";
 
     final customerPhone =
         saleInfo["customer_phone"]
@@ -241,78 +286,115 @@ class SaleInvoicePdf {
         pw.Container(
       width:
           PdfPageFormat.a4.width - 32,
-
       child:
           pw.Column(
         mainAxisSize:
             pw.MainAxisSize.min,
-
         crossAxisAlignment:
             pw.CrossAxisAlignment.stretch,
-
         children: [
+          // ======================================================
+          // CUSTOMER LOGO
+          //
+          // IMPORTANT:
+          // No background/container color is used here.
+          // Transparent PNG remains transparent.
+          // BoxFit.contain preserves aspect ratio.
+          // ======================================================
+          if (customerLogo != null)
+            pw.Container(
+              width:
+                  double.infinity,
+              height:
+                  itemCount <= 8
+                      ? 72
+                      : 62,
+              margin:
+                  const pw.EdgeInsets.only(
+                bottom: 8,
+              ),
+              alignment:
+                  pw.Alignment.center,
+              child:
+                  pw.Image(
+                customerLogo,
+                fit:
+                    pw.BoxFit.contain,
+                alignment:
+                    pw.Alignment.center,
+              ),
+            ),
+
           // ======================================================
           // HEADER
           // ======================================================
-
           pw.Container(
             padding:
                 const pw.EdgeInsets.all(
               10,
             ),
-
             decoration:
                 pw.BoxDecoration(
               color:
                   PdfColors.blue900,
-
               borderRadius:
                   pw.BorderRadius.circular(
                 6,
               ),
             ),
-
             child:
                 pw.Row(
               crossAxisAlignment:
-                  pw.CrossAxisAlignment
-                      .start,
-
+                  pw.CrossAxisAlignment.start,
               children: [
                 // ==================================================
                 // COMPANY
                 // ==================================================
-
                 pw.Expanded(
                   flex: 6,
-
                   child:
                       pw.Column(
                     crossAxisAlignment:
-                        pw.CrossAxisAlignment
-                            .start,
-
+                        pw.CrossAxisAlignment.start,
                     mainAxisSize:
-                        pw.MainAxisSize
-                            .min,
-
+                        pw.MainAxisSize.min,
                     children: [
                       pw.Text(
                         companyName,
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           fontSize:
                               headerFontSize,
-
                           color:
-                              PdfColors
-                                  .white,
+                              PdfColors.white,
                         ),
                       ),
+
+                      // Customer tagline
+                      if (companyTagline
+                          .trim()
+                          .isNotEmpty)
+                        pw.Padding(
+                          padding:
+                              const pw.EdgeInsets.only(
+                            top: 2,
+                          ),
+                          child:
+                              pw.Text(
+                            companyTagline,
+                            style:
+                                pw.TextStyle(
+                              font:
+                                  regularFont,
+                              fontSize:
+                                  normalFontSize,
+                              color:
+                                  PdfColors.white,
+                            ),
+                          ),
+                        ),
 
                       pw.SizedBox(
                         height:
@@ -326,18 +408,14 @@ class SaleInvoicePdf {
                           .isNotEmpty)
                         pw.Text(
                           companyAddress,
-
                           style:
                               pw.TextStyle(
                             font:
                                 regularFont,
-
                             fontSize:
                                 normalFontSize,
-
                             color:
-                                PdfColors
-                                    .white,
+                                PdfColors.white,
                           ),
                         ),
 
@@ -346,18 +424,14 @@ class SaleInvoicePdf {
                           .isNotEmpty)
                         pw.Text(
                           companyPhone,
-
                           style:
                               pw.TextStyle(
                             font:
                                 regularFont,
-
                             fontSize:
                                 normalFontSize,
-
                             color:
-                                PdfColors
-                                    .white,
+                                PdfColors.white,
                           ),
                         ),
 
@@ -366,18 +440,14 @@ class SaleInvoicePdf {
                           .isNotEmpty)
                         pw.Text(
                           companyEmail,
-
                           style:
                               pw.TextStyle(
                             font:
                                 regularFont,
-
                             fontSize:
                                 normalFontSize,
-
                             color:
-                                PdfColors
-                                    .white,
+                                PdfColors.white,
                           ),
                         ),
                     ],
@@ -391,57 +461,42 @@ class SaleInvoicePdf {
                 // ==================================================
                 // INVOICE INFO
                 // ==================================================
-
                 pw.Container(
                   width: 165,
-
                   padding:
                       const pw.EdgeInsets.all(
                     10,
                   ),
-
                   decoration:
                       pw.BoxDecoration(
                     color:
                         PdfColors.white,
-
                     borderRadius:
-                        pw.BorderRadius
-                            .circular(
+                        pw.BorderRadius.circular(
                       5,
                     ),
                   ),
-
                   child:
                       pw.Column(
                     crossAxisAlignment:
-                        pw.CrossAxisAlignment
-                            .start,
-
+                        pw.CrossAxisAlignment.start,
                     mainAxisSize:
-                        pw.MainAxisSize
-                            .min,
-
+                        pw.MainAxisSize.min,
                     children: [
                       pw.Center(
                         child:
                             pw.Text(
                           "SALES INVOICE",
-
                           style:
                               pw.TextStyle(
                             font:
                                 boldFont,
-
                             fontSize:
-                                itemCount <=
-                                        8
+                                itemCount <= 8
                                     ? 14
                                     : 12,
-
                             color:
-                                PdfColors
-                                    .blue900,
+                                PdfColors.blue900,
                           ),
                         ),
                       ),
@@ -455,29 +510,24 @@ class SaleInvoicePdf {
 
                       pw.Text(
                         "Invoice No",
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           fontSize:
                               normalFontSize,
                         ),
                       ),
 
                       pw.Text(
-                        saleInfo[
-                                    "invoice_no"]
+                        saleInfo["invoice_no"]
                                 ?.toString() ??
                             sale.invoiceNo ??
                             "",
-
                         style:
                             pw.TextStyle(
                           font:
                               regularFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -492,12 +542,10 @@ class SaleInvoicePdf {
 
                       pw.Text(
                         "Invoice Date",
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -505,12 +553,10 @@ class SaleInvoicePdf {
 
                       pw.Text(
                         invoiceDate,
-
                         style:
                             pw.TextStyle(
                           font:
                               regularFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -530,17 +576,13 @@ class SaleInvoicePdf {
           // ======================================================
           // CUSTOMER + RECEIVABLE
           // ======================================================
-
           pw.Row(
             crossAxisAlignment:
-                pw.CrossAxisAlignment
-                    .start,
-
+                pw.CrossAxisAlignment.start,
             children: [
               // ==================================================
               // BILL TO
               // ==================================================
-
               pw.Expanded(
                 child:
                     pw.Container(
@@ -548,43 +590,31 @@ class SaleInvoicePdf {
                       pw.EdgeInsets.all(
                     customerPadding,
                   ),
-
                   decoration:
                       pw.BoxDecoration(
                     border:
                         pw.Border.all(
                       color:
-                          PdfColors
-                              .grey300,
+                          PdfColors.grey300,
                     ),
                   ),
-
                   child:
                       pw.Column(
                     crossAxisAlignment:
-                        pw.CrossAxisAlignment
-                            .start,
-
+                        pw.CrossAxisAlignment.start,
                     mainAxisSize:
-                        pw.MainAxisSize
-                            .min,
-
+                        pw.MainAxisSize.min,
                     children: [
                       pw.Text(
                         "BILL TO",
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           color:
-                              PdfColors
-                                  .blue900,
-
+                              PdfColors.blue900,
                           fontSize:
-                              itemCount <=
-                                      8
+                              itemCount <= 8
                                   ? 11
                                   : 10,
                         ),
@@ -592,20 +622,17 @@ class SaleInvoicePdf {
 
                       pw.SizedBox(
                         height:
-                            itemCount <=
-                                    8
+                            itemCount <= 8
                                 ? 6
                                 : 4,
                       ),
 
                       pw.Text(
                         customerName,
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           fontSize:
                               normalFontSize +
                                   1,
@@ -619,12 +646,10 @@ class SaleInvoicePdf {
                       pw.Text(
                         "Customer ID : "
                         "${sale.customerId}",
-
                         style:
                             pw.TextStyle(
                           font:
                               regularFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -633,12 +658,10 @@ class SaleInvoicePdf {
                       pw.Text(
                         "Phone : "
                         "$customerPhone",
-
                         style:
                             pw.TextStyle(
                           font:
                               regularFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -647,12 +670,10 @@ class SaleInvoicePdf {
                       pw.Text(
                         "Address : "
                         "$customerAddress",
-
                         style:
                             pw.TextStyle(
                           font:
                               regularFont,
-
                           fontSize:
                               normalFontSize,
                         ),
@@ -669,33 +690,25 @@ class SaleInvoicePdf {
               // ==================================================
               // RECEIVABLE
               // ==================================================
-
               pw.Container(
                 width: 220,
-
                 padding:
                     pw.EdgeInsets.all(
                   summaryPadding,
                 ),
-
                 decoration:
                     pw.BoxDecoration(
                   color:
                       PdfColors.grey100,
-
                   borderRadius:
-                      pw.BorderRadius
-                          .circular(
+                      pw.BorderRadius.circular(
                     5,
                   ),
                 ),
-
                 child:
                     pw.Column(
                   mainAxisSize:
-                      pw.MainAxisSize
-                          .min,
-
+                      pw.MainAxisSize.min,
                   children: [
                     _summaryRow(
                       "Invoice Total",
@@ -753,56 +766,37 @@ class SaleInvoicePdf {
           // ======================================================
           // PRODUCT TABLE
           // ======================================================
-
           pw.Table(
             border:
                 pw.TableBorder.all(
               color:
                   PdfColors.grey300,
-
-              width:
-                  .5,
+              width: .5,
             ),
-
             columnWidths: {
-              0:
-                  const pw.FixedColumnWidth(
+              0: const pw.FixedColumnWidth(
                 35,
               ),
-
-              1:
-                  const pw.FlexColumnWidth(
+              1: const pw.FlexColumnWidth(
                 4,
               ),
-
-              2:
-                  const pw.FixedColumnWidth(
+              2: const pw.FixedColumnWidth(
                 55,
               ),
-
-              3:
-                  const pw.FixedColumnWidth(
+              3: const pw.FixedColumnWidth(
                 75,
               ),
-
-              4:
-                  const pw.FixedColumnWidth(
+              4: const pw.FixedColumnWidth(
                 85,
               ),
             },
-
             children: [
-              // ==================================================
-              // TABLE HEADER
-              // ==================================================
-
               pw.TableRow(
                 decoration:
                     const pw.BoxDecoration(
                   color:
                       PdfColors.blue900,
                 ),
-
                 children: [
                   _headerCell(
                     "SL",
@@ -812,7 +806,6 @@ class SaleInvoicePdf {
                     verticalPadding:
                         tableVerticalPadding,
                   ),
-
                   _headerCell(
                     "PRODUCT",
                     boldFont,
@@ -821,7 +814,6 @@ class SaleInvoicePdf {
                     verticalPadding:
                         tableVerticalPadding,
                   ),
-
                   _headerCell(
                     "QTY",
                     boldFont,
@@ -830,7 +822,6 @@ class SaleInvoicePdf {
                     verticalPadding:
                         tableVerticalPadding,
                   ),
-
                   _headerCell(
                     "PRICE",
                     boldFont,
@@ -839,7 +830,6 @@ class SaleInvoicePdf {
                     verticalPadding:
                         tableVerticalPadding,
                   ),
-
                   _headerCell(
                     "TOTAL",
                     boldFont,
@@ -851,13 +841,8 @@ class SaleInvoicePdf {
                 ],
               ),
 
-              // ==================================================
-              // ITEMS
-              // ==================================================
-
               ...List.generate(
                 items.length,
-
                 (index) {
                   final item =
                       items[index];
@@ -872,10 +857,8 @@ class SaleInvoicePdf {
                         verticalPadding:
                             tableVerticalPadding,
                         align:
-                            pw.TextAlign
-                                .center,
+                            pw.TextAlign.center,
                       ),
-
                       _cell(
                         item.productName,
                         regularFont,
@@ -884,24 +867,19 @@ class SaleInvoicePdf {
                         verticalPadding:
                             tableVerticalPadding,
                       ),
-
                       _cell(
-                        item.qty
-                            .toString(),
+                        item.qty.toString(),
                         regularFont,
                         fontSize:
                             tableFontSize,
                         verticalPadding:
                             tableVerticalPadding,
                         align:
-                            pw.TextAlign
-                                .center,
+                            pw.TextAlign.center,
                       ),
-
                       _cell(
                         taka(
-                          item
-                              .sellingPrice,
+                          item.sellingPrice,
                         ),
                         regularFont,
                         fontSize:
@@ -909,10 +887,8 @@ class SaleInvoicePdf {
                         verticalPadding:
                             tableVerticalPadding,
                         align:
-                            pw.TextAlign
-                                .right,
+                            pw.TextAlign.right,
                       ),
-
                       _cell(
                         taka(
                           item.subtotal,
@@ -923,8 +899,7 @@ class SaleInvoicePdf {
                         verticalPadding:
                             tableVerticalPadding,
                         align:
-                            pw.TextAlign
-                                .right,
+                            pw.TextAlign.right,
                         bold: true,
                       ),
                     ],
@@ -942,13 +917,11 @@ class SaleInvoicePdf {
           // ======================================================
           // PAYMENT SUMMARY
           // ======================================================
-
           pw.Container(
             padding:
                 pw.EdgeInsets.all(
               summaryPadding,
             ),
-
             decoration:
                 pw.BoxDecoration(
               border:
@@ -957,41 +930,31 @@ class SaleInvoicePdf {
                     PdfColors.grey300,
               ),
             ),
-
             child:
                 pw.Column(
               crossAxisAlignment:
-                  pw.CrossAxisAlignment
-                      .start,
-
+                  pw.CrossAxisAlignment.start,
               mainAxisSize:
-                  pw.MainAxisSize
-                      .min,
-
+                  pw.MainAxisSize.min,
               children: [
                 pw.Text(
                   "PAYMENT SUMMARY",
-
                   style:
                       pw.TextStyle(
                     font:
                         boldFont,
-
                     fontSize:
                         itemCount <= 8
                             ? 11
                             : 10,
-
                     color:
-                        PdfColors
-                            .blue900,
+                        PdfColors.blue900,
                   ),
                 ),
 
                 pw.SizedBox(
                   height:
-                      itemCount <=
-                              8
+                      itemCount <= 8
                           ? 6
                           : 4,
                 ),
@@ -1102,7 +1065,6 @@ class SaleInvoicePdf {
                 // ==================================================
                 // BALANCE DUE
                 // ==================================================
-
                 pw.Container(
                   padding:
                       pw.EdgeInsets.symmetric(
@@ -1112,58 +1074,42 @@ class SaleInvoicePdf {
                             ? 8
                             : 6,
                   ),
-
                   decoration:
                       const pw.BoxDecoration(
                     color:
-                        PdfColors
-                            .blue900,
+                        PdfColors.blue900,
                   ),
-
                   child:
                       pw.Row(
                     mainAxisAlignment:
-                        pw.MainAxisAlignment
-                            .spaceBetween,
-
+                        pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
                         "BALANCE DUE",
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           color:
-                              PdfColors
-                                  .white,
-
+                              PdfColors.white,
                           fontSize:
-                              itemCount <=
-                                      8
+                              itemCount <= 8
                                   ? 11
                                   : 10,
                         ),
                       ),
-
                       pw.Text(
                         taka(
                           finalDue,
                         ),
-
                         style:
                             pw.TextStyle(
                           font:
                               boldFont,
-
                           color:
-                              PdfColors
-                                  .white,
-
+                              PdfColors.white,
                           fontSize:
-                              itemCount <=
-                                      8
+                              itemCount <= 8
                                   ? 13
                                   : 11,
                         ),
@@ -1178,7 +1124,6 @@ class SaleInvoicePdf {
           // ======================================================
           // NOTE
           // ======================================================
-
           if (sale.note
               .trim()
               .isNotEmpty) ...[
@@ -1186,75 +1131,56 @@ class SaleInvoicePdf {
               height:
                   sectionSpacing,
             ),
-
             pw.Container(
               width:
                   double.infinity,
-
               padding:
                   pw.EdgeInsets.all(
                 itemCount <= 8
                     ? 9
                     : 7,
               ),
-
               decoration:
                   pw.BoxDecoration(
                 border:
                     pw.Border.all(
                   color:
-                      PdfColors
-                          .grey300,
+                      PdfColors.grey300,
                 ),
-
                 borderRadius:
-                    pw.BorderRadius
-                        .circular(
+                    pw.BorderRadius.circular(
                   4,
                 ),
               ),
-
               child:
                   pw.Column(
                 crossAxisAlignment:
-                    pw.CrossAxisAlignment
-                        .start,
-
+                    pw.CrossAxisAlignment.start,
                 mainAxisSize:
-                    pw.MainAxisSize
-                        .min,
-
+                    pw.MainAxisSize.min,
                 children: [
                   pw.Text(
                     "NOTE",
-
                     style:
                         pw.TextStyle(
                       font:
                           boldFont,
-
                       fontSize:
                           normalFontSize +
                               1,
-
                       color:
-                          PdfColors
-                              .blue900,
+                          PdfColors.blue900,
                     ),
                   ),
-
                   pw.SizedBox(
                     height: 2,
                   ),
-
                   pw.Text(
                     sale.note,
-
                     style:
                         pw.TextStyle(
                       font:
                           regularFont,
-
                       fontSize:
                           normalFontSize,
                     ),
@@ -1267,7 +1193,6 @@ class SaleInvoicePdf {
           // ======================================================
           // AMOUNT IN WORDS
           // ======================================================
-
           pw.SizedBox(
             height:
                 itemCount <= 4
@@ -1279,19 +1204,14 @@ class SaleInvoicePdf {
 
           pw.Text(
             "Amount in Words",
-
             style:
                 pw.TextStyle(
               font:
                   boldFont,
-
               fontSize:
-                  normalFontSize +
-                      1,
-
+                  normalFontSize + 1,
               color:
-                  PdfColors
-                      .blue900,
+                  PdfColors.blue900,
             ),
           ),
 
@@ -1303,12 +1223,10 @@ class SaleInvoicePdf {
             _amountInWords(
               finalDue.toInt(),
             ),
-
             style:
                 pw.TextStyle(
               font:
                   regularFont,
-
               fontSize:
                   normalFontSize,
             ),
@@ -1317,7 +1235,6 @@ class SaleInvoicePdf {
           // ======================================================
           // SIGNATURE
           // ======================================================
-
           pw.SizedBox(
             height:
                 itemCount <= 4
@@ -1333,69 +1250,52 @@ class SaleInvoicePdf {
 
           pw.Row(
             mainAxisAlignment:
-                pw.MainAxisAlignment
-                    .spaceBetween,
-
+                pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Column(
                 mainAxisSize:
-                    pw.MainAxisSize
-                        .min,
-
+                    pw.MainAxisSize.min,
                 children: [
                   pw.Container(
                     width: 150,
-
                     child:
                         pw.Divider(
                       height: 7,
                     ),
                   ),
-
                   pw.Text(
                     "Customer Signature",
-
                     style:
                         pw.TextStyle(
                       font:
                           regularFont,
-
                       fontSize:
-                          itemCount <=
-                                  8
+                          itemCount <= 8
                               ? 8
                               : 7,
                     ),
                   ),
                 ],
               ),
-
               pw.Column(
                 mainAxisSize:
-                    pw.MainAxisSize
-                        .min,
-
+                    pw.MainAxisSize.min,
                 children: [
                   pw.Container(
                     width: 150,
-
                     child:
                         pw.Divider(
                       height: 7,
                     ),
                   ),
-
                   pw.Text(
                     "Authorized Signature",
-
                     style:
                         pw.TextStyle(
                       font:
                           regularFont,
-
                       fontSize:
-                          itemCount <=
-                                  8
+                          itemCount <= 8
                               ? 8
                               : 7,
                     ),
@@ -1408,7 +1308,6 @@ class SaleInvoicePdf {
           // ======================================================
           // THANK YOU
           // ======================================================
-
           pw.SizedBox(
             height:
                 itemCount <= 4
@@ -1422,20 +1321,16 @@ class SaleInvoicePdf {
             child:
                 pw.Text(
               "Thank you for your business.",
-
               style:
                   pw.TextStyle(
                 font:
                     boldFont,
-
                 fontSize:
                     itemCount <= 8
                         ? 9
                         : 8,
-
                 color:
-                    PdfColors
-                        .grey700,
+                    PdfColors.grey700,
               ),
             ),
           ),
@@ -1443,7 +1338,6 @@ class SaleInvoicePdf {
           // ======================================================
           // FOOTER
           // ======================================================
-
           pw.SizedBox(
             height:
                 itemCount <= 8
@@ -1456,7 +1350,6 @@ class SaleInvoicePdf {
                 const pw.EdgeInsets.only(
               top: 5,
             ),
-
             decoration:
                 const pw.BoxDecoration(
               border:
@@ -1464,21 +1357,15 @@ class SaleInvoicePdf {
                 top:
                     pw.BorderSide(
                   color:
-                      PdfColors
-                          .grey400,
-
-                  width:
-                      0.5,
+                      PdfColors.grey400,
+                  width: 0.5,
                 ),
               ),
             ),
-
             child:
                 pw.Row(
               mainAxisAlignment:
-                  pw.MainAxisAlignment
-                      .spaceBetween,
-
+                  pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Expanded(
                   child:
@@ -1486,40 +1373,28 @@ class SaleInvoicePdf {
                     "Developed by "
                     "${GABBranding.developedBy} — "
                     "Building Ideas Into Software",
-
                     style:
                         pw.TextStyle(
                       font:
                           regularFont,
-
-                      fontSize:
-                          7,
-
+                      fontSize: 7,
                       color:
-                          PdfColors
-                              .grey700,
+                          PdfColors.grey700,
                     ),
                   ),
                 ),
-
                 pw.SizedBox(
                   width: 10,
                 ),
-
                 pw.Text(
                   "Page 1",
-
                   style:
                       pw.TextStyle(
                     font:
                         regularFont,
-
-                    fontSize:
-                        7,
-
+                    fontSize: 7,
                     color:
-                        PdfColors
-                            .grey700,
+                        PdfColors.grey700,
                   ),
                 ),
               ],
@@ -1531,37 +1406,26 @@ class SaleInvoicePdf {
 
     // ============================================================
     // SINGLE PAGE
-    //
-    // IMPORTANT:
-    // FittedBox is ONLY used as a final safety net.
-    //
-    // The actual layout width remains A4 width.
-    // For small item counts it will stay at normal size.
     // ============================================================
 
     pdf.addPage(
       pw.Page(
         pageFormat:
             PdfPageFormat.a4,
-
         margin:
             const pw.EdgeInsets.all(
           16,
         ),
-
         build: (context) {
           return pw.Align(
             alignment:
                 pw.Alignment.topCenter,
-
             child:
                 pw.FittedBox(
               fit:
                   pw.BoxFit.scaleDown,
-
               alignment:
                   pw.Alignment.topCenter,
-
               child:
                   invoiceContent,
             ),
@@ -1586,30 +1450,22 @@ class SaleInvoicePdf {
     return pw.Container(
       alignment:
           pw.Alignment.center,
-
       padding:
           pw.EdgeInsets.symmetric(
         vertical:
             verticalPadding,
-
         horizontal: 5,
       ),
-
       child:
           pw.Text(
         text,
-
         textAlign:
             pw.TextAlign.center,
-
         style:
             pw.TextStyle(
-          font:
-              font,
-
+          font: font,
           fontSize:
               fontSize,
-
           color:
               PdfColors.white,
         ),
@@ -1634,43 +1490,30 @@ class SaleInvoicePdf {
       padding:
           pw.EdgeInsets.symmetric(
         horizontal: 6,
-
         vertical:
             verticalPadding,
       ),
-
       alignment:
           align ==
                   pw.TextAlign.right
-              ? pw.Alignment
-                  .centerRight
+              ? pw.Alignment.centerRight
               : align ==
-                      pw.TextAlign
-                          .center
-                  ? pw.Alignment
-                      .center
-                  : pw.Alignment
-                      .centerLeft,
-
+                      pw.TextAlign.center
+                  ? pw.Alignment.center
+                  : pw.Alignment.centerLeft,
       child:
           pw.Text(
         text,
-
         textAlign:
             align,
-
         style:
             pw.TextStyle(
-          font:
-              font,
-
+          font: font,
           fontSize:
               fontSize,
-
           fontWeight:
               bold
-                  ? pw.FontWeight
-                      .bold
+                  ? pw.FontWeight.bold
                   : null,
         ),
       ),
@@ -1691,53 +1534,42 @@ class SaleInvoicePdf {
   }) {
     return pw.Padding(
       padding:
-          const pw.EdgeInsets
-              .symmetric(
+          const pw.EdgeInsets.symmetric(
         vertical: 1.5,
       ),
-
       child:
           pw.Row(
         mainAxisAlignment:
-            pw.MainAxisAlignment
-                .spaceBetween,
-
+            pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Expanded(
             child:
                 pw.Text(
               title,
-
               style:
                   pw.TextStyle(
                 font:
                     bold
                         ? boldFont
                         : regularFont,
-
                 fontSize:
                     fontSize,
               ),
             ),
           ),
-
           pw.SizedBox(
             width: 10,
           ),
-
           pw.Text(
             value,
-
             textAlign:
                 pw.TextAlign.right,
-
             style:
                 pw.TextStyle(
               font:
                   bold
                       ? boldFont
                       : regularFont,
-
               fontSize:
                   fontSize,
             ),
@@ -1878,7 +1710,8 @@ class SaleInvoicePdf {
       final externalDirectory =
           await getExternalStorageDirectory();
 
-      if (externalDirectory == null) {
+      if (externalDirectory ==
+          null) {
         throw Exception(
           "Unable to access Android storage.",
         );
@@ -1951,9 +1784,9 @@ class SaleInvoicePdf {
     await Printing.layoutPdf(
       name:
           "Invoice_${sale.invoiceNo}.pdf",
-
-      onLayout: (_) async =>
-          generate(
+      onLayout:
+          (_) async =>
+              generate(
         sale: sale,
         saleInfo: saleInfo,
         items: items,
@@ -1994,12 +1827,14 @@ class SaleInvoicePdf {
 
     final invoiceNo =
         sale.invoiceNo
-                ?.trim()
-                .isNotEmpty ==
-            true
-        ? sale.invoiceNo!.trim()
-        : sale.id?.toString() ??
-            "unknown";
+                    ?.trim()
+                    .isNotEmpty ==
+                true
+            ? sale.invoiceNo!
+                .trim()
+            : sale.id
+                    ?.toString() ??
+                "unknown";
 
     // ==========================================================
     // FILE

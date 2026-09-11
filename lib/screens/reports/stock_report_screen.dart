@@ -126,18 +126,21 @@ class _StockReportScreenState
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          12,
-                          horizontalPadding,
                           8,
+                          horizontalPadding,
+                          6,
                         ),
                         child: SizedBox(
-                          height: 48,
+                          height: 44,
                           child: TextField(
                             decoration: InputDecoration(
                               hintText:
                                   "Search product...",
                               prefixIcon:
-                                  const Icon(Icons.search),
+                                  const Icon(
+                                Icons.search,
+                                size: 21,
+                              ),
                               contentPadding:
                                   const EdgeInsets.symmetric(
                                 vertical: 0,
@@ -157,47 +160,102 @@ class _StockReportScreenState
                       ),
 
                       // ==================================================
-                      // SUMMARY CARDS - 2 x 2
+                      // COMPACT SUMMARY CARDS - SALES STYLE
                       // ==================================================
                       Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: horizontalPadding,
-                        ),
-                        child: GridView.count(
-                          shrinkWrap: true,
-                          physics:
-                              const NeverScrollableScrollPhysics(),
-                          crossAxisCount: 2,
-                          childAspectRatio:
-                              width >= 700 ? 4.2 : 2.65,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          children: [
-                            _summaryCard(
-                              "Products",
-                              totalProducts.toString(),
-                              Colors.blue,
-                            ),
-                            _summaryCard(
-                              "In Stock",
-                              inStock.toString(),
-                              Colors.green,
-                            ),
-                            _summaryCard(
-                              "Low Stock",
-                              lowStock.toString(),
-                              Colors.orange,
-                            ),
-                            _summaryCard(
-                              "Out Stock",
-                              outStock.toString(),
-                              Colors.red,
-                            ),
-                          ],
-                        ),
-                      ),
+  padding: EdgeInsets.symmetric(
+    horizontal: horizontalPadding,
+  ),
+  child: LayoutBuilder(
+    builder: (context, cardConstraints) {
+      final isPhone = cardConstraints.maxWidth < 600;
 
-                      const SizedBox(height: 8),
+      if (isPhone) {
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _summaryCard(
+                    "Products",
+                    totalProducts.toString(),
+                    Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _summaryCard(
+                    "In Stock",
+                    inStock.toString(),
+                    Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _summaryCard(
+                    "Low Stock",
+                    lowStock.toString(),
+                    Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _summaryCard(
+                    "Out Stock",
+                    outStock.toString(),
+                    Colors.red,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+
+      return Row(
+        children: [
+          Expanded(
+            child: _summaryCard(
+              "Products",
+              totalProducts.toString(),
+              Colors.blue,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _summaryCard(
+              "In Stock",
+              inStock.toString(),
+              Colors.green,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _summaryCard(
+              "Low Stock",
+              lowStock.toString(),
+              Colors.orange,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _summaryCard(
+              "Out Stock",
+              outStock.toString(),
+              Colors.red,
+            ),
+          ),
+        ],
+      );
+    },
+  ),
+),
+
+                      const SizedBox(height: 6),
 
                       // ==================================================
                       // TOTAL STOCK VALUE
@@ -207,11 +265,12 @@ class _StockReportScreenState
                           horizontal: horizontalPadding,
                         ),
                         child: SizedBox(
-                          height: 54,
+                          height: 52,
                           child: Card(
                             margin: EdgeInsets.zero,
                             elevation: 1,
-                            shape: RoundedRectangleBorder(
+                            shape:
+                                RoundedRectangleBorder(
                               borderRadius:
                                   BorderRadius.circular(12),
                             ),
@@ -223,29 +282,41 @@ class _StockReportScreenState
                               child: Row(
                                 children: [
                                   CircleAvatar(
-                                    radius: 17,
+                                    radius: 16,
                                     backgroundColor:
                                         Colors.blue
                                             .withOpacity(.10),
                                     child: const Icon(
                                       Icons
                                           .account_balance_wallet,
-                                      size: 18,
+                                      size: 17,
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(
+                                    width: 9,
+                                  ),
                                   const Expanded(
                                     child: Text(
                                       "Total Stock Value",
+                                      maxLines: 1,
+                                      overflow:
+                                          TextOverflow
+                                              .ellipsis,
                                       style: TextStyle(
                                         fontWeight:
                                             FontWeight.w600,
+                                        fontSize: 13,
                                       ),
                                     ),
                                   ),
                                   Text(
                                     "৳${totalStockValue.toStringAsFixed(2)}",
-                                    style: const TextStyle(
+                                    maxLines: 1,
+                                    overflow:
+                                        TextOverflow
+                                            .ellipsis,
+                                    style:
+                                        const TextStyle(
                                       fontWeight:
                                           FontWeight.bold,
                                       fontSize: 15,
@@ -258,17 +329,17 @@ class _StockReportScreenState
                         ),
                       ),
 
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
 
                       // ==================================================
-                      // PRODUCT LIST
+                      // PRODUCT LIST TITLE
                       // ==================================================
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          0,
+                          2,
                           horizontalPadding,
-                          6,
+                          5,
                         ),
                         child: Row(
                           children: [
@@ -282,13 +353,14 @@ class _StockReportScreenState
                               child: Text(
                                 "Stock Records",
                                 style: TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 17,
                                   fontWeight:
                                       FontWeight.bold,
                                 ),
                               ),
                             ),
-                            if (filteredProducts.isNotEmpty)
+                            if (filteredProducts
+                                .isNotEmpty)
                               Text(
                                 "${filteredProducts.length}",
                                 style: TextStyle(
@@ -304,33 +376,38 @@ class _StockReportScreenState
                       ),
 
                       // ==================================================
-                      // ONLY LIST AREA SCROLLS
+                      // PRODUCT LIST
                       // ==================================================
                       Expanded(
-                        child: filteredProducts.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  "No Product Found",
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: EdgeInsets.fromLTRB(
-                                  horizontalPadding,
-                                  0,
-                                  horizontalPadding,
-                                  12,
-                                ),
-                                itemCount:
-                                    filteredProducts.length,
-                                itemBuilder:
-                                    (context, index) {
-                                  final p =
-                                      filteredProducts[
-                                          index];
+                        child:
+                            filteredProducts.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      "No Product Found",
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    padding:
+                                        EdgeInsets.fromLTRB(
+                                      horizontalPadding,
+                                      0,
+                                      horizontalPadding,
+                                      12,
+                                    ),
+                                    itemCount:
+                                        filteredProducts
+                                            .length,
+                                    itemBuilder:
+                                        (context, index) {
+                                      final p =
+                                          filteredProducts[
+                                              index];
 
-                                  return _productCard(p);
-                                },
-                              ),
+                                      return _productCard(
+                                        p,
+                                      );
+                                    },
+                                  ),
                       ),
                     ],
                   );
@@ -339,6 +416,10 @@ class _StockReportScreenState
             ),
     );
   }
+
+  // ============================================================
+  // PRODUCT CARD
+  // ============================================================
 
   Widget _productCard(Product p) {
     final color = stockColor(p.stock);
@@ -389,7 +470,8 @@ class _StockReportScreenState
                         TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 15,
-                      fontWeight: FontWeight.bold,
+                      fontWeight:
+                          FontWeight.bold,
                     ),
                   ),
 
@@ -401,7 +483,8 @@ class _StockReportScreenState
                     overflow:
                         TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight:
+                          FontWeight.w600,
                       fontSize: 12,
                     ),
                   ),
@@ -422,7 +505,8 @@ class _StockReportScreenState
                     overflow:
                         TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontWeight:
+                          FontWeight.w600,
                       fontSize: 12,
                     ),
                   ),
@@ -454,7 +538,8 @@ class _StockReportScreenState
                   "${p.stock}",
                   style: TextStyle(
                     fontSize: 21,
-                    fontWeight: FontWeight.bold,
+                    fontWeight:
+                        FontWeight.bold,
                     color: color,
                   ),
                 ),
@@ -467,11 +552,14 @@ class _StockReportScreenState
                     horizontal: 9,
                     vertical: 3,
                   ),
-                  decoration: BoxDecoration(
+                  decoration:
+                      BoxDecoration(
                     color:
                         color.withOpacity(.12),
                     borderRadius:
-                        BorderRadius.circular(20),
+                        BorderRadius.circular(
+                      20,
+                    ),
                   ),
                   child: Text(
                     stockText(p.stock),
@@ -491,64 +579,65 @@ class _StockReportScreenState
     );
   }
 
-  Widget _summaryCard(
-    String title,
-    String value,
-    Color color,
-  ) {
-    return Card(
+  // ============================================================
+  // COMPACT SUMMARY CARD
+  // ============================================================
+
+Widget _summaryCard(
+  String title,
+  String value,
+  Color color,
+) {
+  return SizedBox(
+    height: 60,
+    child: Card(
       elevation: 1,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 8,
+          horizontal: 9,
+          vertical: 6,
         ),
         child: Row(
           children: [
             CircleAvatar(
-              radius: 18,
-              backgroundColor:
-                  color.withOpacity(.12),
+              radius: 15,
+              backgroundColor: color.withOpacity(.12),
               child: Icon(
                 Icons.inventory_2,
                 color: color,
-                size: 18,
+                size: 16,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
             Expanded(
               child: Column(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight:
-                          FontWeight.bold,
-                      color: color,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     title,
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
-                      color:
-                          Colors.grey.shade600,
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
                     ),
                   ),
                 ],
@@ -557,6 +646,7 @@ class _StockReportScreenState
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

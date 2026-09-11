@@ -449,9 +449,10 @@ class _LicenseScreen
       result.code == 'DEVICE_LIMIT_REACHED';
 
   bool get isNotActivated =>
-      result.code == 'LICENSE_NOT_ACTIVATED' ||
-      result.code == 'LICENSE_NOT_FOUND' ||
-      result.code == 'CUSTOMER_NOT_FOUND';
+    result.code == 'NOT_ACTIVATED' ||
+    result.code == 'LICENSE_NOT_ACTIVATED' ||
+    result.code == 'LICENSE_NOT_FOUND' ||
+    result.code == 'CUSTOMER_NOT_FOUND';
 
   String get title {
     if (isMismatch) {

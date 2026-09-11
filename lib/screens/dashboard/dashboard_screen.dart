@@ -622,145 +622,103 @@ class _DashboardScreenState
             // DASHBOARD ACTION GRID
             // ==================================================
 
-            GridView.count(
-              shrinkWrap: true,
+GridView.count(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
 
-              physics:
-                  const NeverScrollableScrollPhysics(),
+  crossAxisCount:
+      MediaQuery.of(context).size.width >= 900
+          ? 4
+          : 2,
 
-              crossAxisCount: 2,
+  crossAxisSpacing:
+      MediaQuery.of(context).size.width >= 900
+          ? 12
+          : 15,
 
-              crossAxisSpacing: 15,
+  mainAxisSpacing:
+      MediaQuery.of(context).size.width >= 900
+          ? 12
+          : 15,
 
-              mainAxisSpacing: 15,
+  childAspectRatio:
+      MediaQuery.of(context).size.width >= 900
+          ? 2.4
+          : 1.35,
 
-              childAspectRatio: 1.35,
+  children: [
+    DashboardCard(
+      icon: Icons.shopping_cart,
+      title: "New Sale",
+      value: null,
+      color: Colors.orange,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AddSaleScreen(),
+          ),
+        );
 
-              children: [
+        await _loadDashboard();
+      },
+    ),
 
-                // ----------------------------------------------
-                // NEW SALE
-                // ----------------------------------------------
+    DashboardCard(
+      icon: Icons.folder_copy,
+      title: "Records",
+      value: "",
+      color: Colors.indigo,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const RecordsScreen(),
+          ),
+        );
 
-                DashboardCard(
-                  icon:
-                      Icons.shopping_cart,
+        await _loadDashboard();
+      },
+    ),
 
-                  title:
-                      "New Sale",
+    DashboardCard(
+      icon: Icons.analytics,
+      title: "Reports",
+      value: "",
+      color: Colors.deepPurple,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ReportsScreen(),
+          ),
+        );
 
-                  value: null,
+        await _loadDashboard();
+      },
+    ),
 
-                  color:
-                      Colors.orange,
+    
+    DashboardCard(
+      icon: Icons.settings,
+      title: "Settings",
+      value: "",
+      color: Colors.grey,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const SettingsScreen(),
+          ),
+        );
 
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const AddSaleScreen(),
-                      ),
-                    );
+        await _loadDashboard();
+        await _loadBusinessName();
+      },
+    ),
+  ],
+),
 
-                    await _loadDashboard();
-                  },
-                ),
-
-                // ----------------------------------------------
-                // REPORTS
-                // ----------------------------------------------
-
-                DashboardCard(
-                  icon:
-                      Icons.analytics,
-
-                  title:
-                      "Reports",
-
-                  value:
-                      "",
-
-                  color:
-                      Colors.deepPurple,
-
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const ReportsScreen(),
-                      ),
-                    );
-
-                    await _loadDashboard();
-                  },
-                ),
-
-                // ----------------------------------------------
-                // RECORDS
-                // ----------------------------------------------
-
-                DashboardCard(
-                  icon:
-                      Icons.folder_copy,
-
-                  title:
-                      "Records",
-
-                  value:
-                      "",
-
-                  color:
-                      Colors.indigo,
-
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const RecordsScreen(),
-                      ),
-                    );
-
-                    await _loadDashboard();
-                  },
-                ),
-
-                // ----------------------------------------------
-                // SETTINGS
-                // ----------------------------------------------
-
-                DashboardCard(
-                  icon:
-                      Icons.settings,
-
-                  title:
-                      "Settings",
-
-                  value:
-                      "",
-
-                  color:
-                      Colors.grey,
-
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const SettingsScreen(),
-                      ),
-                    );
-
-                    await _loadDashboard();
-                    await _loadBusinessName();
-                  },
-                ),
-              ],
-            ),
-
-            // Space for floating action button
             const SizedBox(
               height: 80,
             ),

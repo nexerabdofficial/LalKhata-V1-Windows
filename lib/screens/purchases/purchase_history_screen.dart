@@ -5,6 +5,15 @@ import '../../models/purchase/purchase_history.dart';
 import '../../services/purchase_repository.dart';
 import 'purchase_details_screen.dart';
 
+enum PurchaseDateFilter {
+  all,
+  today,
+  yesterday,
+  thisWeek,
+  thisMonth,
+  custom,
+}
+
 class PurchaseHistoryScreen extends StatefulWidget {
   const PurchaseHistoryScreen({super.key});
 
@@ -23,15 +32,58 @@ class _PurchaseHistoryScreenState
   bool _isLoading = true;
   String _search = "";
 
+  PurchaseDateFilter _dateFilter =
+      PurchaseDateFilter.all;
+
+  DateTime? _customFromDate;
+  DateTime? _customToDate;
+
   @override
   void initState() {
     super.initState();
     _loadPurchases();
   }
 
+  // ============================================================
+  // LOAD PURCHASES
+  // ============================================================
+
   Future<void> _loadPurchases() async {
-    final purchases =
-        await _purchaseRepository.getPurchases();
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
+    List<PurchaseHistory> purchases;
+
+    if (_dateFilter == PurchaseDateFilter.all) {
+      purchases =
+          await _purchaseRepository.getPurchases();
+    } else if (_dateFilter == PurchaseDateFilter.custom) {
+      if (_customFromDate == null ||
+          _customToDate == null) {
+        purchases =
+            await _purchaseRepository.getPurchases();
+      } else {
+        purchases =
+            await _purchaseRepository
+                .getPurchasesByDateRange(
+          fromDate: _dateOnly(_customFromDate!),
+          toDate: _dateOnly(_customToDate!),
+        );
+      }
+    } else {
+      final range =
+          _getDateRange(_dateFilter);
+
+      purchases =
+          await _purchaseRepository
+              .getPurchasesByDateRange(
+        fromDate: _dateOnly(range.start),
+        toDate: _dateOnly(range.end),
+      );
+    }
 
     if (!mounted) return;
 
@@ -41,39 +93,126 @@ class _PurchaseHistoryScreenState
     });
   }
 
+  // ============================================================
+  // DATE HELPERS
+  // ============================================================
+
+  String _dateOnly(DateTime date) {
+    return DateFormat(
+      'yyyy-MM-dd',
+    ).format(date);
+  }
+
+  DateTimeRange _getDateRange(
+    PurchaseDateFilter filter,
+  ) {
+    final now = DateTime.now();
+
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+
+    switch (filter) {
+      case PurchaseDateFilter.today:
+        return DateTimeRange(
+          start: today,
+          end: today,
+        );
+
+      case PurchaseDateFilter.yesterday:
+        final yesterday =
+            today.subtract(
+          const Duration(days: 1),
+        );
+
+        return DateTimeRange(
+          start: yesterday,
+          end: yesterday,
+        );
+
+      case PurchaseDateFilter.thisWeek:
+        final start =
+            today.subtract(
+          Duration(
+            days: today.weekday - 1,
+          ),
+        );
+
+        return DateTimeRange(
+          start: start,
+          end: today,
+        );
+
+      case PurchaseDateFilter.thisMonth:
+        final start = DateTime(
+          today.year,
+          today.month,
+          1,
+        );
+
+        return DateTimeRange(
+          start: start,
+          end: today,
+        );
+
+      case PurchaseDateFilter.all:
+      case PurchaseDateFilter.custom:
+        return DateTimeRange(
+          start: today,
+          end: today,
+        );
+    }
+  }
+
   String _formatDate(String date) {
     return DateFormat(
       'dd MMM yyyy, hh:mm a',
-    ).format(DateTime.parse(date));
+    ).format(
+      DateTime.parse(date),
+    );
   }
 
-  double get totalPurchase => _purchases.fold(
+  // ============================================================
+  // KPI
+  // ============================================================
+
+  double get totalPurchase =>
+      _filteredPurchases.fold(
         0,
         (sum, item) =>
             sum + item.purchase.grandTotal,
       );
 
-  double get totalPaid => _purchases.fold(
+  double get totalPaid =>
+      _filteredPurchases.fold(
         0,
         (sum, item) =>
             sum + item.purchase.paid,
       );
 
-  double get totalDue => _purchases.fold(
+  double get totalDue =>
+      _filteredPurchases.fold(
         0,
         (sum, item) =>
             sum + item.purchase.due,
       );
 
   int get totalTransactions =>
-      _purchases.length;
+      _filteredPurchases.length;
+
+  // ============================================================
+  // SEARCH
+  // ============================================================
 
   List<PurchaseHistory> get _filteredPurchases {
     if (_search.trim().isEmpty) {
       return _purchases;
     }
 
-    final query = _search.trim().toLowerCase();
+    final query =
+        _search.trim().toLowerCase();
 
     return _purchases.where((item) {
       return item.supplierName
@@ -81,60 +220,175 @@ class _PurchaseHistoryScreenState
               .contains(query) ||
           item.purchase.id
               .toString()
-              .contains(_search.trim());
+              .contains(
+                _search.trim(),
+              );
     }).toList();
   }
+
+  // ============================================================
+  // DATE FILTER LABEL
+  // ============================================================
+
+  String get _dateFilterLabel {
+    switch (_dateFilter) {
+      case PurchaseDateFilter.all:
+        return "All";
+
+      case PurchaseDateFilter.today:
+        return "Today";
+
+      case PurchaseDateFilter.yesterday:
+        return "Yesterday";
+
+      case PurchaseDateFilter.thisWeek:
+        return "This Week";
+
+      case PurchaseDateFilter.thisMonth:
+        return "This Month";
+
+      case PurchaseDateFilter.custom:
+        if (_customFromDate != null &&
+            _customToDate != null) {
+          return "${DateFormat('dd MMM').format(_customFromDate!)}"
+              " - "
+              "${DateFormat('dd MMM').format(_customToDate!)}";
+        }
+
+        return "Custom";
+    }
+  }
+
+  // ============================================================
+  // CHANGE DATE FILTER
+  // ============================================================
+
+  Future<void> _changeDateFilter(
+    PurchaseDateFilter filter,
+  ) async {
+    if (filter ==
+        PurchaseDateFilter.custom) {
+      final now = DateTime.now();
+
+      final picked =
+          await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(
+          now.year + 1,
+          12,
+          31,
+        ),
+        initialDateRange:
+            _customFromDate != null &&
+                    _customToDate != null
+                ? DateTimeRange(
+                    start: _customFromDate!,
+                    end: _customToDate!,
+                  )
+                : DateTimeRange(
+                    start: DateTime(
+                      now.year,
+                      now.month,
+                      1,
+                    ),
+                    end: now,
+                  ),
+      );
+
+      if (picked == null) return;
+
+      setState(() {
+        _dateFilter =
+            PurchaseDateFilter.custom;
+        _customFromDate = picked.start;
+        _customToDate = picked.end;
+      });
+
+      await _loadPurchases();
+      return;
+    }
+
+    setState(() {
+      _dateFilter = filter;
+    });
+
+    await _loadPurchases();
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Purchase History"),
+        title:
+            const Text("Purchase History"),
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(),
+              child:
+                  CircularProgressIndicator(),
             )
           : SafeArea(
               child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
+                builder:
+                    (context, constraints) {
+                  final width =
+                      constraints.maxWidth;
 
                   final horizontalPadding =
-                      width >= 900 ? 24.0 : 12.0;
+                      width >= 900
+                          ? 24.0
+                          : 12.0;
 
                   return Column(
                     children: [
                       // ==================================================
                       // SEARCH
                       // ==================================================
+
                       Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          horizontalPadding,
-                          12,
+                        padding:
+                            EdgeInsets.fromLTRB(
                           horizontalPadding,
                           8,
+                          horizontalPadding,
+                          6,
                         ),
                         child: SizedBox(
-                          height: 48,
+                          height: 44,
                           child: TextField(
-                            decoration: InputDecoration(
+                            decoration:
+                                InputDecoration(
                               hintText:
                                   "Search supplier or ID...",
                               prefixIcon:
-                                  const Icon(Icons.search),
+                                  const Icon(
+                                Icons.search,
+                                size: 21,
+                              ),
                               contentPadding:
-                                  const EdgeInsets.symmetric(
+                                  const EdgeInsets
+                                      .symmetric(
                                 vertical: 0,
                               ),
-                              border: OutlineInputBorder(
+                              border:
+                                  OutlineInputBorder(
                                 borderRadius:
-                                    BorderRadius.circular(12),
+                                    BorderRadius
+                                        .circular(
+                                  12,
+                                ),
                               ),
                             ),
-                            onChanged: (value) {
+                            onChanged:
+                                (value) {
                               setState(() {
-                                _search = value;
+                                _search =
+                                    value;
                               });
                             },
                           ),
@@ -142,89 +396,220 @@ class _PurchaseHistoryScreenState
                       ),
 
                       // ==================================================
-                      // KPI - 2 x 2
+                      // DATE FILTERS
                       // ==================================================
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: horizontalPadding,
-                        ),
-                        child: GridView.count(
-                          shrinkWrap: true,
-                          physics:
-                              const NeverScrollableScrollPhysics(),
-                          crossAxisCount: 2,
-                          childAspectRatio:
-                              width >= 700 ? 4.2 : 2.65,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
+
+                      SizedBox(
+                        height: 40,
+                        child: ListView(
+                          scrollDirection:
+                              Axis.horizontal,
+                          padding:
+                              EdgeInsets.symmetric(
+                            horizontal:
+                                horizontalPadding,
+                          ),
                           children: [
-                            _kpiCard(
-                              "Purchase",
-                              "৳${totalPurchase.toStringAsFixed(0)}",
-                              Icons.shopping_cart,
-                              Colors.blue,
+                            _dateChip(
+                              "All",
+                              PurchaseDateFilter
+                                  .all,
                             ),
-                            _kpiCard(
-                              "Paid",
-                              "৳${totalPaid.toStringAsFixed(0)}",
-                              Icons.check_circle,
-                              Colors.green,
+                            _dateChip(
+                              "Today",
+                              PurchaseDateFilter
+                                  .today,
                             ),
-                            _kpiCard(
-                              "Due",
-                              "৳${totalDue.toStringAsFixed(0)}",
-                              Icons.warning,
-                              Colors.red,
+                            _dateChip(
+                              "Yesterday",
+                              PurchaseDateFilter
+                                  .yesterday,
                             ),
-                            _kpiCard(
-                              "Bills",
-                              totalTransactions.toString(),
-                              Icons.receipt_long,
-                              Colors.deepPurple,
+                            _dateChip(
+                              "This Week",
+                              PurchaseDateFilter
+                                  .thisWeek,
+                            ),
+                            _dateChip(
+                              "This Month",
+                              PurchaseDateFilter
+                                  .thisMonth,
+                            ),
+                            _dateChip(
+                              "Custom",
+                              PurchaseDateFilter
+                                  .custom,
                             ),
                           ],
                         ),
                       ),
 
-                      const SizedBox(height: 8),
+                      const SizedBox(
+                        height: 5,
+                      ),
+
+                      // ==================================================
+                      // COMPACT KPI CARDS - SALES STYLE
+                      // ==================================================
+
+                      Padding(
+  padding: EdgeInsets.symmetric(
+    horizontal: horizontalPadding,
+  ),
+  child: LayoutBuilder(
+    builder: (context, cardConstraints) {
+      final isPhone = cardConstraints.maxWidth < 600;
+
+      if (isPhone) {
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _kpiCard(
+                    "Purchase",
+                    "৳${totalPurchase.toStringAsFixed(0)}",
+                    Icons.shopping_cart,
+                    Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _kpiCard(
+                    "Paid",
+                    "৳${totalPaid.toStringAsFixed(0)}",
+                    Icons.check_circle,
+                    Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _kpiCard(
+                    "Due",
+                    "৳${totalDue.toStringAsFixed(0)}",
+                    Icons.warning,
+                    Colors.red,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _kpiCard(
+                    "Bills",
+                    totalTransactions.toString(),
+                    Icons.receipt_long,
+                    Colors.deepPurple,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+
+      return Row(
+        children: [
+          Expanded(
+            child: _kpiCard(
+              "Purchase",
+              "৳${totalPurchase.toStringAsFixed(0)}",
+              Icons.shopping_cart,
+              Colors.blue,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _kpiCard(
+              "Paid",
+              "৳${totalPaid.toStringAsFixed(0)}",
+              Icons.check_circle,
+              Colors.green,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _kpiCard(
+              "Due",
+              "৳${totalDue.toStringAsFixed(0)}",
+              Icons.warning,
+              Colors.red,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _kpiCard(
+              "Bills",
+              totalTransactions.toString(),
+              Icons.receipt_long,
+              Colors.deepPurple,
+            ),
+          ),
+        ],
+      );
+    },
+  ),
+),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
 
                       // ==================================================
                       // TITLE
                       // ==================================================
+
                       Padding(
-                        padding: EdgeInsets.fromLTRB(
+                        padding:
+                            EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          4,
+                          2,
                           horizontalPadding,
-                          6,
+                          5,
                         ),
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.shopping_cart,
-                              color: Colors.blue,
+                              Icons
+                                  .shopping_cart,
+                              color:
+                                  Colors.blue,
                               size: 20,
                             ),
-                            const SizedBox(width: 8),
-                            const Expanded(
+                            const SizedBox(
+                              width: 8,
+                            ),
+                            Expanded(
                               child: Text(
-                                "Purchase Records",
-                                style: TextStyle(
-                                  fontSize: 18,
+                                "Purchase Records • $_dateFilterLabel",
+                                maxLines: 1,
+                                overflow:
+                                    TextOverflow
+                                        .ellipsis,
+                                style:
+                                    const TextStyle(
+                                  fontSize: 17,
                                   fontWeight:
-                                      FontWeight.bold,
+                                      FontWeight
+                                          .bold,
                                 ),
                               ),
                             ),
-                            if (_filteredPurchases.isNotEmpty)
+                            if (_filteredPurchases
+                                .isNotEmpty)
                               Text(
                                 "${_filteredPurchases.length}",
-                                style: TextStyle(
-                                  color:
-                                      Colors.grey.shade600,
+                                style:
+                                    TextStyle(
+                                  color: Colors
+                                      .grey
+                                      .shade600,
                                   fontSize: 13,
                                   fontWeight:
-                                      FontWeight.w600,
+                                      FontWeight
+                                          .w600,
                                 ),
                               ),
                           ],
@@ -232,54 +617,69 @@ class _PurchaseHistoryScreenState
                       ),
 
                       // ==================================================
-                      // LIST AREA ONLY SCROLLS
+                      // PURCHASE LIST
                       // ==================================================
+
                       Expanded(
-                        child: RefreshIndicator(
-                          onRefresh: _loadPurchases,
-                          child: _filteredPurchases.isEmpty
-                              ? ListView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  children: const [
-                                    SizedBox(height: 160),
-                                    Center(
-                                      child: Text(
-                                        "No Purchase Found",
+                        child:
+                            RefreshIndicator(
+                          onRefresh:
+                              _loadPurchases,
+                          child:
+                              _filteredPurchases
+                                      .isEmpty
+                                  ? ListView(
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
+                                      children: const [
+                                        SizedBox(
+                                          height:
+                                              140,
+                                        ),
+                                        Center(
+                                          child:
+                                              Text(
+                                            "No Purchase Found",
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : ListView
+                                      .separated(
+                                      padding:
+                                          EdgeInsets
+                                              .fromLTRB(
+                                        horizontalPadding,
+                                        0,
+                                        horizontalPadding,
+                                        12,
                                       ),
+                                      itemCount:
+                                          _filteredPurchases
+                                              .length,
+                                      separatorBuilder:
+                                          (_, __) =>
+                                              const SizedBox(
+                                        height: 2,
+                                      ),
+                                      itemBuilder:
+                                          (context,
+                                              index) {
+                                        final history =
+                                            _filteredPurchases[
+                                                index];
+
+                                        final purchase =
+                                            history
+                                                .purchase;
+
+                                        return _purchaseCard(
+                                          context,
+                                          history,
+                                          purchase,
+                                        );
+                                      },
                                     ),
-                                  ],
-                                )
-                              : ListView.separated(
-                                  padding: EdgeInsets.fromLTRB(
-                                    horizontalPadding,
-                                    0,
-                                    horizontalPadding,
-                                    12,
-                                  ),
-                                  itemCount:
-                                      _filteredPurchases.length,
-                                  separatorBuilder:
-                                      (_, __) =>
-                                          const SizedBox(
-                                    height: 2,
-                                  ),
-                                  itemBuilder:
-                                      (context, index) {
-                                    final history =
-                                        _filteredPurchases[
-                                            index];
-
-                                    final purchase =
-                                        history.purchase;
-
-                                    return _purchaseCard(
-                                      context,
-                                      history,
-                                      purchase,
-                                    );
-                                  },
-                                ),
                         ),
                       ),
                     ],
@@ -290,34 +690,84 @@ class _PurchaseHistoryScreenState
     );
   }
 
+  // ============================================================
+  // DATE CHIP
+  // ============================================================
+
+  Widget _dateChip(
+    String label,
+    PurchaseDateFilter filter,
+  ) {
+    final selected =
+        _dateFilter == filter;
+
+    return Padding(
+      padding:
+          const EdgeInsets.only(
+        right: 7,
+      ),
+      child: ChoiceChip(
+        label: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selected
+                ? FontWeight.bold
+                : FontWeight.w500,
+          ),
+        ),
+        selected: selected,
+        onSelected: (_) {
+          _changeDateFilter(filter);
+        },
+        visualDensity:
+            VisualDensity.compact,
+        padding:
+            const EdgeInsets.symmetric(
+          horizontal: 7,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // PURCHASE CARD
+  // ============================================================
+
   Widget _purchaseCard(
     BuildContext context,
     PurchaseHistory history,
     dynamic purchase,
   ) {
     return Card(
-      margin: const EdgeInsets.symmetric(
+      margin:
+          const EdgeInsets.symmetric(
         vertical: 4,
       ),
       elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+      shape:
+          RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.circular(12),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius:
+            BorderRadius.circular(12),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) =>
                   PurchaseDetailsScreen(
-                purchaseId: purchase.id!,
+                purchaseId:
+                    purchase.id!,
               ),
             ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding:
+              const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment:
                 CrossAxisAlignment.start,
@@ -327,43 +777,63 @@ class _PurchaseHistoryScreenState
                   CircleAvatar(
                     radius: 18,
                     backgroundColor:
-                        Colors.orange.withOpacity(.15),
+                        Colors.orange
+                            .withOpacity(
+                      .15,
+                    ),
                     child: Text(
-                      purchase.id.toString(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange,
+                      purchase.id
+                          .toString(),
+                      style:
+                          const TextStyle(
+                        fontWeight:
+                            FontWeight
+                                .bold,
+                        color:
+                            Colors.orange,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(
+                    width: 10,
+                  ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          CrossAxisAlignment
+                              .start,
                       children: [
                         Text(
-                          history.supplierName,
+                          history
+                              .supplierName,
                           maxLines: 1,
                           overflow:
-                              TextOverflow.ellipsis,
-                          style: const TextStyle(
+                              TextOverflow
+                                  .ellipsis,
+                          style:
+                              const TextStyle(
                             fontSize: 16,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(
+                          height: 2,
+                        ),
                         Text(
                           _formatDate(
-                            purchase.purchaseDate,
+                            purchase
+                                .purchaseDate,
                           ),
                           maxLines: 1,
                           overflow:
-                              TextOverflow.ellipsis,
+                              TextOverflow
+                                  .ellipsis,
                           style: TextStyle(
-                            color:
-                                Colors.grey.shade600,
+                            color: Colors
+                                .grey
+                                .shade600,
                             fontSize: 12,
                           ),
                         ),
@@ -372,9 +842,9 @@ class _PurchaseHistoryScreenState
                   ),
                 ],
               ),
-
-              const SizedBox(height: 10),
-
+              const SizedBox(
+                height: 10,
+              ),
               Row(
                 children: [
                   Expanded(
@@ -407,6 +877,10 @@ class _PurchaseHistoryScreenState
     );
   }
 
+  // ============================================================
+  // AMOUNT COLUMN
+  // ============================================================
+
   Widget _amountColumn(
     String title,
     String value,
@@ -419,18 +893,23 @@ class _PurchaseHistoryScreenState
         Text(
           title,
           style: TextStyle(
-            color: Colors.grey.shade600,
+            color:
+                Colors.grey.shade600,
             fontSize: 11,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(
+          height: 2,
+        ),
         Text(
           value,
           maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          overflow:
+              TextOverflow.ellipsis,
           style: TextStyle(
             color: color,
-            fontWeight: FontWeight.bold,
+            fontWeight:
+                FontWeight.bold,
             fontSize: 14,
           ),
         ),
@@ -438,63 +917,65 @@ class _PurchaseHistoryScreenState
     );
   }
 
-  Widget _kpiCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
+  // ============================================================
+  // COMPACT KPI CARD
+  // ============================================================
+
+Widget _kpiCard(
+  String title,
+  String value,
+  IconData icon,
+  Color color,
+) {
+  return SizedBox(
+    height: 60,
+    child: Card(
       elevation: 1,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 8,
+          horizontal: 9,
+          vertical: 6,
         ),
         child: Row(
           children: [
             CircleAvatar(
-              radius: 18,
-              backgroundColor:
-                  color.withOpacity(.12),
+              radius: 15,
+              backgroundColor: color.withOpacity(.12),
               child: Icon(
                 icon,
                 color: color,
-                size: 18,
+                size: 16,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
             Expanded(
               child: Column(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    value,
-                    maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     title,
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
-                      color:
-                          Colors.grey.shade600,
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
                     ),
                   ),
                 ],
@@ -503,6 +984,7 @@ class _PurchaseHistoryScreenState
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

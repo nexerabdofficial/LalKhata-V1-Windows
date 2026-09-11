@@ -13,6 +13,9 @@ class RecordsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDesktop =
+        MediaQuery.of(context).size.width >= 900;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Records"),
@@ -28,13 +31,13 @@ class RecordsScreen extends StatelessWidget {
 
         mainAxisSpacing: 14,
 
-        childAspectRatio: 0.82,
+        // Reports screen-এর মতো card size
+        childAspectRatio:
+            isDesktop
+                ? 2.2
+                : 1.05,
 
         children: [
-
-          // =====================================================
-          // CUSTOMERS
-          // =====================================================
 
           _card(
             context,
@@ -45,10 +48,6 @@ class RecordsScreen extends StatelessWidget {
             const CustomerScreen(),
           ),
 
-          // =====================================================
-          // SUPPLIERS
-          // =====================================================
-
           _card(
             context,
             Icons.local_shipping,
@@ -57,10 +56,6 @@ class RecordsScreen extends StatelessWidget {
             Colors.orange,
             const SupplierScreen(),
           ),
-
-          // =====================================================
-          // ACCOUNTS
-          // =====================================================
 
           _card(
             context,
@@ -71,10 +66,6 @@ class RecordsScreen extends StatelessWidget {
             const AccountsScreen(),
           ),
 
-          // =====================================================
-          // PRODUCTS
-          // =====================================================
-
           _card(
             context,
             Icons.inventory_2,
@@ -83,10 +74,6 @@ class RecordsScreen extends StatelessWidget {
             Colors.green,
             const ProductScreen(),
           ),
-
-          // =====================================================
-          // SALES
-          // =====================================================
 
           _card(
             context,
@@ -97,10 +84,6 @@ class RecordsScreen extends StatelessWidget {
             const SalesScreen(),
           ),
 
-          // =====================================================
-          // PURCHASES
-          // =====================================================
-
           _card(
             context,
             Icons.shopping_bag,
@@ -109,10 +92,6 @@ class RecordsScreen extends StatelessWidget {
             Colors.teal,
             const PurchaseHistoryScreen(),
           ),
-
-          // =====================================================
-          // LOANS
-          // =====================================================
 
           _card(
             context,
@@ -126,10 +105,6 @@ class RecordsScreen extends StatelessWidget {
       ),
     );
   }
-
-  // ===========================================================
-  // RECORD CARD
-  // ===========================================================
 
   Widget _card(
     BuildContext context,
@@ -166,10 +141,6 @@ class RecordsScreen extends StatelessWidget {
 
             children: [
 
-              // -------------------------------------------------
-              // ICON
-              // -------------------------------------------------
-
               CircleAvatar(
                 radius: 28,
 
@@ -187,10 +158,6 @@ class RecordsScreen extends StatelessWidget {
                 height: 14,
               ),
 
-              // -------------------------------------------------
-              // TITLE
-              // -------------------------------------------------
-
               Text(
                 title,
 
@@ -205,10 +172,6 @@ class RecordsScreen extends StatelessWidget {
               const SizedBox(
                 height: 6,
               ),
-
-              // -------------------------------------------------
-              // SUBTITLE
-              // -------------------------------------------------
 
               Text(
                 subtitle,

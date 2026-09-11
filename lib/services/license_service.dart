@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -16,41 +18,72 @@ class LicenseDevice {
   final String deviceId;
   final String platform;
   final String deviceName;
+  final DateTime registeredAt;
+  final bool isCurrentDevice;
+
+  // Backward compatibility
   final String status;
-  final DateTime? activatedAt;
   final DateTime? lastVerifiedAt;
 
   const LicenseDevice({
     required this.deviceId,
     required this.platform,
     required this.deviceName,
-    required this.status,
-    this.activatedAt,
+    required this.registeredAt,
+    required this.isCurrentDevice,
+    this.status = '',
     this.lastVerifiedAt,
   });
 
   factory LicenseDevice.fromMap(
-    Map<String, dynamic> map,
-  ) {
+    Map<String, dynamic> map, {
+    String? currentDeviceId,
+  }) {
+    final deviceId =
+        map['device_id']?.toString() ?? '';
+
+    final registeredAt =
+        _parseDateTime(map['registered_at']) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+
+    final lastVerifiedAt =
+        _parseDateTime(map['last_verified_at']);
+
     return LicenseDevice(
-      deviceId: map['device_id']?.toString() ?? '',
-      platform: map['platform']?.toString() ?? '',
-      deviceName: map['device_name']?.toString() ?? '',
-      status: map['status']?.toString() ?? '',
-      activatedAt: _parseDateValue(map['activated_at']),
-      lastVerifiedAt: _parseDateValue(map['last_verified_at']),
+      deviceId: deviceId,
+      platform:
+          map['platform']?.toString() ?? '',
+      deviceName:
+          map['device_name']?.toString() ?? '',
+      registeredAt: registeredAt,
+      isCurrentDevice:
+          currentDeviceId != null &&
+          deviceId == currentDeviceId,
+      status:
+          map['status']?.toString() ?? '',
+      lastVerifiedAt: lastVerifiedAt,
     );
   }
-}
 
-DateTime? _parseDateValue(dynamic value) {
-  if (value == null) {
-    return null;
+  static DateTime? _parseDateTime(
+    dynamic value,
+  ) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is DateTime) {
+      return value;
+    }
+
+    final text = value.toString().trim();
+
+    if (text.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(text);
   }
-
-  return DateTime.tryParse(
-    value.toString(),
-  );
 }
 
 // ============================================================
@@ -67,13 +100,16 @@ class LicenseResult {
   final String? phone;
   final String? address;
 
+  // Customer business information
+  final String? email;
+  final String? tagline;
+
   final DateTime? activatedAt;
   final DateTime? expiresAt;
-
   final String? duration;
 
-  final int maxDevices;
-  final int usedDevices;
+  final int? maxDevices;
+  final int? usedDevices;
 
   final List<LicenseDevice> devices;
 
@@ -85,11 +121,13 @@ class LicenseResult {
     this.businessName,
     this.phone,
     this.address,
+    this.email,
+    this.tagline,
     this.activatedAt,
     this.expiresAt,
     this.duration,
-    this.maxDevices = 1,
-    this.usedDevices = 0,
+    this.maxDevices,
+    this.usedDevices,
     this.devices = const [],
   });
 }
@@ -104,34 +142,15 @@ class LicenseService {
   static final LicenseService instance =
       LicenseService._();
 
-  // ==========================================================
-  // PROFILE
-  // ==========================================================
+  final SupabaseClient _supabase =
+      Supabase.instance.client;
 
-  static bool get licenseEnabled =>
-      GABProfile.licenseEnabled;
-
-  // ==========================================================
-  // LOCAL STORAGE KEYS
-  // ==========================================================
-
-  static const String _activatedKey =
-      'nexera_license_activated';
+  // ============================================================
+  // LOCAL KEYS
+  // ============================================================
 
   static const String _customerCodeKey =
       'nexera_license_customer_code';
-
-  static const String _deviceIdKey =
-      'nexera_license_device_id';
-
-  static const String _expiresAtKey =
-      'nexera_license_expires_at';
-
-  static const String _activatedAtKey =
-      'nexera_license_activated_at';
-
-  static const String _lastVerifiedKey =
-      'nexera_license_last_verified';
 
   static const String _businessNameKey =
       'nexera_license_business_name';
@@ -142,540 +161,116 @@ class LicenseService {
   static const String _addressKey =
       'nexera_license_address';
 
+  static const String _emailKey =
+      'nexera_license_email';
+
+  static const String _taglineKey =
+      'nexera_license_tagline';
+
+  static const String _activatedAtKey =
+      'nexera_license_activated_at';
+
+  static const String _expiresAtKey =
+      'nexera_license_expires_at';
+
   static const String _durationKey =
       'nexera_license_duration';
 
   static const String _maxDevicesKey =
       'nexera_license_max_devices';
 
-  // ==========================================================
-  // LAST KNOWN ACTIVE DEVICE COUNT
-  // ==========================================================
-
   static const String _usedDevicesKey =
       'nexera_license_used_devices';
 
-  // ==========================================================
-  // SERVER VERIFICATION
-  // ==========================================================
+  static const String _devicesKey =
+      'nexera_license_devices';
 
-  static const int verificationIntervalDays = 7;
+  static const String _lastVerifiedAtKey =
+      'nexera_license_last_verified_at';
 
-  final SupabaseClient _supabase =
-      Supabase.instance.client;
+  // ============================================================
+  // CUSTOMER LOGO CACHE
+  // ============================================================
 
-  // ==========================================================
-  // SAVED CUSTOMER CODE
-  // ==========================================================
+  static const String _customerLogoPathKey =
+      'nexera_license_customer_logo_path';
 
-  static Future<String?> getSavedCustomerCode() async {
-    final prefs =
-        await SharedPreferences.getInstance();
+  static const String _customerLogoFileName =
+      'customer_logo';
 
-    final code =
-        prefs.getString(
-      _customerCodeKey,
-    );
+  // ============================================================
+  // DEVICE ID
+  // ============================================================
 
-    if (code == null ||
-        code.trim().isEmpty) {
-      return null;
-    }
-
-    return code.trim();
-  }
-
-  // ==========================================================
-  // ACTIVATE
-  // ==========================================================
-
-  Future<LicenseResult> activate({
-    String? customerCode,
-  }) async {
-    if (!licenseEnabled) {
-      return const LicenseResult(
-        success: true,
-        code: 'LICENSE_DISABLED',
-        message:
-            'License validation is disabled.',
-      );
-    }
+  Future<String> _getDeviceId() async {
+    final deviceInfo = DeviceInfoPlugin();
 
     try {
-      final code =
-          (customerCode ?? '').trim();
+      if (Platform.isLinux) {
+        final info = await deviceInfo.linuxInfo;
 
-      if (code.isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'INVALID_CUSTOMER_CODE',
-          message:
-              'Customer code is required.',
-        );
+        final machineId = info.machineId ?? '';
+
+        if (machineId.trim().isNotEmpty) {
+          return 'linux|${machineId.trim()}';
+        }
       }
 
-      final deviceId =
-          await _getDeviceId();
+      if (Platform.isWindows) {
+        final info = await deviceInfo.windowsInfo;
 
-      if (deviceId.trim().isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'DEVICE_ID_ERROR',
-          message:
-              'Unable to identify this device.',
-        );
+        final deviceId = info.deviceId.trim();
+
+        if (deviceId.isNotEmpty) {
+          return 'windows|$deviceId';
+        }
       }
 
-      return await _activateWithServer(
-        customerCode: code,
-        deviceId: deviceId,
-      );
+      if (Platform.isAndroid) {
+        final info = await deviceInfo.androidInfo;
+
+        final deviceId = info.id.trim();
+
+        if (deviceId.isNotEmpty) {
+          return 'android|$deviceId';
+        }
+      }
+
+      if (Platform.isIOS) {
+        final info = await deviceInfo.iosInfo;
+
+        final deviceId =
+            (info.identifierForVendor ?? '').trim();
+
+        if (deviceId.isNotEmpty) {
+          return 'ios|$deviceId';
+        }
+      }
+
+      if (Platform.isMacOS) {
+        final info = await deviceInfo.macOsInfo;
+
+        final deviceId =
+            (info.systemGUID ?? '').trim();
+
+        if (deviceId.isNotEmpty) {
+          return 'macos|$deviceId';
+        }
+      }
     } catch (e) {
-      return const LicenseResult(
-        success: false,
-        code: 'NETWORK_ERROR',
-        message:
-            'Unable to connect to the license server.',
+      debugPrint(
+        'Device ID error: $e',
       );
     }
+
+    return '';
   }
 
-  // ==========================================================
+  // ============================================================
   // VALIDATE
-  //
-  // Local cache is used only when the cached license
-  // is still valid.
-  //
-  // If local license is expired, we MUST contact
-  // Supabase again.
-  // ==========================================================
+  // ============================================================
 
   Future<LicenseResult> validate() async {
-    if (!licenseEnabled) {
-      return const LicenseResult(
-        success: true,
-        code: 'LICENSE_DISABLED',
-        message:
-            'License validation is disabled.',
-      );
-    }
-
-    try {
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      final deviceId =
-          await _getDeviceId();
-
-      if (deviceId.trim().isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'DEVICE_ID_ERROR',
-          message:
-              'Unable to identify this device.',
-        );
-      }
-
-      final savedCustomerCode =
-          prefs.getString(
-        _customerCodeKey,
-      );
-
-      // --------------------------------------------------------
-      // NO LOCAL LICENSE
-      // --------------------------------------------------------
-
-      if (savedCustomerCode == null ||
-          savedCustomerCode.trim().isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'LICENSE_NOT_ACTIVATED',
-          message:
-              'Please enter the customer code provided by NexEra IT BD.',
-        );
-      }
-
-      final customerCode =
-          savedCustomerCode.trim();
-
-      // --------------------------------------------------------
-      // FIRST CHECK LOCAL LICENSE
-      // --------------------------------------------------------
-
-      final localResult =
-          await _validateLocal(
-        prefs: prefs,
-        deviceId: deviceId,
-      );
-
-      // --------------------------------------------------------
-      // IMPORTANT:
-      //
-      // If localResult is ACTIVE,
-      // return it normally.
-      //
-      // But if localResult is EXPIRED,
-      // DO NOT return it immediately.
-      //
-      // We must check Supabase because admin may have
-      // extended the expiry date.
-      // --------------------------------------------------------
-
-      if (localResult != null) {
-        if (localResult.code !=
-            'LICENSE_EXPIRED') {
-          return localResult;
-        }
-      }
-
-      // --------------------------------------------------------
-      // SERVER VERIFICATION
-      // --------------------------------------------------------
-
-      return await _verifyWithServer(
-        prefs: prefs,
-        customerCode: customerCode,
-        deviceId: deviceId,
-      );
-    } catch (e) {
-      return const LicenseResult(
-        success: false,
-        code: 'NETWORK_ERROR',
-        message:
-            'Unable to verify the license.',
-      );
-    }
-  }
-
-  // ==========================================================
-  // SERVER ACTIVATION
-  // ==========================================================
-
-  Future<LicenseResult> _activateWithServer({
-    required String customerCode,
-    required String deviceId,
-  }) async {
-    try {
-      final response =
-          await _supabase.rpc(
-        'activate_license',
-        params: {
-          'p_customer_id': customerCode,
-          'p_device_id': deviceId,
-        },
-      );
-
-      final result =
-          _parseResponse(
-        response,
-        customerCode: customerCode,
-      );
-
-      if (!result.success) {
-        return result;
-      }
-
-      if (result.duration == null ||
-          result.duration!.trim().isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'INVALID_DURATION',
-          message:
-              'License server did not return a valid duration.',
-        );
-      }
-
-      if (result.duration != 'lifetime' &&
-          result.expiresAt == null) {
-        return const LicenseResult(
-          success: false,
-          code: 'INVALID_EXPIRY',
-          message:
-              'License server did not return a valid expiry date.',
-        );
-      }
-
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      await _saveLicenseLocally(
-        prefs: prefs,
-        customerCode: customerCode,
-        deviceId: deviceId,
-        businessName: result.businessName,
-        phone: result.phone,
-        address: result.address,
-        activatedAt: result.activatedAt,
-        expiresAt: result.expiresAt,
-        duration: result.duration!,
-        maxDevices: result.maxDevices,
-        usedDevices: result.usedDevices,
-      );
-
-      return result;
-    } catch (e) {
-      return const LicenseResult(
-        success: false,
-        code: 'NETWORK_ERROR',
-        message:
-            'Unable to connect to the license server.',
-      );
-    }
-  }
-
-  // ==========================================================
-  // SERVER VERIFICATION
-  //
-  // This ALWAYS calls Supabase.
-  // ==========================================================
-
-  Future<LicenseResult> _verifyWithServer({
-    required SharedPreferences prefs,
-    required String customerCode,
-    required String deviceId,
-  }) async {
-    try {
-      final response =
-          await _supabase.rpc(
-        'activate_license',
-        params: {
-          'p_customer_id': customerCode,
-          'p_device_id': deviceId,
-        },
-      );
-
-      final result =
-          _parseResponse(
-        response,
-        customerCode: customerCode,
-      );
-
-      // --------------------------------------------------------
-      // SUCCESS
-      // --------------------------------------------------------
-
-      if (result.success) {
-        if (result.duration == null ||
-            result.duration!.trim().isEmpty) {
-          return const LicenseResult(
-            success: false,
-            code: 'INVALID_DURATION',
-            message:
-                'License server returned an invalid duration.',
-          );
-        }
-
-        if (result.duration != 'lifetime' &&
-            result.expiresAt == null) {
-          return const LicenseResult(
-            success: false,
-            code: 'INVALID_EXPIRY',
-            message:
-                'License server returned an invalid expiry.',
-          );
-        }
-
-        // ------------------------------------------------------
-        // SAVE FRESH SERVER DATA
-        // ------------------------------------------------------
-
-        await _saveLicenseLocally(
-          prefs: prefs,
-          customerCode: customerCode,
-          deviceId: deviceId,
-          businessName: result.businessName,
-          phone: result.phone,
-          address: result.address,
-          activatedAt: result.activatedAt,
-          expiresAt: result.expiresAt,
-          duration: result.duration!,
-          maxDevices: result.maxDevices,
-          usedDevices: result.usedDevices,
-        );
-
-        return result;
-      }
-
-      // --------------------------------------------------------
-      // SERVER SAYS LICENSE EXPIRED
-      // --------------------------------------------------------
-      //
-      // IMPORTANT:
-      //
-      // Server expiry MUST be saved locally.
-      //
-      // Otherwise an old future local expiry can remain active
-      // and the next validate() call will return LOCAL_ACTIVE.
-      //
-      // Example:
-      //
-      // OLD LOCAL EXPIRY:
-      // 2026-09-10
-      //
-      // SERVER:
-      // LICENSE_EXPIRED
-      // expires_at = 2026-09-03
-      //
-      // We save the server expiry locally.
-      // --------------------------------------------------------
-
-      if (result.code == 'LICENSE_EXPIRED') {
-        final serverDuration =
-            result.duration;
-
-        // ------------------------------------------------------
-        // Save server data even though license is expired.
-        //
-        // This is intentional.
-        // We want local cache to know the real server expiry.
-        // ------------------------------------------------------
-
-        if (serverDuration != null &&
-            serverDuration.trim().isNotEmpty) {
-          await _saveLicenseLocally(
-            prefs: prefs,
-            customerCode: customerCode,
-            deviceId: deviceId,
-            businessName: result.businessName,
-            phone: result.phone,
-            address: result.address,
-            activatedAt: result.activatedAt,
-            expiresAt: result.expiresAt,
-            duration: serverDuration,
-            maxDevices: result.maxDevices,
-            usedDevices: result.usedDevices,
-          );
-        } else {
-          // ----------------------------------------------------
-          // Defensive fallback:
-          //
-          // If server somehow does not return duration,
-          // at least save expiry and verification time.
-          // ----------------------------------------------------
-
-          if (result.expiresAt != null) {
-            await prefs.setString(
-              _expiresAtKey,
-              result.expiresAt!.toIso8601String(),
-            );
-          }
-
-          await prefs.setString(
-            _lastVerifiedKey,
-            DateTime.now().toIso8601String(),
-          );
-        }
-
-        return result;
-      }
-
-      // --------------------------------------------------------
-      // OTHER SERVER ERRORS
-      // --------------------------------------------------------
-
-      return result;
-    } catch (e) {
-      // --------------------------------------------------------
-      // IMPORTANT:
-      //
-      // If the license is already expired locally,
-      // NEVER allow offline fallback to make it active.
-      // --------------------------------------------------------
-
-      final localExpiry =
-          prefs.getString(
-        _expiresAtKey,
-      );
-
-      if (_isLocallyExpired(
-        localExpiry,
-      )) {
-        return LicenseResult(
-          success: false,
-          code: 'LICENSE_EXPIRED',
-          message:
-              'Your license has expired. Please connect to the internet and try again.',
-          customerCode: customerCode,
-          businessName:
-              prefs.getString(
-            _businessNameKey,
-          ),
-          phone:
-              prefs.getString(
-            _phoneKey,
-          ),
-          address:
-              prefs.getString(
-            _addressKey,
-          ),
-          activatedAt: _parseDate(
-            prefs.getString(
-              _activatedAtKey,
-            ),
-          ),
-          expiresAt: _parseDate(
-            localExpiry,
-          ),
-          duration:
-              prefs.getString(
-            _durationKey,
-          ),
-          maxDevices:
-              prefs.getInt(
-                    _maxDevicesKey,
-                  ) ??
-                  1,
-          usedDevices:
-              prefs.getInt(
-                    _usedDevicesKey,
-                  ) ??
-                  1,
-        );
-      }
-
-      // --------------------------------------------------------
-      // NON-EXPIRED LICENSE
-      //
-      // Offline fallback is allowed.
-      // --------------------------------------------------------
-
-      final offline =
-          await _offlineValidation(
-        prefs: prefs,
-        deviceId: deviceId,
-      );
-
-      if (offline != null) {
-        return offline;
-      }
-
-      return const LicenseResult(
-        success: false,
-        code: 'NETWORK_ERROR',
-        message:
-            'Unable to connect to the license server.',
-      );
-    }
-  }
-
-  // ==========================================================
-  // FORCE SERVER VERIFICATION
-  //
-  // Used by License & Devices screen / Try Again.
-  //
-  // NEVER uses local cache.
-  // ==========================================================
-
-  Future<LicenseResult> verifyNow() async {
-    if (!licenseEnabled) {
-      return const LicenseResult(
-        success: true,
-        code: 'LICENSE_DISABLED',
-        message:
-            'License validation is disabled.',
-      );
-    }
-
     try {
       final prefs =
           await SharedPreferences.getInstance();
@@ -689,773 +284,1174 @@ class LicenseService {
           customerCode.trim().isEmpty) {
         return const LicenseResult(
           success: false,
-          code: 'LICENSE_NOT_ACTIVATED',
+          code: 'NOT_ACTIVATED',
           message:
-              'This installation has not been activated.',
+              'License is not activated.',
+        );
+      }
+
+      final lastVerified =
+          prefs.getString(
+        _lastVerifiedAtKey,
+      );
+
+      if (lastVerified == null ||
+          lastVerified.trim().isEmpty) {
+        return await _verifyWithServer();
+      }
+
+      final lastVerifiedDate =
+          DateTime.tryParse(lastVerified);
+
+      if (lastVerifiedDate == null) {
+        return await _verifyWithServer();
+      }
+
+      final difference =
+          DateTime.now()
+              .difference(lastVerifiedDate);
+
+      // Server verification interval = 7 days
+      if (difference.inDays >= 7) {
+        return await _verifyWithServer();
+      }
+
+      return _offlineValidation(prefs);
+    } catch (e) {
+      return LicenseResult(
+        success: false,
+        code:
+            'LICENSE_VERIFICATION_FAILED',
+        message: e.toString(),
+      );
+    }
+  }
+
+  // ============================================================
+  // VERIFY NOW
+  // ============================================================
+
+  Future<LicenseResult> verifyNow() async {
+    return await _verifyWithServer();
+  }
+
+  // ============================================================
+  // ACTIVATE
+  // ============================================================
+
+  Future<LicenseResult> activate({
+    required String customerCode,
+  }) async {
+    final code =
+        customerCode.trim();
+
+    if (code.isEmpty) {
+      return const LicenseResult(
+        success: false,
+        code:
+            'INVALID_CUSTOMER_CODE',
+        message:
+            'Customer code is required.',
+      );
+    }
+
+    return _activateWithServer(code);
+  }
+
+  // ============================================================
+  // SERVER ACTIVATION
+  // ============================================================
+
+  Future<LicenseResult>
+      _activateWithServer(
+    String customerCode,
+  ) async {
+    try {
+      final deviceId =
+          await _getDeviceId();
+
+      final response =
+          await _supabase.rpc(
+        'activate_license',
+        params: {
+          'p_customer_id':
+              customerCode,
+          'p_device_id':
+              deviceId,
+        },
+      );
+
+      final result =
+          _parseResponse(
+        response,
+        currentDeviceId:
+            deviceId,
+      );
+
+      if (!result.success) {
+        return result;
+      }
+
+      await _saveLicenseLocally(
+        result,
+        customerCode,
+      );
+
+      // ========================================================
+      // CUSTOMER LOGO
+      // ========================================================
+
+      await _refreshCustomerLogo(
+        customerCode,
+      );
+
+      return result;
+    } catch (e) {
+      return LicenseResult(
+        success: false,
+        code: 'ACTIVATION_ERROR',
+        message: e.toString(),
+      );
+    }
+  }
+
+  // ============================================================
+  // SERVER VERIFICATION
+  // ============================================================
+
+  Future<LicenseResult>
+      _verifyWithServer() async {
+    try {
+      final prefs =
+          await SharedPreferences.getInstance();
+
+      final customerCode =
+          prefs.getString(
+        _customerCodeKey,
+      );
+
+      if (customerCode == null ||
+          customerCode.trim().isEmpty) {
+        return const LicenseResult(
+          success: false,
+          code: 'NOT_ACTIVATED',
+          message:
+              'License is not activated.',
         );
       }
 
       final deviceId =
           await _getDeviceId();
 
-      if (deviceId.trim().isEmpty) {
-        return const LicenseResult(
-          success: false,
-          code: 'DEVICE_ID_ERROR',
-          message:
-              'Unable to identify this device.',
-        );
-      }
+      final response =
+          await _supabase.rpc(
+        'activate_license',
+        params: {
+          'p_customer_id':
+              customerCode.trim(),
+          'p_device_id':
+              deviceId,
+        },
+      );
 
       final result =
-          await _verifyWithServer(
-        prefs: prefs,
-        customerCode:
-            customerCode.trim(),
-        deviceId: deviceId,
+          _parseResponse(
+        response,
+        currentDeviceId:
+            deviceId,
+      );
+
+      if (!result.success) {
+        return result;
+      }
+
+      await _saveLicenseLocally(
+        result,
+        customerCode.trim(),
+      );
+
+      // ========================================================
+      // CUSTOMER LOGO
+      // ========================================================
+
+      await _refreshCustomerLogo(
+        customerCode.trim(),
       );
 
       return result;
     } catch (e) {
-      return const LicenseResult(
-        success: false,
-        code: 'NETWORK_ERROR',
-        message:
-            'Unable to connect to the license server.',
+      debugPrint(
+        'Server license verification failed: $e',
+      );
+
+      final prefs =
+          await SharedPreferences
+              .getInstance();
+
+      return _offlineValidation(
+        prefs,
       );
     }
   }
 
-  // ==========================================================
-  // RENEW
-  // ==========================================================
+  // ============================================================
+  // PARSE SERVER RESPONSE
+  // ============================================================
 
-  Future<LicenseResult> renew(
-    String duration,
+  LicenseResult _parseResponse(
+    dynamic response, {
+    String? currentDeviceId,
+  }) {
+    try {
+      if (response == null) {
+        return const LicenseResult(
+          success: false,
+          code: 'LICENSE_NOT_FOUND',
+          message:
+              'No license response received.',
+        );
+      }
+
+      Map<String, dynamic> map;
+
+      if (response
+          is Map<String, dynamic>) {
+        map = response;
+      } else if (response is Map) {
+        map =
+            Map<String, dynamic>.from(
+          response,
+        );
+      } else if (response is String) {
+        final decoded =
+            jsonDecode(response);
+
+        map =
+            Map<String, dynamic>.from(
+          decoded as Map,
+        );
+      } else {
+        return const LicenseResult(
+          success: false,
+          code:
+              'INVALID_LICENSE_RESPONSE',
+          message:
+              'Invalid license response.',
+        );
+      }
+
+      final success =
+          map['success'] == true;
+
+      final code =
+          map['code']?.toString() ??
+              (success
+                  ? 'LICENSE_ACTIVE'
+                  : 'LICENSE_NOT_FOUND');
+
+      final message =
+          map['message']?.toString() ??
+              (success
+                  ? 'License is active.'
+                  : 'License verification failed.');
+
+      final rawDevices =
+          map['devices'];
+
+      final devices =
+          <LicenseDevice>[];
+
+      if (rawDevices is List) {
+        for (final item
+            in rawDevices) {
+          if (item is Map) {
+            devices.add(
+              LicenseDevice.fromMap(
+                Map<String, dynamic>.from(
+                  item,
+                ),
+                currentDeviceId:
+                    currentDeviceId,
+              ),
+            );
+          }
+        }
+      }
+
+      return LicenseResult(
+        success: success,
+        code: code,
+        message: message,
+        customerCode:
+            map['customer_code']
+                ?.toString(),
+        businessName:
+            map['business_name']
+                ?.toString(),
+        phone:
+            map['phone']?.toString(),
+        address:
+            map['address']?.toString(),
+
+        // ======================================================
+        // CUSTOMER BUSINESS INFORMATION
+        // ======================================================
+        email:
+            map['email']?.toString(),
+        tagline:
+            map['tagline']?.toString(),
+
+        activatedAt:
+            _parseDateTime(
+          map['activated_at'],
+        ),
+        expiresAt:
+            _parseDateTime(
+          map['expires_at'],
+        ),
+        duration:
+            map['duration']?.toString(),
+        maxDevices:
+            _toInt(
+          map['max_devices'],
+        ),
+        usedDevices:
+            _toInt(
+          map['used_devices'],
+        ),
+        devices: devices,
+      );
+    } catch (e) {
+      return LicenseResult(
+        success: false,
+        code:
+            'INVALID_LICENSE_RESPONSE',
+        message: e.toString(),
+      );
+    }
+  }
+
+  // ============================================================
+  // SAVE LOCAL LICENSE
+  // ============================================================
+
+  Future<void> _saveLicenseLocally(
+    LicenseResult result,
+    String customerCode,
   ) async {
-    return const LicenseResult(
-      success: false,
-      code: 'RENEWAL_NOT_AVAILABLE',
-      message:
-          'License renewal must be authorized by NexEra IT BD.',
-    );
-  }
+    final prefs =
+        await SharedPreferences
+            .getInstance();
 
-  // ==========================================================
-  // LOCAL VALIDATION
-  //
-  // Returns local result when possible.
-  //
-  // IMPORTANT:
-  // Expired is returned specifically so validate()
-  // can force a server check.
-  // ==========================================================
-
-  Future<LicenseResult?> _validateLocal({
-    required SharedPreferences prefs,
-    required String deviceId,
-  }) async {
-    final activated =
-        prefs.getBool(
-              _activatedKey,
-            ) ??
-            false;
-
-    final savedCustomerCode =
-        prefs.getString(
+    await prefs.setString(
       _customerCodeKey,
+      customerCode.trim(),
     );
 
-    final savedDeviceId =
-        prefs.getString(
-      _deviceIdKey,
-    );
-
-    final expiresAtString =
-        prefs.getString(
-      _expiresAtKey,
-    );
-
-    final activatedAtString =
-        prefs.getString(
-      _activatedAtKey,
-    );
-
-    final businessName =
-        prefs.getString(
-      _businessNameKey,
-    );
-
-    final phone =
-        prefs.getString(
-      _phoneKey,
-    );
-
-    final address =
-        prefs.getString(
-      _addressKey,
-    );
-
-    final duration =
-        prefs.getString(
-      _durationKey,
-    );
-
-    final maxDevices =
-        prefs.getInt(
-              _maxDevicesKey,
-            ) ??
-            1;
-
-    final usedDevices =
-        prefs.getInt(
-              _usedDevicesKey,
-            ) ??
-            1;
-
-    // --------------------------------------------------------
-    // NOT ACTIVATED
-    // --------------------------------------------------------
-
-    if (!activated ||
-        savedCustomerCode == null ||
-        savedCustomerCode.trim().isEmpty ||
-        savedDeviceId == null ||
-        savedDeviceId.trim().isEmpty) {
-      return const LicenseResult(
-        success: false,
-        code: 'LICENSE_NOT_ACTIVATED',
-        message:
-            'This installation has not been activated.',
+    if (result.businessName != null) {
+      await prefs.setString(
+        _businessNameKey,
+        result.businessName!,
       );
     }
 
-    // --------------------------------------------------------
-    // DEVICE MISMATCH
-    // --------------------------------------------------------
-
-    if (savedDeviceId != deviceId) {
-      return LicenseResult(
-        success: false,
-        code: 'DEVICE_MISMATCH',
-        message:
-            'This license is activated on another device.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            _parseDate(
-          expiresAtString,
-        ),
-        duration: duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.phone != null) {
+      await prefs.setString(
+        _phoneKey,
+        result.phone!,
       );
     }
 
-    // --------------------------------------------------------
-    // LIFETIME
-    // --------------------------------------------------------
-
-    if (duration == 'lifetime' &&
-        (expiresAtString == null ||
-            expiresAtString.trim().isEmpty)) {
-      return LicenseResult(
-        success: true,
-        code: 'LOCAL_ACTIVE',
-        message:
-            'Lifetime license is active.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt: null,
-        duration: 'lifetime',
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.address != null) {
+      await prefs.setString(
+        _addressKey,
+        result.address!,
       );
     }
 
-    // --------------------------------------------------------
-    // NO EXPIRY DATE
-    //
-    // Keep compatibility with older lifetime records.
-    // --------------------------------------------------------
+    // ==========================================================
+    // EMAIL
+    // ==========================================================
 
-    if (expiresAtString == null ||
-        expiresAtString.trim().isEmpty) {
-      return LicenseResult(
-        success: true,
-        code: 'LOCAL_ACTIVE',
-        message:
-            'Lifetime license is active.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt: null,
-        duration:
-            duration ?? 'lifetime',
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.email != null) {
+      final email =
+          result.email!.trim();
+
+      if (email.isNotEmpty) {
+        await prefs.setString(
+          _emailKey,
+          email,
+        );
+      } else {
+        await prefs.remove(
+          _emailKey,
+        );
+      }
+    }
+
+    // ==========================================================
+    // TAGLINE
+    // ==========================================================
+
+    if (result.tagline != null) {
+      final tagline =
+          result.tagline!.trim();
+
+      if (tagline.isNotEmpty) {
+        await prefs.setString(
+          _taglineKey,
+          tagline,
+        );
+      } else {
+        await prefs.remove(
+          _taglineKey,
+        );
+      }
+    }
+
+    if (result.activatedAt != null) {
+      await prefs.setString(
+        _activatedAtKey,
+        result.activatedAt!
+            .toIso8601String(),
       );
     }
 
-    final expiresAt =
-        DateTime.tryParse(
-      expiresAtString,
-    );
-
-    // Invalid expiry means local cache cannot be trusted.
-    if (expiresAt == null) {
-      return null;
-    }
-
-    // --------------------------------------------------------
-    // EXPIRED
-    //
-    // DO NOT treat this as final.
-    //
-    // validate() will force server verification.
-    // --------------------------------------------------------
-
-    if (!DateTime.now().isBefore(
-      expiresAt,
-    )) {
-      return LicenseResult(
-        success: false,
-        code: 'LICENSE_EXPIRED',
-        message:
-            'Your license has expired. Checking server for updated license...',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            expiresAt,
-        duration:
-            duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.expiresAt != null) {
+      await prefs.setString(
+        _expiresAtKey,
+        result.expiresAt!
+            .toIso8601String(),
       );
     }
 
-    // --------------------------------------------------------
-    // SERVER VERIFICATION INTERVAL
-    // --------------------------------------------------------
-
-    final lastVerifiedString =
-        prefs.getString(
-      _lastVerifiedKey,
-    );
-
-    if (lastVerifiedString == null ||
-        lastVerifiedString.trim().isEmpty) {
-      return LicenseResult(
-        success: true,
-        code: 'LOCAL_ACTIVE',
-        message:
-            'License is active.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            expiresAt,
-        duration:
-            duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.duration != null) {
+      await prefs.setString(
+        _durationKey,
+        result.duration!,
       );
     }
 
-    final lastVerified =
-        DateTime.tryParse(
-      lastVerifiedString,
-    );
-
-    if (lastVerified == null) {
-      return LicenseResult(
-        success: true,
-        code: 'LOCAL_ACTIVE',
-        message:
-            'License is active.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            expiresAt,
-        duration:
-            duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
+    if (result.maxDevices != null) {
+      await prefs.setInt(
+        _maxDevicesKey,
+        result.maxDevices!,
       );
     }
 
-    final verificationDue =
-        DateTime.now().isAfter(
-      lastVerified.add(
-        const Duration(
-          days:
-              verificationIntervalDays,
-        ),
+    if (result.usedDevices != null) {
+      await prefs.setInt(
+        _usedDevicesKey,
+        result.usedDevices!,
+      );
+    }
+
+    final devicesJson =
+        result.devices.map(
+      (device) => {
+        'device_id':
+            device.deviceId,
+        'platform':
+            device.platform,
+        'device_name':
+            device.deviceName,
+        'registered_at':
+            device.registeredAt
+                .toIso8601String(),
+        'status':
+            device.status,
+        'last_verified_at':
+            device.lastVerifiedAt
+                ?.toIso8601String(),
+      },
+    ).toList();
+
+    await prefs.setString(
+      _devicesKey,
+      jsonEncode(
+        devicesJson,
       ),
     );
 
-    if (!verificationDue) {
-      return LicenseResult(
-        success: true,
-        code: 'LOCAL_ACTIVE',
-        message:
-            'License is active.',
-        customerCode:
-            savedCustomerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            expiresAt,
-        duration:
-            duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
-      );
-    }
+    await prefs.setString(
+      _lastVerifiedAtKey,
+      DateTime.now()
+          .toIso8601String(),
+    );
 
-    // Server verification required.
-    return null;
+    // ==========================================================
+    // UPDATE GAB BRANDING CACHE
+    // ==========================================================
+
+    GABBranding.updateCache(
+      businessName:
+          result.businessName,
+      phone:
+          result.phone,
+      address:
+          result.address,
+      email:
+          result.email,
+      tagline:
+          result.tagline,
+    );
   }
 
-  // ==========================================================
+  // ============================================================
   // OFFLINE VALIDATION
-  // ==========================================================
+  // ============================================================
 
-  Future<LicenseResult?> _offlineValidation({
-    required SharedPreferences prefs,
-    required String deviceId,
-  }) async {
-    final activated =
-        prefs.getBool(
-              _activatedKey,
-            ) ??
-            false;
-
+  LicenseResult _offlineValidation(
+    SharedPreferences prefs,
+  ) {
     final customerCode =
         prefs.getString(
       _customerCodeKey,
     );
 
-    final savedDeviceId =
-        prefs.getString(
-      _deviceIdKey,
-    );
+    if (customerCode == null ||
+        customerCode.trim().isEmpty) {
+      return const LicenseResult(
+        success: false,
+        code: 'NOT_ACTIVATED',
+        message:
+            'License is not activated.',
+      );
+    }
 
     final expiresAtString =
         prefs.getString(
       _expiresAtKey,
     );
 
-    final activatedAtString =
-        prefs.getString(
-      _activatedAtKey,
-    );
-
-    final businessName =
-        prefs.getString(
-      _businessNameKey,
-    );
-
-    final phone =
-        prefs.getString(
-      _phoneKey,
-    );
-
-    final address =
-        prefs.getString(
-      _addressKey,
-    );
-
-    final duration =
-        prefs.getString(
-      _durationKey,
-    );
-
-    final maxDevices =
-        prefs.getInt(
-              _maxDevicesKey,
-            ) ??
-            1;
-
-    final usedDevices =
-        prefs.getInt(
-              _usedDevicesKey,
-            ) ??
-            1;
-
-    if (!activated ||
-        customerCode == null ||
-        customerCode.trim().isEmpty ||
-        savedDeviceId == null ||
-        savedDeviceId.trim().isEmpty) {
-      return null;
-    }
-
-    // --------------------------------------------------------
-    // DEVICE
-    // --------------------------------------------------------
-
-    if (savedDeviceId != deviceId) {
-      return LicenseResult(
-        success: false,
-        code: 'DEVICE_MISMATCH',
-        message:
-            'This license is activated on another device.',
-        customerCode:
-            customerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt:
-            _parseDate(
-          expiresAtString,
-        ),
-        duration:
-            duration,
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
-      );
-    }
-
-    // --------------------------------------------------------
-    // LIFETIME
-    // --------------------------------------------------------
-
-    if (expiresAtString == null ||
-        expiresAtString.trim().isEmpty) {
-      return LicenseResult(
-        success: true,
-        code: 'OFFLINE_ACTIVE',
-        message:
-            'Lifetime license verified locally.',
-        customerCode:
-            customerCode,
-        businessName:
-            businessName,
-        phone: phone,
-        address: address,
-        activatedAt:
-            _parseDate(
-          activatedAtString,
-        ),
-        expiresAt: null,
-        duration:
-            duration ?? 'lifetime',
-        maxDevices:
-            maxDevices,
-        usedDevices:
-            usedDevices,
-      );
-    }
-
     final expiresAt =
-        DateTime.tryParse(
+        _parseDateTime(
       expiresAtString,
     );
 
-    if (expiresAt == null) {
-      return null;
-    }
-
-    // --------------------------------------------------------
-    // EXPIRED
-    //
-    // Never allow expired license offline.
-    // --------------------------------------------------------
-
-    if (!DateTime.now().isBefore(
-      expiresAt,
-    )) {
+    if (expiresAt != null &&
+        DateTime.now()
+            .isAfter(expiresAt)) {
       return LicenseResult(
         success: false,
         code: 'LICENSE_EXPIRED',
         message:
-            'Your license has expired. Please connect to the internet and try again.',
+            'License has expired.',
         customerCode:
             customerCode,
         businessName:
-            businessName,
-        phone: phone,
+            prefs.getString(
+          _businessNameKey,
+        ),
+        phone:
+            prefs.getString(
+          _phoneKey,
+        ),
         address:
-            address,
+            prefs.getString(
+          _addressKey,
+        ),
+        email:
+            prefs.getString(
+          _emailKey,
+        ),
+        tagline:
+            prefs.getString(
+          _taglineKey,
+        ),
         activatedAt:
-            _parseDate(
-          activatedAtString,
+            _parseDateTime(
+          prefs.getString(
+            _activatedAtKey,
+          ),
         ),
         expiresAt:
             expiresAt,
         duration:
-            duration,
+            prefs.getString(
+          _durationKey,
+        ),
         maxDevices:
-            maxDevices,
+            prefs.getInt(
+          _maxDevicesKey,
+        ),
         usedDevices:
-            usedDevices,
+            prefs.getInt(
+          _usedDevicesKey,
+        ),
+        devices:
+            _loadLocalDevices(
+          prefs,
+        ),
       );
     }
 
-    // --------------------------------------------------------
-    // ACTIVE OFFLINE
-    // --------------------------------------------------------
-
     return LicenseResult(
       success: true,
-      code: 'OFFLINE_ACTIVE',
+      code: 'LICENSE_ACTIVE',
       message:
-          'License verified locally.',
+          'License is active.',
       customerCode:
           customerCode,
       businessName:
-          businessName,
-      phone: phone,
+          prefs.getString(
+        _businessNameKey,
+      ),
+      phone:
+          prefs.getString(
+        _phoneKey,
+      ),
       address:
-          address,
+          prefs.getString(
+        _addressKey,
+      ),
+      email:
+          prefs.getString(
+        _emailKey,
+      ),
+      tagline:
+          prefs.getString(
+        _taglineKey,
+      ),
       activatedAt:
-          _parseDate(
-        activatedAtString,
+          _parseDateTime(
+        prefs.getString(
+          _activatedAtKey,
+        ),
       ),
       expiresAt:
           expiresAt,
       duration:
-          duration,
+          prefs.getString(
+        _durationKey,
+      ),
       maxDevices:
-          maxDevices,
+          prefs.getInt(
+        _maxDevicesKey,
+      ),
       usedDevices:
-          usedDevices,
+          prefs.getInt(
+        _usedDevicesKey,
+      ),
+      devices:
+          _loadLocalDevices(
+        prefs,
+      ),
     );
   }
 
-  // ==========================================================
-  // SAVE LOCAL LICENSE
-  // ==========================================================
+  // ============================================================
+  // LOAD LOCAL DEVICES
+  // ============================================================
 
-  Future<void> _saveLicenseLocally({
-    required SharedPreferences prefs,
-    required String customerCode,
-    required String deviceId,
-    required String? businessName,
-    required String? phone,
-    required String? address,
-    required DateTime? activatedAt,
-    required DateTime? expiresAt,
-    required String duration,
-    required int maxDevices,
-    required int usedDevices,
-  }) async {
-    await prefs.setBool(
-      _activatedKey,
-      true,
-    );
-
-    await prefs.setString(
-      _customerCodeKey,
-      customerCode,
-    );
-
-    await prefs.setString(
-      _deviceIdKey,
-      deviceId,
-    );
-
-    await prefs.setString(
-      _lastVerifiedKey,
-      DateTime.now().toIso8601String(),
-    );
-
-    await prefs.setString(
-      _durationKey,
-      duration,
-    );
-
-    await prefs.setInt(
-      _maxDevicesKey,
-      maxDevices,
-    );
-
-    await prefs.setInt(
-      _usedDevicesKey,
-      usedDevices,
-    );
-
-    // --------------------------------------------------------
-    // ACTIVATED AT
-    // --------------------------------------------------------
-
-    if (activatedAt != null) {
-      await prefs.setString(
-        _activatedAtKey,
-        activatedAt.toIso8601String(),
+  List<LicenseDevice>
+      _loadLocalDevices(
+    SharedPreferences prefs,
+  ) {
+    try {
+      final raw =
+          prefs.getString(
+        _devicesKey,
       );
-    } else {
-      await prefs.remove(
-        _activatedAtKey,
-      );
+
+      if (raw == null ||
+          raw.trim().isEmpty) {
+        return [];
+      }
+
+      final decoded =
+          jsonDecode(raw);
+
+      if (decoded is! List) {
+        return [];
+      }
+
+      return decoded
+          .whereType<Map>()
+          .map(
+            (item) =>
+                LicenseDevice.fromMap(
+              Map<String, dynamic>.from(
+                item,
+              ),
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return [];
     }
-
-    // --------------------------------------------------------
-    // EXPIRES AT
-    // --------------------------------------------------------
-
-    if (expiresAt != null) {
-      await prefs.setString(
-        _expiresAtKey,
-        expiresAt.toIso8601String(),
-      );
-    } else {
-      await prefs.remove(
-        _expiresAtKey,
-      );
-    }
-
-    // --------------------------------------------------------
-    // BUSINESS NAME
-    // --------------------------------------------------------
-
-    if (businessName != null &&
-        businessName.trim().isNotEmpty) {
-      await prefs.setString(
-        _businessNameKey,
-        businessName.trim(),
-      );
-    } else {
-      await prefs.remove(
-        _businessNameKey,
-      );
-    }
-
-    // --------------------------------------------------------
-    // PHONE
-    // --------------------------------------------------------
-
-    if (phone != null &&
-        phone.trim().isNotEmpty) {
-      await prefs.setString(
-        _phoneKey,
-        phone.trim(),
-      );
-    } else {
-      await prefs.remove(
-        _phoneKey,
-      );
-    }
-
-    // --------------------------------------------------------
-    // ADDRESS
-    // --------------------------------------------------------
-
-    if (address != null &&
-        address.trim().isNotEmpty) {
-      await prefs.setString(
-        _addressKey,
-        address.trim(),
-      );
-    } else {
-      await prefs.remove(
-        _addressKey,
-      );
-    }
-
-    // --------------------------------------------------------
-    // UPDATE GAB BRANDING CACHE
-    // --------------------------------------------------------
-
-    GABBranding.updateCache(
-      businessName: businessName,
-      phone: phone,
-      address: address,
-    );
   }
 
-  // ==========================================================
-  // DEACTIVATE LOCAL LICENSE
-  // ==========================================================
+  // ============================================================
+  // CUSTOMER LOGO PATH
+  // ============================================================
 
-  Future<void> deactivate() async {
+  static Future<String?>
+      getCustomerLogoPath() async {
+    try {
+      final prefs =
+          await SharedPreferences
+              .getInstance();
+
+      final path =
+          prefs.getString(
+        _customerLogoPathKey,
+      );
+
+      if (path == null ||
+          path.trim().isEmpty) {
+        return null;
+      }
+
+      final file =
+          File(path);
+
+      if (!await file.exists()) {
+        await prefs.remove(
+          _customerLogoPathKey,
+        );
+
+        return null;
+      }
+
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ============================================================
+  // REFRESH CUSTOMER LOGO
+  // ============================================================
+
+  Future<void> _refreshCustomerLogo(
+    String customerCode,
+  ) async {
+    try {
+      debugPrint(
+        '========================================',
+      );
+
+      debugPrint(
+        'CUSTOMER LOGO REFRESH START',
+      );
+
+      debugPrint(
+        'Customer Code: $customerCode',
+      );
+
+      final response =
+          await _supabase.rpc(
+        'get_customer_logo',
+        params: {
+          'p_customer_code':
+              customerCode.trim(),
+        },
+      );
+
+      debugPrint(
+        'Logo RPC Response: $response',
+      );
+
+      if (response == null) {
+        debugPrint(
+          'Logo RPC returned NULL',
+        );
+
+        await _clearCustomerLogoCache();
+
+        return;
+      }
+
+      if (response is! Map) {
+        debugPrint(
+          'Logo RPC response is not a Map',
+        );
+
+        await _clearCustomerLogoCache();
+
+        return;
+      }
+
+      final map =
+          Map<String, dynamic>.from(
+        response,
+      );
+
+      debugPrint(
+        'Logo RPC Map: $map',
+      );
+
+      final success =
+          map['success'] == true;
+
+      debugPrint(
+        'Logo RPC Success: $success',
+      );
+
+      if (!success) {
+        debugPrint(
+          'Logo RPC says NOT SUCCESS',
+        );
+
+        await _clearCustomerLogoCache();
+
+        return;
+      }
+
+      final logoPath =
+          map['logo_path']
+              ?.toString()
+              .trim();
+
+      debugPrint(
+        'Logo Path: $logoPath',
+      );
+
+      if (logoPath == null ||
+          logoPath.isEmpty) {
+        debugPrint(
+          'Logo Path is EMPTY',
+        );
+
+        await _clearCustomerLogoCache();
+
+        return;
+      }
+
+      // ========================================================
+      // IMPORTANT
+      //
+      // Clear previous customer's cached logo before downloading
+      // the new customer's logo. This prevents one customer's
+      // logo from appearing on another customer's invoice.
+      // ========================================================
+
+      await _clearCustomerLogoCache();
+
+      await _downloadCustomerLogo(
+        logoPath,
+      );
+
+      debugPrint(
+        'CUSTOMER LOGO REFRESH END',
+      );
+
+      debugPrint(
+        '========================================',
+      );
+    } catch (e, stackTrace) {
+      // Logo failure must NEVER break license activation.
+      debugPrint(
+        'CUSTOMER LOGO REFRESH FAILED: $e',
+      );
+
+      debugPrint(
+        '$stackTrace',
+      );
+    }
+  }
+
+  // ============================================================
+  // DOWNLOAD CUSTOMER LOGO
+  // ============================================================
+
+  Future<void> _downloadCustomerLogo(
+    String logoPath,
+  ) async {
+    try {
+      debugPrint(
+        '----------------------------------------',
+      );
+
+      debugPrint(
+        'CUSTOMER LOGO DOWNLOAD START',
+      );
+
+      debugPrint(
+        'Logo Path: $logoPath',
+      );
+
+      final publicUrl =
+          _supabase.storage
+              .from('customer-logos')
+              .getPublicUrl(
+                logoPath,
+              );
+
+      debugPrint(
+        'Logo Public URL: $publicUrl',
+      );
+
+      final client =
+          HttpClient();
+
+      try {
+        final request =
+            await client.getUrl(
+          Uri.parse(
+            publicUrl,
+          ),
+        );
+
+        final response =
+            await request.close();
+
+        debugPrint(
+          'Logo HTTP Status: '
+          '${response.statusCode}',
+        );
+
+        if (response.statusCode != 200) {
+          debugPrint(
+            'Customer logo download failed: '
+            '${response.statusCode}',
+          );
+
+          return;
+        }
+
+        final bytes =
+            await _readResponseBytes(
+          response,
+        );
+
+        debugPrint(
+          'Logo Bytes: ${bytes.length}',
+        );
+
+        if (bytes.isEmpty) {
+          debugPrint(
+            'Logo bytes EMPTY',
+          );
+
+          return;
+        }
+
+        final directory =
+            await getApplicationSupportDirectory();
+
+        debugPrint(
+          'Application Support Directory: '
+          '${directory.path}',
+        );
+
+        final extension =
+            _extensionFromPath(
+          logoPath,
+        );
+
+        debugPrint(
+          'Logo Extension: $extension',
+        );
+
+        final logoFile =
+            File(
+          '${directory.path}/'
+          '$_customerLogoFileName'
+          '$extension',
+        );
+
+        debugPrint(
+          'Saving Logo To: '
+          '${logoFile.path}',
+        );
+
+        await logoFile.writeAsBytes(
+          bytes,
+          flush: true,
+        );
+
+        final exists =
+            await logoFile.exists();
+
+        debugPrint(
+          'Logo File Exists After Save: '
+          '$exists',
+        );
+
+        if (exists) {
+          debugPrint(
+            'Logo File Size: '
+            '${await logoFile.length()}',
+          );
+        }
+
+        final prefs =
+            await SharedPreferences
+                .getInstance();
+
+        await prefs.setString(
+          _customerLogoPathKey,
+          logoFile.path,
+        );
+
+        debugPrint(
+          'Logo Cache Preference Saved: '
+          '${logoFile.path}',
+        );
+
+        debugPrint(
+          'CUSTOMER LOGO DOWNLOAD SUCCESS',
+        );
+
+        debugPrint(
+          '----------------------------------------',
+        );
+      } finally {
+        client.close(
+          force: true,
+        );
+      }
+    } catch (e, stackTrace) {
+      // Logo download failure must never break license.
+      debugPrint(
+        'CUSTOMER LOGO DOWNLOAD ERROR: $e',
+      );
+
+      debugPrint(
+        '$stackTrace',
+      );
+    }
+  }
+
+  // ============================================================
+  // READ HTTP RESPONSE
+  // ============================================================
+
+  Future<List<int>>
+      _readResponseBytes(
+    HttpClientResponse response,
+  ) async {
+    final builder =
+        BytesBuilder();
+
+    await for (final chunk
+        in response) {
+      builder.add(chunk);
+    }
+
+    return builder.takeBytes();
+  }
+
+  // ============================================================
+  // FILE EXTENSION
+  // ============================================================
+
+  String _extensionFromPath(
+    String path,
+  ) {
+    final lower =
+        path.toLowerCase();
+
+    if (lower.endsWith('.jpeg')) {
+      return '.jpeg';
+    }
+
+    if (lower.endsWith('.jpg')) {
+      return '.jpg';
+    }
+
+    if (lower.endsWith('.webp')) {
+      return '.webp';
+    }
+
+    return '.png';
+  }
+
+  // ============================================================
+  // CLEAR CUSTOMER LOGO CACHE
+  // ============================================================
+
+  Future<void>
+      _clearCustomerLogoCache() async {
+    try {
+      final prefs =
+          await SharedPreferences
+              .getInstance();
+
+      final oldPath =
+          prefs.getString(
+        _customerLogoPathKey,
+      );
+
+      if (oldPath != null &&
+          oldPath.trim().isNotEmpty) {
+        final file =
+            File(oldPath);
+
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+
+      final directory =
+          await getApplicationSupportDirectory();
+
+      for (final extension in [
+        '.png',
+        '.jpg',
+        '.jpeg',
+        '.webp',
+      ]) {
+        final file =
+            File(
+          '${directory.path}/'
+          '$_customerLogoFileName'
+          '$extension',
+        );
+
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+
+      await prefs.remove(
+        _customerLogoPathKey,
+      );
+    } catch (e) {
+      debugPrint(
+        'Customer logo cache clear failed: $e',
+      );
+    }
+  }
+
+  // ============================================================
+  // CLEAR LOCAL LICENSE FOR TESTING
+  // ============================================================
+
+  Future<void>
+      clearLocalLicenseForTesting() async {
     final prefs =
-        await SharedPreferences.getInstance();
-
-    await prefs.remove(
-      _activatedKey,
-    );
+        await SharedPreferences
+            .getInstance();
 
     await prefs.remove(
       _customerCodeKey,
     );
 
     await prefs.remove(
-      _deviceIdKey,
+      _businessNameKey,
+    );
+
+    await prefs.remove(
+      _phoneKey,
+    );
+
+    await prefs.remove(
+      _addressKey,
+    );
+
+    await prefs.remove(
+      _emailKey,
+    );
+
+    await prefs.remove(
+      _taglineKey,
+    );
+
+    await prefs.remove(
+      _activatedAtKey,
     );
 
     await prefs.remove(
@@ -1463,26 +1459,6 @@ class LicenseService {
     );
 
     await prefs.remove(
-      _activatedAtKey,
-    );
-
-    await prefs.remove(
-      _lastVerifiedKey,
-    );
-
-    await prefs.remove(
-      _businessNameKey,
-    );
-
-    await prefs.remove(
-      _phoneKey,
-    );
-
-    await prefs.remove(
-      _addressKey,
-    );
-
-    await prefs.remove(
       _durationKey,
     );
 
@@ -1494,296 +1470,59 @@ class LicenseService {
       _usedDevicesKey,
     );
 
-    // --------------------------------------------------------
-    // CLEAR BRANDING CACHE
-    // --------------------------------------------------------
+    await prefs.remove(
+      _devicesKey,
+    );
+
+    await prefs.remove(
+      _lastVerifiedAtKey,
+    );
+
+    await _clearCustomerLogoCache();
 
     GABBranding.clearCache();
   }
 
-  // ==========================================================
-  // TESTING ONLY
-  // ==========================================================
+  // ============================================================
+  // HELPERS
+  // ============================================================
 
-  Future<void> clearLocalLicenseForTesting() async {
-    await deactivate();
-  }
-
-  // ==========================================================
-  // RESPONSE PARSER
-  // ==========================================================
-
-  LicenseResult _parseResponse(
-    dynamic response, {
-    String? customerCode,
-  }) {
-    if (response is! Map) {
-      return const LicenseResult(
-        success: false,
-        code: 'INVALID_RESPONSE',
-        message:
-            'Invalid response from license server.',
-      );
-    }
-
-    final success =
-        response['success'] == true;
-
-    final code =
-        response['code']?.toString() ??
-            'UNKNOWN';
-
-    final message =
-        response['message']?.toString() ??
-            'Unknown license response.';
-
-    final businessName =
-        response['business_name']
-            ?.toString();
-
-    final phone =
-        response['phone']
-            ?.toString();
-
-    final address =
-        response['address']
-            ?.toString();
-
-    final duration =
-        response['duration']
-            ?.toString();
-
-    final activatedAt =
-        _parseDate(
-      response['activated_at'],
-    );
-
-    final expiresAt =
-        _parseDate(
-      response['expires_at'],
-    );
-
-    final maxDevices =
-        (response['max_devices']
-                    as num?)
-                ?.toInt() ??
-            1;
-
-    final usedDevices =
-        (response['active_devices']
-                    as num?)
-                ?.toInt() ??
-            0;
-
-    final devicesRaw =
-        response['devices'];
-
-    final List<LicenseDevice>
-        devices = [];
-
-    if (devicesRaw is List) {
-      for (final item
-          in devicesRaw) {
-        if (item is Map) {
-          devices.add(
-            LicenseDevice.fromMap(
-              Map<String, dynamic>.from(
-                item,
-              ),
-            ),
-          );
-        }
-      }
-    }
-
-    return LicenseResult(
-      success: success,
-      code: code,
-      message: message,
-      customerCode:
-          customerCode,
-      businessName:
-          businessName,
-      phone:
-          phone,
-      address:
-          address,
-      activatedAt:
-          activatedAt,
-      expiresAt:
-          expiresAt,
-      duration:
-          duration,
-      maxDevices:
-          maxDevices,
-      usedDevices:
-          usedDevices,
-      devices:
-          devices,
-    );
-  }
-
-  // ==========================================================
-  // DATE
-  // ==========================================================
-
-  DateTime? _parseDate(
+  static DateTime? _parseDateTime(
     dynamic value,
   ) {
     if (value == null) {
       return null;
     }
 
+    if (value is DateTime) {
+      return value;
+    }
+
+    final text =
+        value.toString().trim();
+
+    if (text.isEmpty) {
+      return null;
+    }
+
     return DateTime.tryParse(
+      text,
+    );
+  }
+
+  int? _toInt(
+    dynamic value,
+  ) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is int) {
+      return value;
+    }
+
+    return int.tryParse(
       value.toString(),
     );
-  }
-
-  // ==========================================================
-  // LOCAL EXPIRY CHECK
-  // ==========================================================
-
-  bool _isLocallyExpired(
-    String? expiresAtString,
-  ) {
-    if (expiresAtString == null ||
-        expiresAtString.trim().isEmpty) {
-      return false;
-    }
-
-    final expiresAt =
-        DateTime.tryParse(
-      expiresAtString,
-    );
-
-    if (expiresAt == null) {
-      return false;
-    }
-
-    return !DateTime.now().isBefore(
-      expiresAt,
-    );
-  }
-
-  // ==========================================================
-  // DEVICE ID
-  // ==========================================================
-
-  Future<String> _getDeviceId() async {
-    final deviceInfo =
-        DeviceInfoPlugin();
-
-    // --------------------------------------------------------
-    // WEB
-    // --------------------------------------------------------
-
-    if (kIsWeb) {
-      final info =
-          await deviceInfo.webBrowserInfo;
-
-      return _buildStableId([
-        'web',
-        info.userAgent,
-        info.platform,
-        info.hardwareConcurrency?.toString(),
-      ]);
-    }
-
-    // --------------------------------------------------------
-    // LINUX
-    // --------------------------------------------------------
-
-    if (Platform.isLinux) {
-      final info =
-          await deviceInfo.linuxInfo;
-
-      return _buildStableId([
-        'linux',
-        info.machineId,
-      ]);
-    }
-
-    // --------------------------------------------------------
-    // WINDOWS
-    // --------------------------------------------------------
-
-    if (Platform.isWindows) {
-      final info =
-          await deviceInfo.windowsInfo;
-
-      return _buildStableId([
-        'windows',
-        info.deviceId,
-      ]);
-    }
-
-    // --------------------------------------------------------
-    // MACOS
-    // --------------------------------------------------------
-
-    if (Platform.isMacOS) {
-      final info =
-          await deviceInfo.macOsInfo;
-
-      return _buildStableId([
-        'macos',
-        info.systemGUID,
-      ]);
-    }
-
-    // --------------------------------------------------------
-    // ANDROID
-    // --------------------------------------------------------
-
-    if (Platform.isAndroid) {
-      final info =
-          await deviceInfo.androidInfo;
-
-      return _buildStableId([
-        'android',
-        info.id,
-        info.model,
-      ]);
-    }
-
-    // --------------------------------------------------------
-    // IOS
-    // --------------------------------------------------------
-
-    if (Platform.isIOS) {
-      final info =
-          await deviceInfo.iosInfo;
-
-      return _buildStableId([
-        'ios',
-        info.identifierForVendor,
-        info.model,
-      ]);
-    }
-
-    return '';
-  }
-
-  // ==========================================================
-  // STABLE DEVICE ID
-  // ==========================================================
-
-  String _buildStableId(
-    List<String?> parts,
-  ) {
-    final cleaned =
-        parts
-            .where(
-              (value) =>
-                  value != null &&
-                  value.trim().isNotEmpty,
-            )
-            .map(
-              (value) =>
-                  value!.trim(),
-            )
-            .toList();
-
-    return cleaned.join('|');
   }
 }

@@ -5,9 +5,9 @@ import 'gab_profile.dart';
 class GABBranding {
   GABBranding._();
 
-  // ==========================================================
-  // DEFAULT BRANDING
-  // ==========================================================
+  // ============================================================
+  // DEFAULT / DEVELOPER PROFILE
+  // ============================================================
 
   static String get defaultBusinessName =>
       GABProfile.businessName;
@@ -24,9 +24,9 @@ class GABBranding {
   static String get defaultEmail =>
       GABProfile.email;
 
-  // ==========================================================
-  // LICENSE BRANDING KEYS
-  // ==========================================================
+  // ============================================================
+  // LOCAL KEYS
+  // ============================================================
 
   static const String _businessNameKey =
       'nexera_license_business_name';
@@ -37,14 +37,15 @@ class GABBranding {
   static const String _addressKey =
       'nexera_license_address';
 
-  // ==========================================================
+  static const String _emailKey =
+      'nexera_license_email';
+
+  static const String _taglineKey =
+      'nexera_license_tagline';
+
+  // ============================================================
   // MEMORY CACHE
-  //
-  // IMPORTANT:
-  // PDF / Balance Sheet / Profit Report synchronous getter
-  // ব্যবহার করে। তাই SharedPreferences update হওয়ার পর
-  // এই cache-ও অবশ্যই update করতে হবে।
-  // ==========================================================
+  // ============================================================
 
   static String _businessName =
       GABProfile.businessName;
@@ -55,83 +56,138 @@ class GABBranding {
   static String _address =
       GABProfile.address;
 
-  // ==========================================================
-  // ASYNC GETTERS
-  //
-  // Settings / About screen থেকে সরাসরি latest saved value
-  // পাওয়া যাবে।
-  // ==========================================================
+  static String _email =
+      GABProfile.email;
+
+  static String _tagline = '';
+
+  // ============================================================
+  // GET BUSINESS NAME
+  // ============================================================
 
   static Future<String> getBusinessName() async {
     final prefs =
         await SharedPreferences.getInstance();
 
-    return prefs.getString(_businessNameKey) ??
+    return prefs.getString(
+          _businessNameKey,
+        ) ??
         GABProfile.businessName;
   }
+
+  // ============================================================
+  // GET PHONE
+  // ============================================================
 
   static Future<String> getPhone() async {
     final prefs =
         await SharedPreferences.getInstance();
 
-    return prefs.getString(_phoneKey) ??
+    return prefs.getString(
+          _phoneKey,
+        ) ??
         GABProfile.phone;
   }
+
+  // ============================================================
+  // GET ADDRESS
+  // ============================================================
 
   static Future<String> getAddress() async {
     final prefs =
         await SharedPreferences.getInstance();
 
-    return prefs.getString(_addressKey) ??
+    return prefs.getString(
+          _addressKey,
+        ) ??
         GABProfile.address;
   }
 
-  // ==========================================================
-  // LOAD / RELOAD
-  //
-  // App startup এবং license change-এর পরে এই method call করা
-  // যাবে।
-  // ==========================================================
+  // ============================================================
+  // GET EMAIL
+  // ============================================================
+
+  static Future<String> getEmail() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    return prefs.getString(
+          _emailKey,
+        ) ??
+        GABProfile.email;
+  }
+
+  // ============================================================
+  // GET TAGLINE
+  // ============================================================
+
+  static Future<String> getTagline() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    return prefs.getString(
+          _taglineKey,
+        ) ??
+        '';
+  }
+
+  // ============================================================
+  // LOAD
+  // ============================================================
 
   static Future<void> load() async {
     final prefs =
         await SharedPreferences.getInstance();
 
     _businessName =
-        prefs.getString(_businessNameKey) ??
+        prefs.getString(
+              _businessNameKey,
+            ) ??
             GABProfile.businessName;
 
     _phone =
-        prefs.getString(_phoneKey) ??
+        prefs.getString(
+              _phoneKey,
+            ) ??
             GABProfile.phone;
 
     _address =
-        prefs.getString(_addressKey) ??
+        prefs.getString(
+              _addressKey,
+            ) ??
             GABProfile.address;
+
+    _email =
+        prefs.getString(
+              _emailKey,
+            ) ??
+            GABProfile.email;
+
+    _tagline =
+        prefs.getString(
+              _taglineKey,
+            ) ??
+            '';
   }
 
-  // ==========================================================
+  // ============================================================
   // REFRESH
-  //
-  // load()-এর explicit alias।
-  // License activate / verify হওয়ার পরে ব্যবহার করা যাবে।
-  // ==========================================================
+  // ============================================================
 
   static Future<void> refresh() async {
     await load();
   }
 
-  // ==========================================================
-  // UPDATE CACHE DIRECTLY
-  //
-  // LicenseService যখন নতুন customer/license save করবে,
-  // তখন app restart ছাড়াই Branding cache update করার জন্য।
-  // ==========================================================
+  // ============================================================
+  // UPDATE CACHE
+  // ============================================================
 
   static void updateCache({
     String? businessName,
     String? phone,
     String? address,
+    String? email,
+    String? tagline,
   }) {
     if (businessName != null &&
         businessName.trim().isNotEmpty) {
@@ -140,20 +196,29 @@ class GABBranding {
     }
 
     if (phone != null) {
-      _phone = phone.trim();
+      _phone =
+          phone.trim();
     }
 
     if (address != null) {
-      _address = address.trim();
+      _address =
+          address.trim();
+    }
+
+    if (email != null) {
+      _email =
+          email.trim();
+    }
+
+    if (tagline != null) {
+      _tagline =
+          tagline.trim();
     }
   }
 
-  // ==========================================================
+  // ============================================================
   // CLEAR CACHE
-  //
-  // License deactivate / logout / testing-এর সময় ব্যবহার করা
-  // যেতে পারে।
-  // ==========================================================
+  // ============================================================
 
   static void clearCache() {
     _businessName =
@@ -164,13 +229,16 @@ class GABBranding {
 
     _address =
         GABProfile.address;
+
+    _email =
+        GABProfile.email;
+
+    _tagline = '';
   }
 
-  // ==========================================================
-  // SYNC GETTERS
-  //
-  // PDF / Report / Invoice এগুলো এগুলো ব্যবহার করবে।
-  // ==========================================================
+  // ============================================================
+  // CURRENT CUSTOMER DATA
+  // ============================================================
 
   static String get businessName =>
       _businessName;
@@ -182,16 +250,17 @@ class GABBranding {
       _address;
 
   static String get email =>
-      GABProfile.email;
+      _email;
+
+  static String get tagline =>
+      _tagline;
+
+  // ============================================================
+  // OTHER BRANDING
+  // ============================================================
 
   static String get storeName =>
       _businessName;
-
-  // ==========================================================
-  // DEVELOPER IDENTITY
-  //
-  // Customer business name থেকে সম্পূর্ণ আলাদা।
-  // ==========================================================
 
   static String get developedBy =>
       GABProfile.developedBy;
@@ -202,19 +271,11 @@ class GABBranding {
   static String get logoAsset =>
       GABProfile.logoAsset;
 
-  // ==========================================================
-  // CURRENCY
-  // ==========================================================
-
   static String get currency =>
       GABProfile.currency;
 
   static String get currencySymbol =>
       GABProfile.currencySymbol;
-
-  // ==========================================================
-  // LICENSE
-  // ==========================================================
 
   static String get licenseCustomerId =>
       GABProfile.licenseCustomerId;

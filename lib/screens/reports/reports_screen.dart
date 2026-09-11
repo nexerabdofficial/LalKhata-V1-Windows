@@ -13,6 +13,9 @@ class ReportsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDesktop =
+        MediaQuery.of(context).size.width >= 900;
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
@@ -32,10 +35,23 @@ class ReportsScreen extends StatelessWidget {
             16,
             24,
           ),
+
+          // ============================================================
+          // DESKTOP + MOBILE
+          // Both use 2 columns
+          // ============================================================
           crossAxisCount: 2,
+
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 1.05,
+
+          // Desktop-এ card একটু compact
+          // Mobile-এ original size
+          childAspectRatio:
+              isDesktop
+                  ? 2.2
+                  : 1.05,
+
           children: [
             // =========================
             // STOCK REPORT
@@ -80,8 +96,6 @@ class ReportsScreen extends StatelessWidget {
               Colors.deepOrange,
               const IncomeExpenseReportScreen(),
             ),
-
-            // =========================
           ],
         ),
       ),
@@ -135,7 +149,9 @@ class ReportsScreen extends StatelessWidget {
                   size: 26,
                 ),
               ),
+
               const SizedBox(height: 10),
+
               Text(
                 title,
                 maxLines: 2,

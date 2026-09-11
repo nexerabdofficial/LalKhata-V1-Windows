@@ -7,6 +7,10 @@ import '../models/purchase/purchase_history.dart';
 class PurchaseRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  // ============================================================
+  // INSERT PURCHASE
+  // ============================================================
+
   Future<int> insertPurchase(Purchase purchase) async {
     final Database db = await _databaseHelper.database;
 
@@ -17,42 +21,89 @@ class PurchaseRepository {
     );
   }
 
+  // ============================================================
+  // GET ALL PURCHASES
+  // ============================================================
+
   Future<List<PurchaseHistory>> getPurchases() async {
-  final Database db = await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
-  final List<Map<String, dynamic>> maps = await db.rawQuery('''
-    SELECT
-      purchases.*,
-      suppliers.name AS supplier_name
-    FROM purchases
-    INNER JOIN suppliers
-      ON purchases.supplier_id = suppliers.id
-    ORDER BY purchases.id DESC
-  ''');
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT
+        purchases.*,
+        suppliers.name AS supplier_name
+      FROM purchases
+      INNER JOIN suppliers
+        ON purchases.supplier_id = suppliers.id
+      ORDER BY purchases.id DESC
+    ''');
 
-  return maps.map((map) {
-    return PurchaseHistory(
-      purchase: Purchase.fromMap(map),
-      supplierName: map['supplier_name'] as String,
-    );
-  }).toList();
-}
-Future<Purchase?> getPurchaseById(int id) async {
-  final Database db = await _databaseHelper.database;
-
-  final result = await db.query(
-    'purchases',
-    where: 'id = ?',
-    whereArgs: [id],
-    limit: 1,
-  );
-
-  if (result.isEmpty) {
-    return null;
+    return maps.map((map) {
+      return PurchaseHistory(
+        purchase: Purchase.fromMap(map),
+        supplierName: map['supplier_name'] as String,
+      );
+    }).toList();
   }
 
-  return Purchase.fromMap(result.first);
-}
+  // ============================================================
+  // GET PURCHASES BY DATE RANGE
+  // ============================================================
+
+  Future<List<PurchaseHistory>> getPurchasesByDateRange({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final Database db = await _databaseHelper.database;
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT
+        purchases.*,
+        suppliers.name AS supplier_name
+      FROM purchases
+      INNER JOIN suppliers
+        ON purchases.supplier_id = suppliers.id
+      WHERE date(purchases.purchase_date)
+        BETWEEN date(?) AND date(?)
+      ORDER BY purchases.id DESC
+      ''',
+      [fromDate, toDate],
+    );
+
+    return maps.map((map) {
+      return PurchaseHistory(
+        purchase: Purchase.fromMap(map),
+        supplierName: map['supplier_name'] as String,
+      );
+    }).toList();
+  }
+
+  // ============================================================
+  // GET PURCHASE BY ID
+  // ============================================================
+
+  Future<Purchase?> getPurchaseById(int id) async {
+    final Database db = await _databaseHelper.database;
+
+    final result = await db.query(
+      'purchases',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (result.isEmpty) {
+      return null;
+    }
+
+    return Purchase.fromMap(result.first);
+  }
+
+  // ============================================================
+  // PURCHASE COUNT
+  // ============================================================
+
   Future<int> getPurchaseCount() async {
     final Database db = await _databaseHelper.database;
 
@@ -62,20 +113,25 @@ Future<Purchase?> getPurchaseById(int id) async {
 
     return Sqflite.firstIntValue(result) ?? 0;
   }
+
+  // ============================================================
+  // TOTAL PURCHASES
+  // ============================================================
+
   Future<double> getTotalPurchases() async {
-  final db = await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
-  final result = await db.rawQuery('''
-    SELECT SUM(grand_total) AS total
-    FROM purchases
-  ''');
+    final result = await db.rawQuery('''
+      SELECT SUM(grand_total) AS total
+      FROM purchases
+    ''');
 
-  final value = result.first['total'];
+    final value = result.first['total'];
 
-  if (value == null) {
-    return 0;
+    if (value == null) {
+      return 0;
+    }
+
+    return (value as num).toDouble();
   }
-
-  return (value as num).toDouble();
-}
 }
