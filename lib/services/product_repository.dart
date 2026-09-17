@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
 import '../models/product.dart';
+import '../models/opening_stock_entry.dart';
 import '../models/product_ledger.dart';
 
 class ProductRepository {
@@ -27,64 +28,34 @@ class ProductRepository {
   // ============================================================
   // GET PRODUCTS
   //
-  // IMPORTANT:
+  // IMPORTANT COSTING RULE
   //
-  // Average Cost =
-  // Total Purchase Amount
-  // ---------------------
-  // Total Purchase Qty
+  // products.stock_value is the CURRENT INVENTORY VALUE.
   //
-  // Sale does NOT change Average Cost.
+  // Purchase:
+  //   stock_value += purchase amount
   //
-  // Stock Value =
-  // Current Stock × Average Cost
+  // Sale:
+  //   stock_value -= current inventory cost
+  //
+  // Production:
+  //   raw material stock_value decreases
+  //   finished product stock_value increases
+  //
+  // Therefore we MUST NOT recalculate stock_value here from
+  // purchase history.
+  //
+  // Purchase Average Cost is still available separately through
+  // getAverageCost().
   // ============================================================
 
   Future<List<Product>> getProducts() async {
     final Database db =
         await _databaseHelper.database;
 
-    final maps = await db.rawQuery(
-      '''
-      SELECT
-        p.*,
-
-        CASE
-          WHEN COALESCE(
-            (
-              SELECT SUM(pi.qty)
-              FROM purchase_items pi
-              WHERE pi.product_id = p.id
-            ),
-            0
-          ) > 0
-
-          THEN
-            (
-              COALESCE(
-                (
-                  SELECT SUM(
-                    pi.qty * pi.purchase_price
-                  )
-                  FROM purchase_items pi
-                  WHERE pi.product_id = p.id
-                ),
-                0
-              )
-              /
-              (
-                SELECT SUM(pi.qty)
-                FROM purchase_items pi
-                WHERE pi.product_id = p.id
-              )
-            )
-
-          ELSE 0
-        END AS calculated_average_cost
-
-      FROM products p
-      ORDER BY p.id DESC
-      ''',
+    final maps = await db.query(
+      'products',
+      orderBy: 'id DESC',
     );
 
     final List<Product> products = [];
@@ -93,33 +64,19 @@ class ProductRepository {
       final mutableMap =
           Map<String, dynamic>.from(map);
 
-      final stock =
-          ((mutableMap['stock'] ?? 0) as num)
-              .toInt();
-
-      final averageCost =
-          ((mutableMap['calculated_average_cost'] ?? 0) as num)
-              .toDouble();
-
       // --------------------------------------------------------
-      // CALCULATE CURRENT STOCK VALUE
+      // CURRENT STOCK VALUE
       //
-      // Current Stock × Average Cost
-      // --------------------------------------------------------
-
-      final stockValue =
-          stock > 0
-              ? stock * averageCost
-              : 0.0;
-
-      // --------------------------------------------------------
-      // Replace stored stock_value with calculated value.
+      // Use the stored inventory value directly.
       //
-      // This prevents sales from changing Average Cost.
+      // This is important for Production because a finished
+      // product may have production value even when it has never
+      // been purchased.
       // --------------------------------------------------------
 
       mutableMap['stock_value'] =
-          stockValue;
+          ((mutableMap['stock_value'] ?? 0) as num)
+              .toDouble();
 
       products.add(
         Product.fromMap(
@@ -210,12 +167,9 @@ class ProductRepository {
   // ============================================================
   // TOTAL STOCK VALUE
   //
-  // IMPORTANT:
+  // Uses the CURRENT stored inventory value.
   //
-  // Uses:
-  // Current Stock × Average Cost
-  //
-  // Sale does not change Average Cost.
+  // Purchase / Sale / Production all maintain this value.
   // ============================================================
 
   Future<double> getTotalStockValue() async {
@@ -232,11 +186,17 @@ class ProductRepository {
   }
 
   // ============================================================
-  // GET AVERAGE COST
+  // GET PURCHASE AVERAGE COST
+  //
+  // IMPORTANT:
+  //
+  // This method remains PURCHASE-ONLY.
   //
   // Total Purchase Amount
   // ---------------------
   // Total Purchase Qty
+  //
+  // Production does NOT modify this calculation.
   // ============================================================
 
   Future<double> getAverageCost(
@@ -285,28 +245,94 @@ class ProductRepository {
 
   // ============================================================
   // GET CURRENT STOCK VALUE
+  //
+  // IMPORTANT:
+  //
+  // This is the CURRENT INVENTORY VALUE, not historical
+  // purchase-average value.
+  //
+  // Production can create stock that has no purchase history,
+  // therefore this MUST use products.stock_value.
   // ============================================================
 
   Future<double> getCurrentStockValue(
     int productId,
   ) async {
-    final product =
-        await getProductById(
-      productId,
+    final Database db =
+        await _databaseHelper.database;
+
+    final result = await db.query(
+      'products',
+      columns: [
+        'stock',
+        'stock_value',
+      ],
+      where: 'id = ?',
+      whereArgs: [productId],
+      limit: 1,
     );
 
-    if (product == null ||
-        product.stock <= 0) {
+    if (result.isEmpty) {
       return 0;
     }
 
-    final averageCost =
-        await getAverageCost(
-      productId,
+    final stock =
+        ((result.first['stock'] ?? 0) as num)
+            .toInt();
+
+    if (stock <= 0) {
+      return 0;
+    }
+
+    return ((result.first['stock_value'] ?? 0) as num)
+        .toDouble();
+  }
+
+  // ============================================================
+  // GET CURRENT INVENTORY UNIT COST
+  //
+  // Current Stock Value
+  // -------------------
+  // Current Stock
+  //
+  // This is the costing boundary used by Production for raw
+  // material consumption.
+  // ============================================================
+
+  Future<double> getCurrentInventoryUnitCost(
+    int productId,
+  ) async {
+    final Database db =
+        await _databaseHelper.database;
+
+    final result = await db.query(
+      'products',
+      columns: [
+        'stock',
+        'stock_value',
+      ],
+      where: 'id = ?',
+      whereArgs: [productId],
+      limit: 1,
     );
 
-    return product.stock *
-        averageCost;
+    if (result.isEmpty) {
+      return 0;
+    }
+
+    final stock =
+        ((result.first['stock'] ?? 0) as num)
+            .toDouble();
+
+    final stockValue =
+        ((result.first['stock_value'] ?? 0) as num)
+            .toDouble();
+
+    if (stock <= 0) {
+      return 0;
+    }
+
+    return stockValue / stock;
   }
 
   // ============================================================
@@ -327,6 +353,42 @@ class ProductRepository {
 
     final List<ProductLedger> ledger =
         [];
+
+    // ==========================================================
+    // OPENING STOCK = STOCK IN
+    // ==========================================================
+
+    final openingStocks = await db.rawQuery(
+      '''
+      SELECT
+        opening_date AS date,
+        'Opening Stock' AS reference,
+        'Opening Stock' AS particular,
+        quantity AS stock_in,
+        0 AS stock_out,
+        unit_cost AS purchase_price
+
+      FROM opening_stock_entries
+
+      WHERE product_id = ?
+      ''',
+      [productId],
+    );
+
+    for (final row in openingStocks) {
+      ledger.add(
+        ProductLedger(
+          date: row['date']?.toString() ?? '',
+          reference: row['reference']?.toString() ?? '',
+          particular: 'Opening Stock',
+          stockIn: ((row['stock_in'] ?? 0) as num).toInt(),
+          stockOut: 0,
+          balance: 0,
+          purchasePrice:
+              ((row['purchase_price'] ?? 0) as num).toDouble(),
+        ),
+      );
+    }
 
     // ==========================================================
     // PURCHASES = STOCK IN
@@ -370,8 +432,9 @@ class ProductRepository {
                   .toInt(),
           stockOut: 0,
           balance: 0,
-          purchasePrice:
-              ((row['purchase_price'] ?? 0) as num).toDouble(),
+                    purchasePrice:
+              ((row['purchase_price'] ?? 0) as num)
+                  .toDouble(),
         ),
       );
     }
@@ -419,8 +482,8 @@ class ProductRepository {
                           0) as num)
                   .toInt(),
           balance: 0,
-          purchasePrice:
-               ((row['purchase_price'] ?? 0) as num)
+                    purchasePrice:
+              ((row['purchase_price'] ?? 0) as num)
                   .toDouble(),
           sellingPrice:
               ((row['selling_price'] ?? 0) as num)
@@ -497,4 +560,87 @@ class ProductRepository {
 
     return result;
   }
+
+  // ============================================================
+  // OPENING STOCK
+  // ============================================================
+
+  Future<void> addOpeningStock({
+    required int productId,
+    required int quantity,
+    required double unitCost,
+    required String openingDate,
+  }) async {
+    if (quantity <= 0) {
+      throw ArgumentError('Opening stock quantity must be greater than zero.');
+    }
+
+    if (unitCost < 0) {
+      throw ArgumentError('Opening stock rate cannot be negative.');
+    }
+
+    final db = await _databaseHelper.database;
+
+    await db.transaction((txn) async {
+      final products = await txn.query(
+        'products',
+        columns: ['stock', 'stock_value'],
+        where: 'id = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+
+      if (products.isEmpty) {
+        throw StateError('Product not found.');
+      }
+
+      final product = products.first;
+
+      final currentStock = (product['stock'] as num).toInt();
+      final currentStockValue =
+          (product['stock_value'] as num?)?.toDouble() ?? 0.0;
+
+      final totalValue = quantity * unitCost;
+
+      final now = DateTime.now().toIso8601String();
+
+      await txn.insert(
+        'opening_stock_entries',
+        OpeningStockEntry(
+          productId: productId,
+          quantity: quantity,
+          unitCost: unitCost,
+          totalValue: totalValue,
+          openingDate: openingDate,
+          createdAt: now,
+        ).toMap(),
+      );
+
+      await txn.update(
+        'products',
+        {
+          'stock': currentStock + quantity,
+          'stock_value': currentStockValue + totalValue,
+        },
+        where: 'id = ?',
+        whereArgs: [productId],
+      );
+    });
+  }
+
+  Future<List<OpeningStockEntry>> getOpeningStockEntries(
+    int productId,
+  ) async {
+    final db = await _databaseHelper.database;
+
+    final rows = await db.query(
+      'opening_stock_entries',
+      where: 'product_id = ?',
+      whereArgs: [productId],
+      orderBy: 'opening_date ASC, id ASC',
+    );
+
+    return rows.map(OpeningStockEntry.fromMap).toList();
+  }
+
 }

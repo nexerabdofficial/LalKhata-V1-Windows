@@ -20,8 +20,7 @@ class SaleInvoicePdf {
   // STORAGE SERVICE
   // ============================================================
 
-  static final StorageService _storageService =
-      StorageService.instance;
+  static final StorageService _storageService = StorageService.instance;
 
   // ============================================================
   // CUSTOMER LOGO
@@ -29,23 +28,19 @@ class SaleInvoicePdf {
 
   static Future<pw.MemoryImage?> _loadCustomerLogo() async {
     try {
-      final logoPath =
-          await LicenseService.getCustomerLogoPath();
+      final logoPath = await LicenseService.getCustomerLogoPath();
 
-      if (logoPath == null ||
-          logoPath.trim().isEmpty) {
+      if (logoPath == null || logoPath.trim().isEmpty) {
         return null;
       }
 
-      final file =
-          File(logoPath);
+      final file = File(logoPath);
 
       if (!await file.exists()) {
         return null;
       }
 
-      final bytes =
-          await file.readAsBytes();
+      final bytes = await file.readAsBytes();
 
       if (bytes.isEmpty) {
         return null;
@@ -67,48 +62,37 @@ class SaleInvoicePdf {
     required Map<String, dynamic> saleInfo,
     required List<SaleItem> items,
   }) async {
-    final pdf =
-        pw.Document();
+    final pdf = pw.Document();
 
     // ==========================================================
     // FONTS
     // ==========================================================
 
-    final regularFont =
-        await PdfGoogleFonts.notoSansRegular();
+    final regularFont = await PdfGoogleFonts.notoSansRegular();
 
-    final boldFont =
-        await PdfGoogleFonts.notoSansBold();
+    final boldFont = await PdfGoogleFonts.notoSansBold();
 
     // ==========================================================
     // CUSTOMER LOGO
     // ==========================================================
 
-    final customerLogo =
-        await _loadCustomerLogo();
+    final customerLogo = await _loadCustomerLogo();
 
     // ==========================================================
     // FORMAT
     // ==========================================================
 
-    final currency =
-        NumberFormat("#,##0.00");
+    final currency = NumberFormat("#,##0.00");
 
-    final invoiceDate =
-        DateFormat(
-          "dd MMM yyyy  hh:mm a",
-        ).format(
-          DateTime.parse(
-            sale.saleDate,
-          ),
-        );
+    final invoiceDate = DateFormat(
+      "dd MMM yyyy  hh:mm a",
+    ).format(DateTime.parse(sale.saleDate));
 
     // ==========================================================
     // ITEM COUNT
     // ==========================================================
 
-    final itemCount =
-        items.length;
+    final itemCount = items.length;
 
     // ==========================================================
     // RESPONSIVE SETTINGS
@@ -168,107 +152,74 @@ class SaleInvoicePdf {
     // COMPANY INFORMATION
     // ==========================================================
 
-    final companyName =
-        GABBranding.businessName;
+    final companyName = GABBranding.businessName;
 
-    final companyAddress =
-        GABBranding.address;
+    final companyAddress = GABBranding.address;
 
-    final companyPhone =
-        GABBranding.phone;
+    final companyPhone = GABBranding.phone;
 
-    final companyEmail =
-        GABBranding.email;
+    final companyEmail = GABBranding.email;
 
-    final companyTagline =
-        GABBranding.tagline;
+    final companyTagline = GABBranding.tagline;
 
     // ==========================================================
     // CUSTOMER
     // ==========================================================
 
     final customerName =
-        saleInfo["customer_name"]
-                    ?.toString()
-                    .trim()
-                    .isNotEmpty ==
-                true
-            ? saleInfo["customer_name"]
-                .toString()
-            : "Walk-in Customer";
+        saleInfo["customer_name"]?.toString().trim().isNotEmpty == true
+        ? saleInfo["customer_name"].toString()
+        : "Walk-in Customer";
 
-    final customerPhone =
-        saleInfo["customer_phone"]
-                ?.toString() ??
-            "";
+    final customerPhone = saleInfo["customer_phone"]?.toString() ?? "";
 
-    final customerAddress =
-        saleInfo["customer_address"]
-                ?.toString() ??
-            "";
+    final customerAddress = saleInfo["customer_address"]?.toString() ?? "";
 
     // ==========================================================
     // PREVIOUS DUE
     // ==========================================================
 
-    final previousDue =
-        (saleInfo["previous_due"] as num?)
-                ?.toDouble() ??
-            0;
+    final previousDue = (saleInfo["previous_due"] as num?)?.toDouble() ?? 0;
 
     // ==========================================================
     // CURRENT INVOICE
     // ==========================================================
 
-    final currentInvoice =
-        sale.grandTotal;
+    final currentInvoice = sale.grandTotal;
 
     // ==========================================================
     // TOTAL RECEIVABLE
     // ==========================================================
 
-    final totalReceivable =
-        previousDue +
-            currentInvoice;
+    final totalReceivable = previousDue + currentInvoice;
 
     // ==========================================================
     // PAID
     // ==========================================================
 
-    final paidToday =
-        sale.paid;
+    final paidToday = sale.paid;
 
     // ==========================================================
     // FINAL DUE
     // ==========================================================
 
-    final finalDue =
-        (totalReceivable -
-                paidToday)
-            .clamp(
-              0,
-              double.infinity,
-            )
-            .toDouble();
+    final finalDue = (totalReceivable - paidToday)
+        .clamp(0, double.infinity)
+        .toDouble();
 
     // ==========================================================
     // CHARGES
     // ==========================================================
 
-    final additionalCharge =
-        sale.additionalCharge;
+    final additionalCharge = sale.additionalCharge;
 
-    final invoiceDiscount =
-        sale.invoiceDiscount;
+    final invoiceDiscount = sale.invoiceDiscount;
 
     // ==========================================================
     // SUBTOTAL
     // ==========================================================
 
-    final subtotal =
-        currentInvoice -
-            additionalCharge +
-            invoiceDiscount;
+    final subtotal = currentInvoice - additionalCharge + invoiceDiscount;
 
     // ==========================================================
     // CURRENCY
@@ -282,16 +233,11 @@ class SaleInvoicePdf {
     // BUILD INVOICE CONTENT
     // ============================================================
 
-    final invoiceContent =
-        pw.Container(
-      width:
-          PdfPageFormat.a4.width - 32,
-      child:
-          pw.Column(
-        mainAxisSize:
-            pw.MainAxisSize.min,
-        crossAxisAlignment:
-            pw.CrossAxisAlignment.stretch,
+    final invoiceContent = pw.Container(
+      width: PdfPageFormat.a4.width - 32,
+      child: pw.Column(
+        mainAxisSize: pw.MainAxisSize.min,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           // ======================================================
           // CUSTOMER LOGO
@@ -303,25 +249,14 @@ class SaleInvoicePdf {
           // ======================================================
           if (customerLogo != null)
             pw.Container(
-              width:
-                  double.infinity,
-              height:
-                  itemCount <= 8
-                      ? 72
-                      : 62,
-              margin:
-                  const pw.EdgeInsets.only(
-                bottom: 8,
-              ),
-              alignment:
-                  pw.Alignment.center,
-              child:
-                  pw.Image(
+              width: double.infinity,
+              height: itemCount <= 8 ? 72 : 62,
+              margin: const pw.EdgeInsets.only(bottom: 8),
+              alignment: pw.Alignment.center,
+              child: pw.Image(
                 customerLogo,
-                fit:
-                    pw.BoxFit.contain,
-                alignment:
-                    pw.Alignment.center,
+                fit: pw.BoxFit.contain,
+                alignment: pw.Alignment.center,
               ),
             ),
 
@@ -329,236 +264,143 @@ class SaleInvoicePdf {
           // HEADER
           // ======================================================
           pw.Container(
-            padding:
-                const pw.EdgeInsets.all(
-              10,
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.blue900,
+              borderRadius: pw.BorderRadius.circular(6),
             ),
-            decoration:
-                pw.BoxDecoration(
-              color:
-                  PdfColors.blue900,
-              borderRadius:
-                  pw.BorderRadius.circular(
-                6,
-              ),
-            ),
-            child:
-                pw.Row(
-              crossAxisAlignment:
-                  pw.CrossAxisAlignment.start,
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 // ==================================================
                 // COMPANY
                 // ==================================================
                 pw.Expanded(
                   flex: 6,
-                  child:
-                      pw.Column(
-                    crossAxisAlignment:
-                        pw.CrossAxisAlignment.start,
-                    mainAxisSize:
-                        pw.MainAxisSize.min,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisSize: pw.MainAxisSize.min,
                     children: [
                       pw.Text(
                         companyName,
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          fontSize:
-                              headerFontSize,
-                          color:
-                              PdfColors.white,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: headerFontSize,
+                          color: PdfColors.white,
                         ),
                       ),
 
                       // Customer tagline
-                      if (companyTagline
-                          .trim()
-                          .isNotEmpty)
+                      if (companyTagline.trim().isNotEmpty)
                         pw.Padding(
-                          padding:
-                              const pw.EdgeInsets.only(
-                            top: 2,
-                          ),
-                          child:
-                              pw.Text(
+                          padding: const pw.EdgeInsets.only(top: 2),
+                          child: pw.Text(
                             companyTagline,
-                            style:
-                                pw.TextStyle(
-                              font:
-                                  regularFont,
-                              fontSize:
-                                  normalFontSize,
-                              color:
-                                  PdfColors.white,
+                            style: pw.TextStyle(
+                              font: regularFont,
+                              fontSize: normalFontSize,
+                              color: PdfColors.white,
                             ),
                           ),
                         ),
 
-                      pw.SizedBox(
-                        height:
-                            itemCount <= 8
-                                ? 8
-                                : 5,
-                      ),
+                      pw.SizedBox(height: itemCount <= 8 ? 8 : 5),
 
-                      if (companyAddress
-                          .trim()
-                          .isNotEmpty)
+                      if (companyAddress.trim().isNotEmpty)
                         pw.Text(
                           companyAddress,
-                          style:
-                              pw.TextStyle(
-                            font:
-                                regularFont,
-                            fontSize:
-                                normalFontSize,
-                            color:
-                                PdfColors.white,
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: normalFontSize,
+                            color: PdfColors.white,
                           ),
                         ),
 
-                      if (companyPhone
-                          .trim()
-                          .isNotEmpty)
+                      if (companyPhone.trim().isNotEmpty)
                         pw.Text(
                           companyPhone,
-                          style:
-                              pw.TextStyle(
-                            font:
-                                regularFont,
-                            fontSize:
-                                normalFontSize,
-                            color:
-                                PdfColors.white,
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: normalFontSize,
+                            color: PdfColors.white,
                           ),
                         ),
 
-                      if (companyEmail
-                          .trim()
-                          .isNotEmpty)
+                      if (companyEmail.trim().isNotEmpty)
                         pw.Text(
                           companyEmail,
-                          style:
-                              pw.TextStyle(
-                            font:
-                                regularFont,
-                            fontSize:
-                                normalFontSize,
-                            color:
-                                PdfColors.white,
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: normalFontSize,
+                            color: PdfColors.white,
                           ),
                         ),
                     ],
                   ),
                 ),
 
-                pw.SizedBox(
-                  width: 16,
-                ),
+                pw.SizedBox(width: 16),
 
                 // ==================================================
                 // INVOICE INFO
                 // ==================================================
                 pw.Container(
                   width: 165,
-                  padding:
-                      const pw.EdgeInsets.all(
-                    10,
+                  padding: const pw.EdgeInsets.all(10),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    borderRadius: pw.BorderRadius.circular(5),
                   ),
-                  decoration:
-                      pw.BoxDecoration(
-                    color:
-                        PdfColors.white,
-                    borderRadius:
-                        pw.BorderRadius.circular(
-                      5,
-                    ),
-                  ),
-                  child:
-                      pw.Column(
-                    crossAxisAlignment:
-                        pw.CrossAxisAlignment.start,
-                    mainAxisSize:
-                        pw.MainAxisSize.min,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisSize: pw.MainAxisSize.min,
                     children: [
                       pw.Center(
-                        child:
-                            pw.Text(
+                        child: pw.Text(
                           "SALES INVOICE",
-                          style:
-                              pw.TextStyle(
-                            font:
-                                boldFont,
-                            fontSize:
-                                itemCount <= 8
-                                    ? 14
-                                    : 12,
-                            color:
-                                PdfColors.blue900,
+                          style: pw.TextStyle(
+                            font: boldFont,
+                            fontSize: itemCount <= 8 ? 14 : 12,
+                            color: PdfColors.blue900,
                           ),
                         ),
                       ),
 
-                      pw.Divider(
-                        height:
-                            itemCount <= 8
-                                ? 8
-                                : 5,
-                      ),
+                      pw.Divider(height: itemCount <= 8 ? 8 : 5),
 
                       pw.Text(
                         "Invoice No",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
 
                       pw.Text(
-                        saleInfo["invoice_no"]
-                                ?.toString() ??
+                        saleInfo["invoice_no"]?.toString() ??
                             sale.invoiceNo ??
                             "",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              regularFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
 
-                      pw.SizedBox(
-                        height:
-                            itemCount <= 8
-                                ? 5
-                                : 3,
-                      ),
+                      pw.SizedBox(height: itemCount <= 8 ? 5 : 3),
 
                       pw.Text(
                         "Invoice Date",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
 
                       pw.Text(
                         invoiceDate,
-                        style:
-                            pw.TextStyle(
-                          font:
-                              regularFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
                     ],
@@ -568,114 +410,72 @@ class SaleInvoicePdf {
             ),
           ),
 
-          pw.SizedBox(
-            height:
-                sectionSpacing,
-          ),
+          pw.SizedBox(height: sectionSpacing),
 
           // ======================================================
           // CUSTOMER + RECEIVABLE
           // ======================================================
           pw.Row(
-            crossAxisAlignment:
-                pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               // ==================================================
               // BILL TO
               // ==================================================
               pw.Expanded(
-                child:
-                    pw.Container(
-                  padding:
-                      pw.EdgeInsets.all(
-                    customerPadding,
+                child: pw.Container(
+                  padding: pw.EdgeInsets.all(customerPadding),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey300),
                   ),
-                  decoration:
-                      pw.BoxDecoration(
-                    border:
-                        pw.Border.all(
-                      color:
-                          PdfColors.grey300,
-                    ),
-                  ),
-                  child:
-                      pw.Column(
-                    crossAxisAlignment:
-                        pw.CrossAxisAlignment.start,
-                    mainAxisSize:
-                        pw.MainAxisSize.min,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisSize: pw.MainAxisSize.min,
                     children: [
                       pw.Text(
                         "BILL TO",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          color:
-                              PdfColors.blue900,
-                          fontSize:
-                              itemCount <= 8
-                                  ? 11
-                                  : 10,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          color: PdfColors.blue900,
+                          fontSize: itemCount <= 8 ? 11 : 10,
                         ),
                       ),
 
-                      pw.SizedBox(
-                        height:
-                            itemCount <= 8
-                                ? 6
-                                : 4,
-                      ),
+                      pw.SizedBox(height: itemCount <= 8 ? 6 : 4),
 
                       pw.Text(
                         customerName,
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          fontSize:
-                              normalFontSize +
-                                  1,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: normalFontSize + 1,
                         ),
                       ),
 
-                      pw.SizedBox(
-                        height: 2,
-                      ),
+                      pw.SizedBox(height: 2),
 
                       pw.Text(
                         "Customer ID : "
                         "${sale.customerId}",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              regularFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
 
                       pw.Text(
                         "Phone : "
                         "$customerPhone",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              regularFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
 
                       pw.Text(
                         "Address : "
                         "$customerAddress",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              regularFont,
-                          fontSize:
-                              normalFontSize,
+                        style: pw.TextStyle(
+                          font: regularFont,
+                          fontSize: normalFontSize,
                         ),
                       ),
                     ],
@@ -683,73 +483,48 @@ class SaleInvoicePdf {
                 ),
               ),
 
-              pw.SizedBox(
-                width: 12,
-              ),
+              pw.SizedBox(width: 12),
 
               // ==================================================
               // RECEIVABLE
               // ==================================================
               pw.Container(
                 width: 220,
-                padding:
-                    pw.EdgeInsets.all(
-                  summaryPadding,
+                padding: pw.EdgeInsets.all(summaryPadding),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  borderRadius: pw.BorderRadius.circular(5),
                 ),
-                decoration:
-                    pw.BoxDecoration(
-                  color:
-                      PdfColors.grey100,
-                  borderRadius:
-                      pw.BorderRadius.circular(
-                    5,
-                  ),
-                ),
-                child:
-                    pw.Column(
-                  mainAxisSize:
-                      pw.MainAxisSize.min,
+                child: pw.Column(
+                  mainAxisSize: pw.MainAxisSize.min,
                   children: [
                     _summaryRow(
                       "Invoice Total",
-                      taka(
-                        currentInvoice,
-                      ),
+                      taka(currentInvoice),
                       regularFont,
                       boldFont,
-                      fontSize:
-                          normalFontSize,
+                      fontSize: normalFontSize,
                       bold: true,
                     ),
 
-                    pw.SizedBox(
-                      height: 3,
-                    ),
+                    pw.SizedBox(height: 3),
 
                     _summaryRow(
                       "Previous Due (BF)",
-                      taka(
-                        previousDue,
-                      ),
+                      taka(previousDue),
                       regularFont,
                       boldFont,
-                      fontSize:
-                          normalFontSize,
+                      fontSize: normalFontSize,
                     ),
 
-                    pw.Divider(
-                      height: 7,
-                    ),
+                    pw.Divider(height: 7),
 
                     _summaryRow(
                       "Total Outstanding",
-                      taka(
-                        totalReceivable,
-                      ),
+                      taka(totalReceivable),
                       regularFont,
                       boldFont,
-                      fontSize:
-                          normalFontSize,
+                      fontSize: normalFontSize,
                       bold: true,
                     ),
                   ],
@@ -758,360 +533,228 @@ class SaleInvoicePdf {
             ],
           ),
 
-          pw.SizedBox(
-            height:
-                sectionSpacing,
-          ),
+          pw.SizedBox(height: sectionSpacing),
 
           // ======================================================
           // PRODUCT TABLE
           // ======================================================
           pw.Table(
-            border:
-                pw.TableBorder.all(
-              color:
-                  PdfColors.grey300,
-              width: .5,
-            ),
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: .5),
             columnWidths: {
-              0: const pw.FixedColumnWidth(
-                35,
-              ),
-              1: const pw.FlexColumnWidth(
-                4,
-              ),
-              2: const pw.FixedColumnWidth(
-                55,
-              ),
-              3: const pw.FixedColumnWidth(
-                75,
-              ),
-              4: const pw.FixedColumnWidth(
-                85,
-              ),
+              0: const pw.FixedColumnWidth(35),
+              1: const pw.FlexColumnWidth(4),
+              2: const pw.FixedColumnWidth(55),
+              3: const pw.FixedColumnWidth(75),
+              4: const pw.FixedColumnWidth(85),
             },
             children: [
               pw.TableRow(
-                decoration:
-                    const pw.BoxDecoration(
-                  color:
-                      PdfColors.blue900,
-                ),
+                decoration: const pw.BoxDecoration(color: PdfColors.blue900),
                 children: [
                   _headerCell(
                     "SL",
                     boldFont,
-                    fontSize:
-                        tableFontSize,
-                    verticalPadding:
-                        tableVerticalPadding,
+                    fontSize: tableFontSize,
+                    verticalPadding: tableVerticalPadding,
                   ),
                   _headerCell(
                     "PRODUCT",
                     boldFont,
-                    fontSize:
-                        tableFontSize,
-                    verticalPadding:
-                        tableVerticalPadding,
+                    fontSize: tableFontSize,
+                    verticalPadding: tableVerticalPadding,
                   ),
                   _headerCell(
                     "QTY",
                     boldFont,
-                    fontSize:
-                        tableFontSize,
-                    verticalPadding:
-                        tableVerticalPadding,
+                    fontSize: tableFontSize,
+                    verticalPadding: tableVerticalPadding,
                   ),
                   _headerCell(
                     "PRICE",
                     boldFont,
-                    fontSize:
-                        tableFontSize,
-                    verticalPadding:
-                        tableVerticalPadding,
+                    fontSize: tableFontSize,
+                    verticalPadding: tableVerticalPadding,
                   ),
                   _headerCell(
                     "TOTAL",
                     boldFont,
-                    fontSize:
-                        tableFontSize,
-                    verticalPadding:
-                        tableVerticalPadding,
+                    fontSize: tableFontSize,
+                    verticalPadding: tableVerticalPadding,
                   ),
                 ],
               ),
 
-              ...List.generate(
-                items.length,
-                (index) {
-                  final item =
-                      items[index];
+              ...List.generate(items.length, (index) {
+                final item = items[index];
 
-                  return pw.TableRow(
-                    children: [
-                      _cell(
-                        "${index + 1}",
-                        regularFont,
-                        fontSize:
-                            tableFontSize,
-                        verticalPadding:
-                            tableVerticalPadding,
-                        align:
-                            pw.TextAlign.center,
-                      ),
-                      _cell(
-                        item.productName,
-                        regularFont,
-                        fontSize:
-                            tableFontSize,
-                        verticalPadding:
-                            tableVerticalPadding,
-                      ),
-                      _cell(
-                        item.qty.toString(),
-                        regularFont,
-                        fontSize:
-                            tableFontSize,
-                        verticalPadding:
-                            tableVerticalPadding,
-                        align:
-                            pw.TextAlign.center,
-                      ),
-                      _cell(
-                        taka(
-                          item.sellingPrice,
-                        ),
-                        regularFont,
-                        fontSize:
-                            tableFontSize,
-                        verticalPadding:
-                            tableVerticalPadding,
-                        align:
-                            pw.TextAlign.right,
-                      ),
-                      _cell(
-                        taka(
-                          item.subtotal,
-                        ),
-                        boldFont,
-                        fontSize:
-                            tableFontSize,
-                        verticalPadding:
-                            tableVerticalPadding,
-                        align:
-                            pw.TextAlign.right,
-                        bold: true,
-                      ),
-                    ],
-                  );
-                },
-              ),
+                return pw.TableRow(
+                  children: [
+                    _cell(
+                      "${index + 1}",
+                      regularFont,
+                      fontSize: tableFontSize,
+                      verticalPadding: tableVerticalPadding,
+                      align: pw.TextAlign.center,
+                    ),
+                    _cell(
+                      item.productName,
+                      regularFont,
+                      fontSize: tableFontSize,
+                      verticalPadding: tableVerticalPadding,
+                    ),
+                    _cell(
+                      item.qty.toString(),
+                      regularFont,
+                      fontSize: tableFontSize,
+                      verticalPadding: tableVerticalPadding,
+                      align: pw.TextAlign.center,
+                    ),
+                    _cell(
+                      taka(item.sellingPrice),
+                      regularFont,
+                      fontSize: tableFontSize,
+                      verticalPadding: tableVerticalPadding,
+                      align: pw.TextAlign.right,
+                    ),
+                    _cell(
+                      taka(item.subtotal),
+                      boldFont,
+                      fontSize: tableFontSize,
+                      verticalPadding: tableVerticalPadding,
+                      align: pw.TextAlign.right,
+                      bold: true,
+                    ),
+                  ],
+                );
+              }),
             ],
           ),
 
-          pw.SizedBox(
-            height:
-                sectionSpacing,
-          ),
+          pw.SizedBox(height: sectionSpacing),
 
           // ======================================================
           // PAYMENT SUMMARY
           // ======================================================
           pw.Container(
-            padding:
-                pw.EdgeInsets.all(
-              summaryPadding,
+            padding: pw.EdgeInsets.all(summaryPadding),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey300),
             ),
-            decoration:
-                pw.BoxDecoration(
-              border:
-                  pw.Border.all(
-                color:
-                    PdfColors.grey300,
-              ),
-            ),
-            child:
-                pw.Column(
-              crossAxisAlignment:
-                  pw.CrossAxisAlignment.start,
-              mainAxisSize:
-                  pw.MainAxisSize.min,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              mainAxisSize: pw.MainAxisSize.min,
               children: [
                 pw.Text(
                   "PAYMENT SUMMARY",
-                  style:
-                      pw.TextStyle(
-                    font:
-                        boldFont,
-                    fontSize:
-                        itemCount <= 8
-                            ? 11
-                            : 10,
-                    color:
-                        PdfColors.blue900,
+                  style: pw.TextStyle(
+                    font: boldFont,
+                    fontSize: itemCount <= 8 ? 11 : 10,
+                    color: PdfColors.blue900,
                   ),
                 ),
 
-                pw.SizedBox(
-                  height:
-                      itemCount <= 8
-                          ? 6
-                          : 4,
-                ),
+                pw.SizedBox(height: itemCount <= 8 ? 6 : 4),
 
                 _summaryRow(
                   "Subtotal",
-                  taka(
-                    subtotal,
-                  ),
+                  taka(subtotal),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                 ),
 
-                if (additionalCharge >
-                    0)
+                if (additionalCharge > 0)
                   _summaryRow(
                     "Additional Charge",
-                    taka(
-                      additionalCharge,
-                    ),
+                    taka(additionalCharge),
                     regularFont,
                     boldFont,
-                    fontSize:
-                        normalFontSize,
+                    fontSize: normalFontSize,
                   ),
 
-                if (invoiceDiscount >
-                    0)
+                if (invoiceDiscount > 0)
                   _summaryRow(
                     "Invoice Discount",
                     "-${taka(invoiceDiscount)}",
                     regularFont,
                     boldFont,
-                    fontSize:
-                        normalFontSize,
+                    fontSize: normalFontSize,
                   ),
 
-                pw.Divider(
-                  height: 7,
-                ),
+                pw.Divider(height: 7),
 
                 _summaryRow(
                   "Current Invoice",
-                  taka(
-                    currentInvoice,
-                  ),
+                  taka(currentInvoice),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                   bold: true,
                 ),
 
                 _summaryRow(
                   "Previous Due (BF)",
-                  taka(
-                    previousDue,
-                  ),
+                  taka(previousDue),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                 ),
 
                 _summaryRow(
                   "Total Outstanding",
-                  taka(
-                    totalReceivable,
-                  ),
+                  taka(totalReceivable),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                   bold: true,
                 ),
 
-                pw.SizedBox(
-                  height: 3,
-                ),
+                pw.SizedBox(height: 3),
 
                 _summaryRow(
                   "Payment Method",
-                  sale.paymentMethod
-                      .toString(),
+                  sale.paymentMethod.toString(),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                 ),
 
                 _summaryRow(
                   "Paid Today",
-                  taka(
-                    paidToday,
-                  ),
+                  taka(paidToday),
                   regularFont,
                   boldFont,
-                  fontSize:
-                      normalFontSize,
+                  fontSize: normalFontSize,
                 ),
 
-                pw.Divider(
-                  height: 7,
-                ),
+                pw.Divider(height: 7),
 
                 // ==================================================
                 // BALANCE DUE
                 // ==================================================
                 pw.Container(
-                  padding:
-                      pw.EdgeInsets.symmetric(
+                  padding: pw.EdgeInsets.symmetric(
                     horizontal: 10,
-                    vertical:
-                        itemCount <= 8
-                            ? 8
-                            : 6,
+                    vertical: itemCount <= 8 ? 8 : 6,
                   ),
-                  decoration:
-                      const pw.BoxDecoration(
-                    color:
-                        PdfColors.blue900,
-                  ),
-                  child:
-                      pw.Row(
-                    mainAxisAlignment:
-                        pw.MainAxisAlignment.spaceBetween,
+                  decoration: const pw.BoxDecoration(color: PdfColors.blue900),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
                         "BALANCE DUE",
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          color:
-                              PdfColors.white,
-                          fontSize:
-                              itemCount <= 8
-                                  ? 11
-                                  : 10,
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          color: PdfColors.white,
+                          fontSize: itemCount <= 8 ? 11 : 10,
                         ),
                       ),
                       pw.Text(
-                        taka(
-                          finalDue,
-                        ),
-                        style:
-                            pw.TextStyle(
-                          font:
-                              boldFont,
-                          color:
-                              PdfColors.white,
-                          fontSize:
-                              itemCount <= 8
-                                  ? 13
-                                  : 11,
+                        taka(finalDue),
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          color: PdfColors.white,
+                          fontSize: itemCount <= 8 ? 13 : 11,
                         ),
                       ),
                     ],
@@ -1124,65 +767,33 @@ class SaleInvoicePdf {
           // ======================================================
           // NOTE
           // ======================================================
-          if (sale.note
-              .trim()
-              .isNotEmpty) ...[
-            pw.SizedBox(
-              height:
-                  sectionSpacing,
-            ),
+          if (sale.note.trim().isNotEmpty) ...[
+            pw.SizedBox(height: sectionSpacing),
             pw.Container(
-              width:
-                  double.infinity,
-              padding:
-                  pw.EdgeInsets.all(
-                itemCount <= 8
-                    ? 9
-                    : 7,
+              width: double.infinity,
+              padding: pw.EdgeInsets.all(itemCount <= 8 ? 9 : 7),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey300),
+                borderRadius: pw.BorderRadius.circular(4),
               ),
-              decoration:
-                  pw.BoxDecoration(
-                border:
-                    pw.Border.all(
-                  color:
-                      PdfColors.grey300,
-                ),
-                borderRadius:
-                    pw.BorderRadius.circular(
-                  4,
-                ),
-              ),
-              child:
-                  pw.Column(
-                crossAxisAlignment:
-                    pw.CrossAxisAlignment.start,
-                mainAxisSize:
-                    pw.MainAxisSize.min,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                mainAxisSize: pw.MainAxisSize.min,
                 children: [
                   pw.Text(
                     "NOTE",
-                    style:
-                        pw.TextStyle(
-                      font:
-                          boldFont,
-                      fontSize:
-                          normalFontSize +
-                              1,
-                      color:
-                          PdfColors.blue900,
+                    style: pw.TextStyle(
+                      font: boldFont,
+                      fontSize: normalFontSize + 1,
+                      color: PdfColors.blue900,
                     ),
                   ),
-                  pw.SizedBox(
-                    height: 2,
-                  ),
+                  pw.SizedBox(height: 2),
                   pw.Text(
                     sale.note,
-                    style:
-                        pw.TextStyle(
-                      font:
-                          regularFont,
-                      fontSize:
-                          normalFontSize,
+                    style: pw.TextStyle(
+                      font: regularFont,
+                      fontSize: normalFontSize,
                     ),
                   ),
                 ],
@@ -1194,110 +805,65 @@ class SaleInvoicePdf {
           // AMOUNT IN WORDS
           // ======================================================
           pw.SizedBox(
-            height:
-                itemCount <= 4
-                    ? 16
-                    : itemCount <= 8
-                        ? 12
-                        : 8,
+            height: itemCount <= 4
+                ? 16
+                : itemCount <= 8
+                ? 12
+                : 8,
           ),
 
           pw.Text(
             "Amount in Words",
-            style:
-                pw.TextStyle(
-              font:
-                  boldFont,
-              fontSize:
-                  normalFontSize + 1,
-              color:
-                  PdfColors.blue900,
+            style: pw.TextStyle(
+              font: boldFont,
+              fontSize: normalFontSize + 1,
+              color: PdfColors.blue900,
             ),
           ),
 
-          pw.SizedBox(
-            height: 3,
-          ),
+          pw.SizedBox(height: 3),
 
           pw.Text(
-            _amountInWords(
-              finalDue.toInt(),
-            ),
-            style:
-                pw.TextStyle(
-              font:
-                  regularFont,
-              fontSize:
-                  normalFontSize,
-            ),
+            _amountInWords(finalDue.toInt()),
+            style: pw.TextStyle(font: regularFont, fontSize: normalFontSize),
           ),
 
           // ======================================================
           // SIGNATURE
           // ======================================================
           pw.SizedBox(
-            height:
-                itemCount <= 4
-                    ? 18
-                    : itemCount <= 8
-                        ? 13
-                        : 8,
-          ),
-
-          pw.Divider(
-            height: 8,
+            height: itemCount <= 4
+                ? 18
+                : itemCount <= 8
+                ? 13
+                : 8,
           ),
 
           pw.Row(
-            mainAxisAlignment:
-                pw.MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Column(
-                mainAxisSize:
-                    pw.MainAxisSize.min,
+                mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  pw.Container(
-                    width: 150,
-                    child:
-                        pw.Divider(
-                      height: 7,
-                    ),
-                  ),
+                  pw.Container(width: 150, child: pw.Divider(height: 7)),
                   pw.Text(
                     "Customer Signature",
-                    style:
-                        pw.TextStyle(
-                      font:
-                          regularFont,
-                      fontSize:
-                          itemCount <= 8
-                              ? 8
-                              : 7,
+                    style: pw.TextStyle(
+                      font: regularFont,
+                      fontSize: itemCount <= 8 ? 8 : 7,
                     ),
                   ),
                 ],
               ),
               pw.Column(
-                mainAxisSize:
-                    pw.MainAxisSize.min,
+                mainAxisSize: pw.MainAxisSize.min,
                 children: [
-                  pw.Container(
-                    width: 150,
-                    child:
-                        pw.Divider(
-                      height: 7,
-                    ),
-                  ),
+                  pw.Container(width: 150, child: pw.Divider(height: 7)),
                   pw.Text(
                     "Authorized Signature",
-                    style:
-                        pw.TextStyle(
-                      font:
-                          regularFont,
-                      fontSize:
-                          itemCount <= 8
-                              ? 8
-                              : 7,
+                    style: pw.TextStyle(
+                      font: regularFont,
+                      fontSize: itemCount <= 8 ? 8 : 7,
                     ),
                   ),
                 ],
@@ -1309,28 +875,20 @@ class SaleInvoicePdf {
           // THANK YOU
           // ======================================================
           pw.SizedBox(
-            height:
-                itemCount <= 4
-                    ? 14
-                    : itemCount <= 8
-                        ? 10
-                        : 7,
+            height: itemCount <= 4
+                ? 14
+                : itemCount <= 8
+                ? 10
+                : 7,
           ),
 
           pw.Center(
-            child:
-                pw.Text(
+            child: pw.Text(
               "Thank you for your business.",
-              style:
-                  pw.TextStyle(
-                font:
-                    boldFont,
-                fontSize:
-                    itemCount <= 8
-                        ? 9
-                        : 8,
-                color:
-                    PdfColors.grey700,
+              style: pw.TextStyle(
+                font: boldFont,
+                fontSize: itemCount <= 8 ? 9 : 8,
+                color: PdfColors.grey700,
               ),
             ),
           ),
@@ -1338,63 +896,37 @@ class SaleInvoicePdf {
           // ======================================================
           // FOOTER
           // ======================================================
-          pw.SizedBox(
-            height:
-                itemCount <= 8
-                    ? 8
-                    : 5,
-          ),
+          pw.SizedBox(height: itemCount <= 8 ? 8 : 5),
 
           pw.Container(
-            padding:
-                const pw.EdgeInsets.only(
-              top: 5,
-            ),
-            decoration:
-                const pw.BoxDecoration(
-              border:
-                  pw.Border(
-                top:
-                    pw.BorderSide(
-                  color:
-                      PdfColors.grey400,
-                  width: 0.5,
-                ),
+            padding: const pw.EdgeInsets.only(top: 5),
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
               ),
             ),
-            child:
-                pw.Row(
-              mainAxisAlignment:
-                  pw.MainAxisAlignment.spaceBetween,
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Expanded(
-                  child:
-                      pw.Text(
+                  child: pw.Text(
                     "Developed by "
                     "${GABBranding.developedBy} — "
                     "Building Ideas Into Software",
-                    style:
-                        pw.TextStyle(
-                      font:
-                          regularFont,
+                    style: pw.TextStyle(
+                      font: regularFont,
                       fontSize: 7,
-                      color:
-                          PdfColors.grey700,
+                      color: PdfColors.grey700,
                     ),
                   ),
                 ),
-                pw.SizedBox(
-                  width: 10,
-                ),
+                pw.SizedBox(width: 10),
                 pw.Text(
                   "Page 1",
-                  style:
-                      pw.TextStyle(
-                    font:
-                        regularFont,
+                  style: pw.TextStyle(
+                    font: regularFont,
                     fontSize: 7,
-                    color:
-                        PdfColors.grey700,
+                    color: PdfColors.grey700,
                   ),
                 ),
               ],
@@ -1410,24 +942,15 @@ class SaleInvoicePdf {
 
     pdf.addPage(
       pw.Page(
-        pageFormat:
-            PdfPageFormat.a4,
-        margin:
-            const pw.EdgeInsets.all(
-          16,
-        ),
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(16),
         build: (context) {
           return pw.Align(
-            alignment:
-                pw.Alignment.topCenter,
-            child:
-                pw.FittedBox(
-              fit:
-                  pw.BoxFit.scaleDown,
-              alignment:
-                  pw.Alignment.topCenter,
-              child:
-                  invoiceContent,
+            alignment: pw.Alignment.topCenter,
+            child: pw.FittedBox(
+              fit: pw.BoxFit.scaleDown,
+              alignment: pw.Alignment.topCenter,
+              child: invoiceContent,
             ),
           );
         },
@@ -1448,26 +971,18 @@ class SaleInvoicePdf {
     double verticalPadding = 7,
   }) {
     return pw.Container(
-      alignment:
-          pw.Alignment.center,
-      padding:
-          pw.EdgeInsets.symmetric(
-        vertical:
-            verticalPadding,
+      alignment: pw.Alignment.center,
+      padding: pw.EdgeInsets.symmetric(
+        vertical: verticalPadding,
         horizontal: 5,
       ),
-      child:
-          pw.Text(
+      child: pw.Text(
         text,
-        textAlign:
-            pw.TextAlign.center,
-        style:
-            pw.TextStyle(
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
           font: font,
-          fontSize:
-              fontSize,
-          color:
-              PdfColors.white,
+          fontSize: fontSize,
+          color: PdfColors.white,
         ),
       ),
     );
@@ -1483,38 +998,25 @@ class SaleInvoicePdf {
     bool bold = false,
     double fontSize = 9,
     double verticalPadding = 7,
-    pw.TextAlign align =
-        pw.TextAlign.left,
+    pw.TextAlign align = pw.TextAlign.left,
   }) {
     return pw.Container(
-      padding:
-          pw.EdgeInsets.symmetric(
+      padding: pw.EdgeInsets.symmetric(
         horizontal: 6,
-        vertical:
-            verticalPadding,
+        vertical: verticalPadding,
       ),
-      alignment:
-          align ==
-                  pw.TextAlign.right
-              ? pw.Alignment.centerRight
-              : align ==
-                      pw.TextAlign.center
-                  ? pw.Alignment.center
-                  : pw.Alignment.centerLeft,
-      child:
-          pw.Text(
+      alignment: align == pw.TextAlign.right
+          ? pw.Alignment.centerRight
+          : align == pw.TextAlign.center
+          ? pw.Alignment.center
+          : pw.Alignment.centerLeft,
+      child: pw.Text(
         text,
-        textAlign:
-            align,
-        style:
-            pw.TextStyle(
+        textAlign: align,
+        style: pw.TextStyle(
           font: font,
-          fontSize:
-              fontSize,
-          fontWeight:
-              bold
-                  ? pw.FontWeight.bold
-                  : null,
+          fontSize: fontSize,
+          fontWeight: bold ? pw.FontWeight.bold : null,
         ),
       ),
     );
@@ -1533,45 +1035,26 @@ class SaleInvoicePdf {
     double fontSize = 9,
   }) {
     return pw.Padding(
-      padding:
-          const pw.EdgeInsets.symmetric(
-        vertical: 1.5,
-      ),
-      child:
-          pw.Row(
-        mainAxisAlignment:
-            pw.MainAxisAlignment.spaceBetween,
+      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Expanded(
-            child:
-                pw.Text(
+            child: pw.Text(
               title,
-              style:
-                  pw.TextStyle(
-                font:
-                    bold
-                        ? boldFont
-                        : regularFont,
-                fontSize:
-                    fontSize,
+              style: pw.TextStyle(
+                font: bold ? boldFont : regularFont,
+                fontSize: fontSize,
               ),
             ),
           ),
-          pw.SizedBox(
-            width: 10,
-          ),
+          pw.SizedBox(width: 10),
           pw.Text(
             value,
-            textAlign:
-                pw.TextAlign.right,
-            style:
-                pw.TextStyle(
-              font:
-                  bold
-                      ? boldFont
-                      : regularFont,
-              fontSize:
-                  fontSize,
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              font: bold ? boldFont : regularFont,
+              fontSize: fontSize,
             ),
           ),
         ],
@@ -1583,9 +1066,7 @@ class SaleInvoicePdf {
   // AMOUNT IN WORDS
   // ============================================================
 
-  static String _amountInWords(
-    int number,
-  ) {
+  static String _amountInWords(int number) {
     if (number == 0) {
       return "Zero Taka Only";
     }
@@ -1626,45 +1107,32 @@ class SaleInvoicePdf {
       "Ninety",
     ];
 
-    String convert(
-      int n,
-    ) {
+    String convert(int n) {
       if (n < 20) {
         return ones[n];
       }
 
       if (n < 100) {
-        return tens[n ~/ 10] +
-            (n % 10 == 0
-                ? ""
-                : " ${ones[n % 10]}");
+        return tens[n ~/ 10] + (n % 10 == 0 ? "" : " ${ones[n % 10]}");
       }
 
       if (n < 1000) {
         return "${ones[n ~/ 100]} Hundred" +
-            (n % 100 == 0
-                ? ""
-                : " ${convert(n % 100)}");
+            (n % 100 == 0 ? "" : " ${convert(n % 100)}");
       }
 
       if (n < 100000) {
         return "${convert(n ~/ 1000)} Thousand" +
-            (n % 1000 == 0
-                ? ""
-                : " ${convert(n % 1000)}");
+            (n % 1000 == 0 ? "" : " ${convert(n % 1000)}");
       }
 
       if (n < 10000000) {
         return "${convert(n ~/ 100000)} Lakh" +
-            (n % 100000 == 0
-                ? ""
-                : " ${convert(n % 100000)}");
+            (n % 100000 == 0 ? "" : " ${convert(n % 100000)}");
       }
 
       return "${convert(n ~/ 10000000)} Crore" +
-          (n % 10000000 == 0
-              ? ""
-              : " ${convert(n % 10000000)}");
+          (n % 10000000 == 0 ? "" : " ${convert(n % 10000000)}");
     }
 
     return "${convert(number)} Taka Only";
@@ -1674,29 +1142,18 @@ class SaleInvoicePdf {
   // GET PDF DIRECTORY
   // ============================================================
 
-  static Future<Directory>
-      _getInvoiceDirectory() async {
+  static Future<Directory> _getInvoiceDirectory() async {
     // ==========================================================
     // 1. USER SELECTED FOLDER
     // ==========================================================
 
-    final selectedFolder =
-        await _storageService
-            .getInvoiceFolder();
+    final selectedFolder = await _storageService.getInvoiceFolder();
 
-    if (selectedFolder != null &&
-        selectedFolder
-            .trim()
-            .isNotEmpty) {
-      final directory =
-          Directory(
-        selectedFolder.trim(),
-      );
+    if (selectedFolder != null && selectedFolder.trim().isNotEmpty) {
+      final directory = Directory(selectedFolder.trim());
 
       if (!await directory.exists()) {
-        await directory.create(
-          recursive: true,
-        );
+        await directory.create(recursive: true);
       }
 
       return directory;
@@ -1707,29 +1164,18 @@ class SaleInvoicePdf {
     // ==========================================================
 
     if (Platform.isAndroid) {
-      final externalDirectory =
-          await getExternalStorageDirectory();
+      final externalDirectory = await getExternalStorageDirectory();
 
-      if (externalDirectory ==
-          null) {
-        throw Exception(
-          "Unable to access Android storage.",
-        );
+      if (externalDirectory == null) {
+        throw Exception("Unable to access Android storage.");
       }
 
-      final directory =
-          Directory(
-        p.join(
-          externalDirectory.path,
-          "LalKhata",
-          "Invoices",
-        ),
+      final directory = Directory(
+        p.join(externalDirectory.path, "LalKhata", "Invoices"),
       );
 
       if (!await directory.exists()) {
-        await directory.create(
-          recursive: true,
-        );
+        await directory.create(recursive: true);
       }
 
       return directory;
@@ -1739,25 +1185,15 @@ class SaleInvoicePdf {
     // 3. DESKTOP / OTHER
     // ==========================================================
 
-    final home =
-        Platform.environment["HOME"];
+    final home = Platform.environment["HOME"];
 
-    if (home != null &&
-        home.trim().isNotEmpty) {
-      final directory =
-          Directory(
-        p.join(
-          home,
-          "Documents",
-          GABBranding.businessName,
-          "Invoices",
-        ),
+    if (home != null && home.trim().isNotEmpty) {
+      final directory = Directory(
+        p.join(home, "Documents", GABBranding.businessName, "Invoices"),
       );
 
       if (!await directory.exists()) {
-        await directory.create(
-          recursive: true,
-        );
+        await directory.create(recursive: true);
       }
 
       return directory;
@@ -1767,9 +1203,7 @@ class SaleInvoicePdf {
     // 4. FINAL FALLBACK
     // ==========================================================
 
-    throw Exception(
-      "Unable to determine invoice storage directory.",
-    );
+    throw Exception("Unable to determine invoice storage directory.");
   }
 
   // ============================================================
@@ -1782,15 +1216,9 @@ class SaleInvoicePdf {
     required List<SaleItem> items,
   }) async {
     await Printing.layoutPdf(
-      name:
-          "Invoice_${sale.invoiceNo}.pdf",
-      onLayout:
-          (_) async =>
-              generate(
-        sale: sale,
-        saleInfo: saleInfo,
-        items: items,
-      ),
+      name: "Invoice_${sale.invoiceNo}.pdf",
+      onLayout: (_) async =>
+          generate(sale: sale, saleInfo: saleInfo, items: items),
     );
   }
 
@@ -1807,59 +1235,35 @@ class SaleInvoicePdf {
     // GENERATE
     // ==========================================================
 
-    final bytes =
-        await generate(
-      sale: sale,
-      saleInfo: saleInfo,
-      items: items,
-    );
+    final bytes = await generate(sale: sale, saleInfo: saleInfo, items: items);
 
     // ==========================================================
     // DIRECTORY
     // ==========================================================
 
-    final documents =
-        await _getInvoiceDirectory();
+    final documents = await _getInvoiceDirectory();
 
     // ==========================================================
     // INVOICE NUMBER
     // ==========================================================
 
-    final invoiceNo =
-        sale.invoiceNo
-                    ?.trim()
-                    .isNotEmpty ==
-                true
-            ? sale.invoiceNo!
-                .trim()
-            : sale.id
-                    ?.toString() ??
-                "unknown";
+    final invoiceNo = sale.invoiceNo?.trim().isNotEmpty == true
+        ? sale.invoiceNo!.trim()
+        : sale.id?.toString() ?? "unknown";
 
     // ==========================================================
     // FILE
     // ==========================================================
 
-    final file =
-        File(
-      p.join(
-        documents.path,
-        "Invoice_$invoiceNo.pdf",
-      ),
-    );
+    final file = File(p.join(documents.path, "Invoice_$invoiceNo.pdf"));
 
     // ==========================================================
     // SAVE
     // ==========================================================
 
-    await file.writeAsBytes(
-      bytes,
-      flush: true,
-    );
+    await file.writeAsBytes(bytes, flush: true);
 
-    print(
-      "PDF Saved To: ${file.path}",
-    );
+    print("PDF Saved To: ${file.path}");
 
     return file;
   }

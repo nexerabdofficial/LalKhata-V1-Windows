@@ -8,6 +8,7 @@ class Income {
   final String incomeDate;
   final String? note;
   final String createdAt;
+  final String? voucherNo;
 
   Income({
     this.id,
@@ -19,6 +20,7 @@ class Income {
     required this.incomeDate,
     this.note,
     required this.createdAt,
+    this.voucherNo,
   });
 
   Map<String, dynamic> toMap() {
@@ -32,6 +34,7 @@ class Income {
       'income_date': incomeDate,
       'note': note,
       'created_at': createdAt,
+      'voucher_no': voucherNo,
     };
   }
 
@@ -46,6 +49,7 @@ class Income {
       incomeDate: map['income_date'],
       note: map['note'],
       createdAt: map['created_at'],
+      voucherNo: map['voucher_no'] as String?,
     );
   }
 }

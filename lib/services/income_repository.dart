@@ -5,8 +5,7 @@ import '../models/income.dart';
 import 'refresh_service.dart';
 
 class IncomeRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   // ============================================================
   // NEXT INCOME VOUCHER NO
@@ -27,13 +26,9 @@ class IncomeRepository {
       return 'IN#1';
     }
 
-    final lastVoucher =
-        result.first['voucher_no']?.toString() ?? '';
+    final lastVoucher = result.first['voucher_no']?.toString() ?? '';
 
-    final number = int.tryParse(
-          lastVoucher.replaceFirst('IN#', ''),
-        ) ??
-        0;
+    final number = int.tryParse(lastVoucher.replaceFirst('IN#', '')) ?? 0;
 
     return 'IN#${number + 1}';
   }
@@ -42,25 +37,20 @@ class IncomeRepository {
   // INSERT INCOME
   // ============================================================
 
-  Future<int> insertIncome(
-    Income income, {
-    String? voucherNo,
-  }) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> insertIncome(Income income, {String? voucherNo}) async {
+    final Database db = await _databaseHelper.database;
 
     final id = await db.transaction((txn) async {
       final map = income.toMap();
 
-      if (voucherNo != null) {
+      if (voucherNo != null && voucherNo.trim().isNotEmpty) {
         map['voucher_no'] = voucherNo;
       }
 
       final id = await txn.insert(
         'incomes',
         map,
-        conflictAlgorithm:
-            ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.abort,
       );
 
       if (income.accountId != null) {
@@ -70,11 +60,21 @@ class IncomeRepository {
           SET balance = balance + ?
           WHERE id = ?
           ''',
-          [
-            income.amount,
-            income.accountId,
-          ],
+          [income.amount, income.accountId],
         );
+
+        await txn.insert('account_transactions', {
+          'account_id': income.accountId,
+          'transaction_type': 'INCOME',
+          'reference_type': 'INCOME',
+          'reference_id': id,
+          'voucher_no': voucherNo,
+          'debit': 0,
+          'credit': income.amount,
+          'transaction_date': income.incomeDate,
+          'note': income.category,
+          'created_at': income.createdAt,
+        }, conflictAlgorithm: ConflictAlgorithm.abort);
       }
 
       return id;
@@ -90,19 +90,11 @@ class IncomeRepository {
   // ============================================================
 
   Future<List<Income>> getIncomes() async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
-    final result = await db.query(
-      'incomes',
-      orderBy: 'income_date DESC',
-    );
+    final result = await db.query('incomes', orderBy: 'income_date DESC');
 
-    return result
-        .map(
-          (e) => Income.fromMap(e),
-        )
-        .toList();
+    return result.map((e) => Income.fromMap(e)).toList();
   }
 
   // ============================================================
@@ -110,8 +102,7 @@ class IncomeRepository {
   // ============================================================
 
   Future<void> deleteIncome(int id) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final data = await db.query(
       'incomes',
@@ -124,8 +115,7 @@ class IncomeRepository {
       return;
     }
 
-    final income =
-        Income.fromMap(data.first);
+    final income = Income.fromMap(data.first);
 
     await db.transaction((txn) async {
       if (income.accountId != null) {
@@ -135,18 +125,20 @@ class IncomeRepository {
           SET balance = balance - ?
           WHERE id = ?
           ''',
-          [
-            income.amount,
-            income.accountId,
-          ],
+          [income.amount, income.accountId],
         );
       }
 
       await txn.delete(
-        'incomes',
-        where: 'id = ?',
-        whereArgs: [id],
+        'account_transactions',
+        where: '''
+          reference_type = ?
+          AND reference_id = ?
+        ''',
+        whereArgs: ['INCOME', id],
       );
+
+      await txn.delete('incomes', where: 'id = ?', whereArgs: [id]);
     });
 
     RefreshService.notify();
@@ -157,16 +149,14 @@ class IncomeRepository {
   // ============================================================
 
   Future<double> getTotalIncome() async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.rawQuery('''
       SELECT SUM(amount) AS total
       FROM incomes
     ''');
 
-    final value =
-        result.first['total'];
+    final value = result.first['total'];
 
     if (value == null) {
       return 0;
@@ -179,13 +169,11 @@ class IncomeRepository {
   // CATEGORY-WISE INCOME SUMMARY
   // ============================================================
 
-  Future<List<Map<String, dynamic>>>
-      getIncomeCategorySummary({
+  Future<List<Map<String, dynamic>>> getIncomeCategorySummary({
     required String startDate,
     required String endDate,
   }) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -198,10 +186,7 @@ class IncomeRepository {
       GROUP BY category
       ORDER BY category ASC
       ''',
-      [
-        startDate,
-        endDate,
-      ],
+      [startDate, endDate],
     );
 
     return result;
@@ -211,14 +196,12 @@ class IncomeRepository {
   // CATEGORY-WISE INCOME DETAILS
   // ============================================================
 
-  Future<List<Income>>
-      getIncomeByCategory({
+  Future<List<Income>> getIncomeByCategory({
     required String category,
     required String startDate,
     required String endDate,
   }) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.query(
       'incomes',
@@ -227,19 +210,10 @@ class IncomeRepository {
         AND income_date >= ?
         AND income_date < date(?, '+1 day')
       ''',
-      whereArgs: [
-        category,
-        startDate,
-        endDate,
-      ],
-      orderBy:
-          'income_date ASC, id ASC',
+      whereArgs: [category, startDate, endDate],
+      orderBy: 'income_date ASC, id ASC',
     );
 
-    return result
-        .map(
-          (e) => Income.fromMap(e),
-        )
-        .toList();
+    return result.map((e) => Income.fromMap(e)).toList();
   }
 }

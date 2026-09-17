@@ -17,6 +17,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
 
   bool _loading = true;
   bool _refreshing = false;
+  bool _loggingOut = false;
 
   @override
   void initState() {
@@ -66,6 +67,81 @@ class _LicenseScreenState extends State<LicenseScreen> {
       _result = result;
       _refreshing = false;
     });
+  }
+
+  // ==========================================================
+  // CHANGE LICENSE
+  // ==========================================================
+
+  Future<void> _changeLicense() async {
+    if (_loggingOut) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            'Change License?',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: const Text(
+            'The current license will be logged out '
+            'from this app.\n\n'
+            'Your business data will NOT be deleted. '
+            'The current database will be kept safely '
+            'and can be opened again if this license '
+            'is activated later.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+              child: const Text('Change License'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _loggingOut = true;
+    });
+
+    try {
+      await _licenseService.logoutLicense();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loggingOut = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not change license: $e',
+          ),
+        ),
+      );
+    }
   }
 
   // ==========================================================
@@ -247,6 +323,8 @@ class _LicenseScreenState extends State<LicenseScreen> {
                   const SizedBox(height: 16),
                   _buildRegisteredDevices(),
                   const SizedBox(height: 16),
+                  _buildChangeLicenseCard(),
+                  const SizedBox(height: 16),
                   _buildSupportCard(),
                 ],
               ),
@@ -334,9 +412,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 20),
-
             Container(
               width: double.infinity,
               padding:
@@ -384,9 +460,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 20),
-
             _buildLicenseInfoRow(
               Icons.workspace_premium_rounded,
               'Plan',
@@ -394,7 +468,6 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 result?.duration,
               ),
             ),
-
             _buildLicenseInfoRow(
               Icons.calendar_today_rounded,
               'Activated',
@@ -402,7 +475,6 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 result?.activatedAt,
               ),
             ),
-
             _buildLicenseInfoRow(
               Icons.event_rounded,
               'Expires',
@@ -481,9 +553,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 16),
-
             ClipRRect(
               borderRadius:
                   BorderRadius.circular(10),
@@ -495,9 +565,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 color: color,
               ),
             ),
-
             const SizedBox(height: 10),
-
             Text(
               isFull
                   ? 'All available device slots are currently in use.'
@@ -572,9 +640,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                   ),
               ],
             ),
-
             const SizedBox(height: 16),
-
             if (devices.isEmpty)
               _buildEmptyDevices()
             else
@@ -687,9 +753,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
               size: 24,
             ),
           ),
-
           const SizedBox(width: 13),
-
           Expanded(
             child: Column(
               crossAxisAlignment:
@@ -703,9 +767,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                         FontWeight.w700,
                   ),
                 ),
-
                 const SizedBox(height: 3),
-
                 Text(
                   _platformName(
                     device.platform,
@@ -715,7 +777,6 @@ class _LicenseScreenState extends State<LicenseScreen> {
                     color: Colors.grey,
                   ),
                 ),
-
                 if (device.lastVerifiedAt !=
                     null) ...[
                   const SizedBox(height: 3),
@@ -733,9 +794,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
               ],
             ),
           ),
-
           const SizedBox(width: 8),
-
           Container(
             padding:
                 const EdgeInsets.symmetric(
@@ -778,6 +837,83 @@ class _LicenseScreenState extends State<LicenseScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // CHANGE LICENSE CARD
+  // ==========================================================
+
+  Widget _buildChangeLicenseCard() {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
+                borderRadius:
+                    BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.swap_horiz_rounded,
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary,
+              ),
+            ),
+            const SizedBox(width: 13),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Change License',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight:
+                          FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Switch to another customer license '
+                    'on this device.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            _loggingOut
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child:
+                        CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : OutlinedButton(
+                    onPressed: _changeLicense,
+                    child: const Text(
+                      'Change',
+                    ),
+                  ),
+          ],
+        ),
       ),
     );
   }

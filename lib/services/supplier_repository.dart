@@ -6,16 +6,13 @@ import '../models/supplier.dart';
 import '../models/supplier_ledger.dart';
 
 class SupplierRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   // ============================================================
   // INSERT SUPPLIER
   // ============================================================
 
-  Future<int> insertSupplier(
-    Supplier supplier,
-  ) async {
+  Future<int> insertSupplier(Supplier supplier) async {
     final db = await _databaseHelper.database;
 
     final data = {
@@ -23,8 +20,7 @@ class SupplierRepository {
       'phone': supplier.phone,
       'address': supplier.address,
       'opening_balance': supplier.openingBalance,
-      'opening_date':
-          supplier.openingDate?.toIso8601String() ?? '',
+      'opening_date': supplier.openingDate?.toIso8601String() ?? '',
       'balance': supplier.balance,
     };
 
@@ -42,21 +38,14 @@ class SupplierRepository {
   Future<List<Supplier>> getSuppliers() async {
     final db = await _databaseHelper.database;
 
-    final maps = await db.query(
-      'suppliers',
-      orderBy: 'id DESC',
-    );
+    final maps = await db.query('suppliers', orderBy: 'id DESC');
 
     final suppliers = <Supplier>[];
 
     for (final map in maps) {
-      final supplier =
-          Supplier.fromMap(map);
+      final supplier = Supplier.fromMap(map);
 
-      final calculatedBalance =
-          await getSupplierBalance(
-        supplier.id!,
-      );
+      final calculatedBalance = await getSupplierBalance(supplier.id!);
 
       suppliers.add(
         Supplier(
@@ -64,12 +53,9 @@ class SupplierRepository {
           name: supplier.name,
           phone: supplier.phone,
           address: supplier.address,
-          openingBalance:
-              supplier.openingBalance,
-          openingDate:
-              supplier.openingDate,
-          balance:
-              calculatedBalance,
+          openingBalance: supplier.openingBalance,
+          openingDate: supplier.openingDate,
+          balance: calculatedBalance,
         ),
       );
     }
@@ -81,9 +67,7 @@ class SupplierRepository {
   // GET SINGLE SUPPLIER
   // ============================================================
 
-  Future<Supplier?> getSupplierById(
-    int id,
-  ) async {
+  Future<Supplier?> getSupplierById(int id) async {
     final db = await _databaseHelper.database;
 
     final maps = await db.query(
@@ -97,23 +81,18 @@ class SupplierRepository {
       return null;
     }
 
-    final supplier =
-        Supplier.fromMap(maps.first);
+    final supplier = Supplier.fromMap(maps.first);
 
-    final calculatedBalance =
-        await getSupplierBalance(id);
+    final calculatedBalance = await getSupplierBalance(id);
 
     return Supplier(
       id: supplier.id,
       name: supplier.name,
       phone: supplier.phone,
       address: supplier.address,
-      openingBalance:
-          supplier.openingBalance,
-      openingDate:
-          supplier.openingDate,
-      balance:
-          calculatedBalance,
+      openingBalance: supplier.openingBalance,
+      openingDate: supplier.openingDate,
+      balance: calculatedBalance,
     );
   }
 
@@ -121,9 +100,7 @@ class SupplierRepository {
   // UPDATE SUPPLIER
   // ============================================================
 
-  Future<int> updateSupplier(
-    Supplier supplier,
-  ) async {
+  Future<int> updateSupplier(Supplier supplier) async {
     final db = await _databaseHelper.database;
 
     return await db.update(
@@ -132,12 +109,8 @@ class SupplierRepository {
         'name': supplier.name,
         'phone': supplier.phone,
         'address': supplier.address,
-        'opening_balance':
-            supplier.openingBalance,
-        'opening_date':
-            supplier.openingDate
-                    ?.toIso8601String() ??
-                '',
+        'opening_balance': supplier.openingBalance,
+        'opening_date': supplier.openingDate?.toIso8601String() ?? '',
       },
       where: 'id = ?',
       whereArgs: [supplier.id],
@@ -148,16 +121,10 @@ class SupplierRepository {
   // DELETE SUPPLIER
   // ============================================================
 
-  Future<int> deleteSupplier(
-    int id,
-  ) async {
+  Future<int> deleteSupplier(int id) async {
     final db = await _databaseHelper.database;
 
-    return await db.delete(
-      'suppliers',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
   }
 
   // ============================================================
@@ -167,9 +134,7 @@ class SupplierRepository {
   Future<int> getSupplierCount() async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) AS count FROM suppliers',
-    );
+    final result = await db.rawQuery('SELECT COUNT(*) AS count FROM suppliers');
 
     return Sqflite.firstIntValue(result) ?? 0;
   }
@@ -178,9 +143,7 @@ class SupplierRepository {
   // SUPPLIER BALANCE
   // ============================================================
 
-  Future<double> getSupplierBalance(
-    int supplierId,
-  ) async {
+  Future<double> getSupplierBalance(int supplierId) async {
     final db = await _databaseHelper.database;
 
     final result = await db.rawQuery(
@@ -219,15 +182,10 @@ class SupplierRepository {
 
         AS balance
       ''',
-      [
-        supplierId,
-        supplierId,
-        supplierId,
-      ],
+      [supplierId, supplierId, supplierId],
     );
 
-    final value =
-        result.first['balance'];
+    final value = result.first['balance'];
 
     if (value == null) {
       return 0.0;
@@ -241,11 +199,9 @@ class SupplierRepository {
   // ============================================================
 
   Future<double> getTotalDue() async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT
         COALESCE(
           SUM(
@@ -285,11 +241,9 @@ class SupplierRepository {
           0
         ) AS total
       FROM suppliers
-      ''',
-    );
+      ''');
 
-    final value =
-        result.first['total'];
+    final value = result.first['total'];
 
     if (value == null) {
       return 0.0;
@@ -324,8 +278,7 @@ class SupplierRepository {
   // Later payment    = SP#3
   // ============================================================
 
-  Future<String>
-      saveSupplierPaymentWithAccountTransaction({
+  Future<String> saveSupplierPaymentWithAccountTransaction({
     required int supplierId,
     required double amount,
     required int accountId,
@@ -333,212 +286,154 @@ class SupplierRepository {
     String note = '',
   }) async {
     if (amount <= 0) {
-      throw Exception(
-        'Payment amount must be greater than zero.',
-      );
+      throw Exception('Payment amount must be greater than zero.');
     }
 
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
-    return await db.transaction(
-      (txn) async {
-        // ------------------------------------------------------
-        // 1. VALIDATE SUPPLIER
-        // ------------------------------------------------------
+    return await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // 1. VALIDATE SUPPLIER
+      // ------------------------------------------------------
 
-        final supplierRows =
-            await txn.query(
-          'suppliers',
-          columns: ['id'],
-          where: 'id = ?',
-          whereArgs: [supplierId],
-          limit: 1,
-        );
+      final supplierRows = await txn.query(
+        'suppliers',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [supplierId],
+        limit: 1,
+      );
 
-        if (supplierRows.isEmpty) {
-          throw Exception(
-            'Supplier not found.',
-          );
-        }
+      if (supplierRows.isEmpty) {
+        throw Exception('Supplier not found.');
+      }
 
-        // ------------------------------------------------------
-        // 2. VALIDATE ACCOUNT
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 2. VALIDATE ACCOUNT
+      // ------------------------------------------------------
 
-        final accountRows =
-            await txn.query(
-          'accounts',
-          columns: ['id'],
-          where: 'id = ?',
-          whereArgs: [accountId],
-          limit: 1,
-        );
+      final accountRows = await txn.query(
+        'accounts',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [accountId],
+        limit: 1,
+      );
 
-        if (accountRows.isEmpty) {
-          throw Exception(
-            'Account not found.',
-          );
-        }
+      if (accountRows.isEmpty) {
+        throw Exception('Account not found.');
+      }
 
-        // ------------------------------------------------------
-        // 3. GENERATE NEXT SP#
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 3. GENERATE NEXT SP#
+      // ------------------------------------------------------
 
-        final voucherResult =
-            await txn.rawQuery(
-          '''
+      final voucherResult = await txn.rawQuery('''
           SELECT voucher_no
           FROM supplier_payments
           WHERE voucher_no LIKE 'SP#%'
           ORDER BY id DESC
           LIMIT 1
-          ''',
-        );
+          ''');
 
-        String voucherNo;
+      String voucherNo;
 
-        if (voucherResult.isEmpty) {
-          voucherNo = 'SP#1';
-        } else {
-          final lastVoucher =
-              voucherResult.first[
-                    'voucher_no'
-                  ]?.toString() ??
-                  '';
+      if (voucherResult.isEmpty) {
+        voucherNo = 'SP#1';
+      } else {
+        final lastVoucher = voucherResult.first['voucher_no']?.toString() ?? '';
 
-          final lastNumber =
-              int.tryParse(
-                    lastVoucher.replaceFirst(
-                      'SP#',
-                      '',
-                    ),
-                  ) ??
-                  0;
+        final lastNumber =
+            int.tryParse(lastVoucher.replaceFirst('SP#', '')) ?? 0;
 
-          voucherNo =
-              'SP#${lastNumber + 1}';
-        }
+        voucherNo = 'SP#${lastNumber + 1}';
+      }
 
-        // ------------------------------------------------------
-        // 4. DUPLICATE CHECK
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 4. DUPLICATE CHECK
+      // ------------------------------------------------------
 
-        final existingPayment =
-            await txn.query(
-          'supplier_payments',
-          columns: ['id'],
-          where: 'voucher_no = ?',
-          whereArgs: [voucherNo],
-          limit: 1,
-        );
+      final existingPayment = await txn.query(
+        'supplier_payments',
+        columns: ['id'],
+        where: 'voucher_no = ?',
+        whereArgs: [voucherNo],
+        limit: 1,
+      );
 
-        if (existingPayment.isNotEmpty) {
-          throw Exception(
-            'Payment voucher $voucherNo already exists.',
-          );
-        }
+      if (existingPayment.isNotEmpty) {
+        throw Exception('Payment voucher $voucherNo already exists.');
+      }
 
-        // ------------------------------------------------------
-        // 5. SAVE PAYMENT
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 5. SAVE PAYMENT
+      // ------------------------------------------------------
 
-        final transactionDate =
-            DateTime.now()
-                .toIso8601String();
+      final transactionDate = DateTime.now().toIso8601String();
 
-        final paymentId =
-            await txn.insert(
-          'supplier_payments',
-          {
-            'supplier_id':
-                supplierId,
+      final paymentId = await txn.insert('supplier_payments', {
+        'supplier_id': supplierId,
 
-            // Later payment
-            // is not connected to a purchase.
-            'purchase_id':
-                null,
+        // Later payment
+        // is not connected to a purchase.
+        'purchase_id': null,
 
-            'voucher_no':
-                voucherNo,
+        'voucher_no': voucherNo,
 
-            'amount':
-                amount,
+        'amount': amount,
 
-            'account_id':
-                accountId,
+        'account_id': accountId,
 
-            'payment_method':
-                paymentMethod,
+        'payment_method': paymentMethod,
 
-            'note':
-                note,
+        'note': note,
 
-            'created_at':
-                transactionDate,
-          },
-        );
+        'created_at': transactionDate,
+      });
 
-        // ------------------------------------------------------
-        // 6. ACCOUNT LEDGER
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 6. ACCOUNT LEDGER
+      // ------------------------------------------------------
 
-        final accountTransaction =
-            AccountTransaction(
-          accountId: accountId,
-          transactionType:
-              'SUPPLIER_PAYMENT',
-          referenceType:
-              'SUPPLIER_PAYMENT',
-          referenceId:
-              paymentId,
-          voucherNo:
-              voucherNo,
-          debit:
-              amount,
-          credit:
-              0,
-          transactionDate:
-              transactionDate,
-          note:
-              note,
-          createdAt:
-              transactionDate,
-        );
+      final accountTransaction = AccountTransaction(
+        accountId: accountId,
+        transactionType: 'SUPPLIER_PAYMENT',
+        referenceType: 'SUPPLIER_PAYMENT',
+        referenceId: paymentId,
+        voucherNo: voucherNo,
+        debit: amount,
+        credit: 0,
+        transactionDate: transactionDate,
+        note: note,
+        createdAt: transactionDate,
+      );
 
-        // ------------------------------------------------------
-        // 7. DUPLICATE ACCOUNT TRANSACTION CHECK
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // 7. DUPLICATE ACCOUNT TRANSACTION CHECK
+      // ------------------------------------------------------
 
-        final existingTransaction =
-            await txn.query(
-          'account_transactions',
-          columns: ['id'],
-          where: '''
+      final existingTransaction = await txn.query(
+        'account_transactions',
+        columns: ['id'],
+        where: '''
             reference_type = ?
             AND reference_id = ?
             AND transaction_type = ?
           ''',
-          whereArgs: [
-            'SUPPLIER_PAYMENT',
-            paymentId,
-            'SUPPLIER_PAYMENT',
-          ],
-          limit: 1,
+        whereArgs: ['SUPPLIER_PAYMENT', paymentId, 'SUPPLIER_PAYMENT'],
+        limit: 1,
+      );
+
+      if (existingTransaction.isEmpty) {
+        await txn.insert(
+          'account_transactions',
+          accountTransaction.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.abort,
         );
+      }
 
-        if (existingTransaction.isEmpty) {
-          await txn.insert(
-            'account_transactions',
-            accountTransaction.toMap(),
-            conflictAlgorithm:
-                ConflictAlgorithm.abort,
-          );
-        }
-
-        return voucherNo;
-      },
-    );
+      return voucherNo;
+    });
   }
 
   // ============================================================
@@ -553,52 +448,36 @@ class SupplierRepository {
     required String paymentMethod,
     String note = '',
   }) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     if (amount <= 0) {
       return;
     }
 
-    await db.transaction(
-      (txn) async {
-        final existing =
-            await txn.query(
-          'supplier_payments',
-          columns: ['id'],
-          where: 'voucher_no = ?',
-          whereArgs: [voucherNo],
-          limit: 1,
-        );
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'supplier_payments',
+        columns: ['id'],
+        where: 'voucher_no = ?',
+        whereArgs: [voucherNo],
+        limit: 1,
+      );
 
-        if (existing.isNotEmpty) {
-          return;
-        }
+      if (existing.isNotEmpty) {
+        return;
+      }
 
-        await txn.insert(
-          'supplier_payments',
-          {
-            'supplier_id':
-                supplierId,
-            'purchase_id':
-                null,
-            'voucher_no':
-                voucherNo,
-            'amount':
-                amount,
-            'account_id':
-                accountId,
-            'payment_method':
-                paymentMethod,
-            'note':
-                note,
-            'created_at':
-                DateTime.now()
-                    .toIso8601String(),
-          },
-        );
-      },
-    );
+      await txn.insert('supplier_payments', {
+        'supplier_id': supplierId,
+        'purchase_id': null,
+        'voucher_no': voucherNo,
+        'amount': amount,
+        'account_id': accountId,
+        'payment_method': paymentMethod,
+        'note': note,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    });
   }
 
   // ============================================================
@@ -611,15 +490,10 @@ class SupplierRepository {
   // Purchase-time payment ALSO appears as SP# voucher.
   // ============================================================
 
-  Future<List<SupplierLedger>>
-      getSupplierLedger(
-    int supplierId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<List<SupplierLedger>> getSupplierLedger(int supplierId) async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
+    final result = await db.rawQuery(
       '''
       SELECT
         opening_date AS date,
@@ -669,20 +543,11 @@ class SupplierRepository {
         sort_order ASC,
         row_id ASC
       ''',
-      [
-        supplierId,
-        supplierId,
-        supplierId,
-      ],
+      [supplierId, supplierId, supplierId],
     );
 
     return result
-        .map(
-          (e) =>
-              SupplierLedger.fromMap(
-            Map<String, dynamic>.from(e),
-          ),
-        )
+        .map((e) => SupplierLedger.fromMap(Map<String, dynamic>.from(e)))
         .toList();
   }
 
@@ -690,40 +555,24 @@ class SupplierRepository {
   // NEXT SUPPLIER PAYMENT VOUCHER
   // ============================================================
 
-  Future<String>
-      getNextSupplierPaymentVoucherNo() async {
-    final db =
-        await _databaseHelper.database;
+  Future<String> getNextSupplierPaymentVoucherNo() async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT voucher_no
       FROM supplier_payments
       WHERE voucher_no LIKE 'SP#%'
       ORDER BY id DESC
       LIMIT 1
-      ''',
-    );
+      ''');
 
     if (result.isEmpty) {
       return 'SP#1';
     }
 
-    final lastVoucher =
-        result.first[
-              'voucher_no'
-            ]?.toString() ??
-            '';
+    final lastVoucher = result.first['voucher_no']?.toString() ?? '';
 
-    final number =
-        int.tryParse(
-              lastVoucher.replaceFirst(
-                'SP#',
-                '',
-              ),
-            ) ??
-            0;
+    final number = int.tryParse(lastVoucher.replaceFirst('SP#', '')) ?? 0;
 
     return 'SP#${number + 1}';
   }
@@ -732,12 +581,8 @@ class SupplierRepository {
   // GET SUPPLIER PAYMENTS
   // ============================================================
 
-  Future<List<Map<String, dynamic>>>
-      getSupplierPayments(
-    int supplierId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<List<Map<String, dynamic>>> getSupplierPayments(int supplierId) async {
+    final db = await _databaseHelper.database;
 
     return await db.query(
       'supplier_payments',
@@ -751,16 +596,65 @@ class SupplierRepository {
   // DELETE SUPPLIER PAYMENT
   // ============================================================
 
-  Future<int> deleteSupplierPayment(
-    int paymentId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<int> deleteSupplierPayment(int paymentId) async {
+    final db = await _databaseHelper.database;
 
-    return await db.delete(
-      'supplier_payments',
-      where: 'id = ?',
-      whereArgs: [paymentId],
-    );
+    return await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // 1. LOAD PAYMENT
+      // ------------------------------------------------------
+
+      final paymentRows = await txn.query(
+        'supplier_payments',
+        columns: ['id', 'voucher_no'],
+        where: 'id = ?',
+        whereArgs: [paymentId],
+        limit: 1,
+      );
+
+      if (paymentRows.isEmpty) {
+        return 0;
+      }
+
+      final voucherNo = paymentRows.first['voucher_no']?.toString();
+
+      // ------------------------------------------------------
+      // 2. DELETE LINKED ACCOUNT TRANSACTION
+      // ------------------------------------------------------
+
+      await txn.delete(
+        'account_transactions',
+        where: '''
+            reference_type = ?
+            AND reference_id = ?
+          ''',
+        whereArgs: ['SUPPLIER_PAYMENT', paymentId],
+      );
+
+      // ------------------------------------------------------
+      // 3. LEGACY FALLBACK BY VOUCHER
+      // ------------------------------------------------------
+
+      if (voucherNo != null && voucherNo.trim().isNotEmpty) {
+        await txn.delete(
+          'account_transactions',
+          where: '''
+              reference_type = ?
+              AND voucher_no = ?
+            ''',
+          whereArgs: ['SUPPLIER_PAYMENT', voucherNo],
+        );
+      }
+
+      // ------------------------------------------------------
+      // 4. DELETE PAYMENT
+      // ------------------------------------------------------
+
+      return await txn.delete(
+        'supplier_payments',
+        where: 'id = ?',
+        whereArgs: [paymentId],
+      );
+    });
   }
 }

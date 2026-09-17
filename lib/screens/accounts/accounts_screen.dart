@@ -7,19 +7,23 @@ import '../../services/account_repository.dart';
 import 'add_account_screen.dart';
 import 'account_ledger_screen.dart';
 import 'fund_transfer_screen.dart';
+import 'journal_screen.dart';
+import '../reports/cash_flow_screen.dart';
+import 'reconciliation_screen.dart';
+
 class AccountsScreen extends StatefulWidget {
-  const AccountsScreen({super.key});
+  final String? initialType;
+
+  const AccountsScreen({super.key, this.initialType});
 
   @override
   State<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-class _AccountsScreenState extends State<AccountsScreen>
-    with RouteAware {
+class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   final AccountRepository _repository = AccountRepository();
 
-  final TextEditingController _searchController =
-      TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   bool _loading = true;
 
@@ -85,22 +89,31 @@ class _AccountsScreenState extends State<AccountsScreen>
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to load accounts: $e"),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to load accounts: $e")));
     }
   }
 
   List<Account> _filteredAccounts() {
+    var accounts = _allAccounts;
+
+    if (widget.initialType != null) {
+      accounts = accounts
+          .where(
+            (account) =>
+                account.type.toUpperCase() == widget.initialType!.toUpperCase(),
+          )
+          .toList();
+    }
+
     if (_search.trim().isEmpty) {
-      return _allAccounts;
+      return accounts;
     }
 
     final keyword = _search.trim().toLowerCase();
 
-    return _allAccounts.where((account) {
+    return accounts.where((account) {
       return account.name.toLowerCase().contains(keyword) ||
           account.type.toLowerCase().contains(keyword);
     }).toList();
@@ -134,11 +147,7 @@ class _AccountsScreenState extends State<AccountsScreen>
   Future<void> _editAccount(Account account) async {
     final refresh = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AddAccountScreen(
-          account: account,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AddAccountScreen(account: account)),
     );
 
     if (refresh == true) {
@@ -149,11 +158,7 @@ class _AccountsScreenState extends State<AccountsScreen>
   Future<void> _openLedger(Account account) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AccountLedgerScreen(
-          account: account,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AccountLedgerScreen(account: account)),
     );
   }
 
@@ -163,9 +168,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       builder: (_) {
         return AlertDialog(
           title: const Text("Delete Account"),
-          content: Text(
-            "Delete '${account.name}'?",
-          ),
+          content: Text("Delete '${account.name}'?"),
           actions: [
             TextButton(
               onPressed: () {
@@ -187,29 +190,21 @@ class _AccountsScreenState extends State<AccountsScreen>
     if (confirm != true) return;
 
     try {
-      await _repository.deleteAccount(
-        account.id!,
-      );
+      await _repository.deleteAccount(account.id!);
 
       await _loadAccounts();
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Account deleted."),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Account deleted.")));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Failed to delete account: $e",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to delete account: $e")));
     }
   }
 
@@ -217,36 +212,85 @@ class _AccountsScreenState extends State<AccountsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text("Accounts"),
-  actions: [
-    IconButton(
-      tooltip: 'Fund Transfer',
-      icon: const Icon(Icons.swap_horiz),
-      onPressed: () async {
-        final refresh = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                const FundTransferScreen(),
-          ),
-        );
+        title: const Text("Accounts"),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CashFlowScreen()),
+                );
 
-        if (refresh == true) {
-          await _loadAccounts();
-        }
-      },
-    ),
-  ],
-),
+                await _loadAccounts();
+              },
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+              label: const Text('Cash Flow'),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final refresh = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FundTransferScreen()),
+                );
+
+                if (refresh == true) {
+                  await _loadAccounts();
+                }
+              },
+              icon: const Icon(Icons.swap_horiz, size: 18),
+              label: const Text('Contra'),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ReconciliationScreen(),
+                  ),
+                );
+
+                await _loadAccounts();
+              },
+              icon: const Icon(Icons.fact_check_outlined, size: 18),
+              label: const Text('Reconciliation'),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          OutlinedButton.icon(
+            onPressed: () async {
+              final refresh = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const JournalScreen()),
+              );
+
+              if (refresh == true) {
+                await _loadAccounts();
+              }
+            },
+            icon: const Icon(Icons.menu_book_outlined, size: 18),
+            label: const Text('Journal'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
 
       floatingActionButton: FloatingActionButton(
         child: const Icon(Icons.add),
         onPressed: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const AddAccountScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const AddAccountScreen()),
           );
 
           await _loadAccounts();
@@ -254,9 +298,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       ),
 
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadAccounts,
               child: Column(
@@ -267,27 +309,21 @@ class _AccountsScreenState extends State<AccountsScreen>
                       controller: _searchController,
                       decoration: InputDecoration(
                         hintText: "Search account...",
-                        prefixIcon: const Icon(
-                          Icons.search,
-                        ),
-                        suffixIcon:
-                            _searchController.text.isEmpty
-                                ? null
-                                : IconButton(
-                                    icon: const Icon(
-                                      Icons.clear,
-                                    ),
-                                    onPressed: () {
-                                      _searchController.clear();
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
 
-                                      setState(() {
-                                        _search = "";
-                                      });
-                                    },
-                                  ),
+                                  setState(() {
+                                    _search = "";
+                                  });
+                                },
+                              ),
                         border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       onChanged: (value) {
@@ -305,82 +341,53 @@ class _AccountsScreenState extends State<AccountsScreen>
                               _search.trim().isEmpty
                                   ? "No Accounts Yet"
                                   : "No matching accounts",
-                              style: const TextStyle(
-                                fontSize: 18,
-                              ),
+                              style: const TextStyle(fontSize: 18),
                             ),
                           )
                         : ListView.builder(
-                            padding:
-                                const EdgeInsets.only(
-                              bottom: 90,
-                            ),
-                            itemCount:
-                                _filteredAccounts().length,
-                            itemBuilder:
-                                (context, index) {
-                              final account =
-                                  _filteredAccounts()[index];
+                            padding: const EdgeInsets.only(bottom: 90),
+                            itemCount: _filteredAccounts().length,
+                            itemBuilder: (context, index) {
+                              final account = _filteredAccounts()[index];
 
                               return Card(
                                 elevation: 2,
-                                margin:
-                                    const EdgeInsets.symmetric(
+                                margin: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 6,
                                 ),
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.all(
-                                    12,
-                                  ),
+                                  padding: const EdgeInsets.all(12),
                                   child: Column(
                                     children: [
                                       Row(
                                         children: [
                                           CircleAvatar(
-                                            child: Icon(
-                                              getIcon(
-                                                account.type,
-                                              ),
-                                            ),
+                                            child: Icon(getIcon(account.type)),
                                           ),
 
-                                          const SizedBox(
-                                            width: 12,
-                                          ),
+                                          const SizedBox(width: 12),
 
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
-                                                  CrossAxisAlignment
-                                                      .start,
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   account.name,
-                                                  style:
-                                                      const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight
-                                                            .bold,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
                                                     fontSize: 16,
                                                   ),
                                                 ),
 
-                                                const SizedBox(
-                                                  height: 4,
-                                                ),
+                                                const SizedBox(height: 4),
 
                                                 Text(
-                                                  _typeLabels[
-                                                          account
-                                                              .type] ??
-                                                      account
-                                                          .type,
-                                                  style:
-                                                      const TextStyle(
-                                                    color:
-                                                        Colors.grey,
+                                                  _typeLabels[account.type] ??
+                                                      account.type,
+                                                  style: const TextStyle(
+                                                    color: Colors.grey,
                                                     fontSize: 13,
                                                   ),
                                                 ),
@@ -390,29 +397,22 @@ class _AccountsScreenState extends State<AccountsScreen>
 
                                           Column(
                                             crossAxisAlignment:
-                                                CrossAxisAlignment
-                                                    .end,
+                                                CrossAxisAlignment.end,
                                             children: [
                                               const Text(
                                                 "Balance",
-                                                style:
-                                                    TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12,
-                                                  color:
-                                                      Colors.grey,
+                                                  color: Colors.grey,
                                                 ),
                                               ),
 
                                               Text(
                                                 "৳${formatMoney(account.balance)}",
-                                                style:
-                                                    const TextStyle(
+                                                style: const TextStyle(
                                                   fontSize: 17,
-                                                  fontWeight:
-                                                      FontWeight
-                                                          .bold,
-                                                  color:
-                                                      Colors.green,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.green,
                                                 ),
                                               ),
                                             ],
@@ -420,95 +420,62 @@ class _AccountsScreenState extends State<AccountsScreen>
                                         ],
                                       ),
 
-                                      const SizedBox(
-                                        height: 12,
-                                      ),
+                                      const SizedBox(height: 12),
 
-                                      const Divider(
-                                        height: 1,
-                                      ),
+                                      const Divider(height: 1),
 
-                                      const SizedBox(
-                                        height: 10,
-                                      ),
+                                      const SizedBox(height: 10),
 
                                       Row(
                                         children: [
                                           Expanded(
-                                            child:
-                                                OutlinedButton
-                                                    .icon(
+                                            child: OutlinedButton.icon(
                                               onPressed: () =>
-                                                  _editAccount(
-                                                account,
-                                              ),
-                                              icon:
-                                                  const Icon(
+                                                  _editAccount(account),
+                                              icon: const Icon(
                                                 Icons.edit,
                                                 size: 18,
                                               ),
-                                              label:
-                                                  const Text(
+                                              label: const Text(
                                                 "Edit",
                                                 maxLines: 1,
-                                                softWrap:
-                                                    false,
+                                                softWrap: false,
                                               ),
                                             ),
                                           ),
 
-                                          const SizedBox(
-                                            width: 8,
-                                          ),
+                                          const SizedBox(width: 8),
 
                                           Expanded(
-                                            child:
-                                                OutlinedButton
-                                                    .icon(
+                                            child: OutlinedButton.icon(
                                               onPressed: () =>
-                                                  _openLedger(
-                                                account,
-                                              ),
-                                              icon:
-                                                  const Icon(
-                                                Icons
-                                                    .receipt_long,
+                                                  _openLedger(account),
+                                              icon: const Icon(
+                                                Icons.receipt_long,
                                                 size: 18,
                                               ),
-                                              label:
-                                                  const Text(
+                                              label: const Text(
                                                 "Ledger",
                                                 maxLines: 1,
-                                                softWrap:
-                                                    false,
+                                                softWrap: false,
                                               ),
                                             ),
                                           ),
 
-                                          const SizedBox(
-                                            width: 8,
-                                          ),
+                                          const SizedBox(width: 8),
 
                                           Expanded(
-                                            child:
-                                                OutlinedButton
-                                                    .icon(
+                                            child: OutlinedButton.icon(
                                               onPressed: () =>
-                                                  _deleteAccount(
-                                                account,
-                                              ),
-                                              icon:
-                                                  const Icon(
-                                                Icons
-                                                    .delete_outline,
+                                                  _deleteAccount(account),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
                                                 size: 18,
                                               ),
-                                              label:
-                                                  const Text(
+                                              label: const Text(
                                                 "Delete",
                                                 maxLines: 1,
-                                                softWrap:
-                                                    false,
+                                                softWrap: false,
                                               ),
                                             ),
                                           ),

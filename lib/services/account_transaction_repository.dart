@@ -4,8 +4,7 @@ import '../database/database_helper.dart';
 import '../models/account_transaction.dart';
 
 class AccountTransactionRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   // ============================================================
   // INSERT TRANSACTION
@@ -15,34 +14,24 @@ class AccountTransactionRepository {
   // twice.
   // ============================================================
 
-  Future<int> insertTransaction(
-    AccountTransaction transaction,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> insertTransaction(AccountTransaction transaction) async {
+    final Database db = await _databaseHelper.database;
 
     // ----------------------------------------------------------
     // Supplier payment duplicate protection
     // ----------------------------------------------------------
 
-    if (transaction.referenceType ==
-            'SUPPLIER_PAYMENT' &&
+    if (transaction.referenceType == 'SUPPLIER_PAYMENT' &&
         transaction.voucherNo != null &&
-        transaction.voucherNo!
-            .trim()
-            .isNotEmpty) {
-      final existing =
-          await db.query(
+        transaction.voucherNo!.trim().isNotEmpty) {
+      final existing = await db.query(
         'account_transactions',
         columns: ['id'],
         where: '''
           reference_type = ?
           AND voucher_no = ?
         ''',
-        whereArgs: [
-          'SUPPLIER_PAYMENT',
-          transaction.voucherNo,
-        ],
+        whereArgs: ['SUPPLIER_PAYMENT', transaction.voucherNo],
         limit: 1,
       );
 
@@ -54,8 +43,7 @@ class AccountTransactionRepository {
     return await db.insert(
       'account_transactions',
       transaction.toMap(),
-      conflictAlgorithm:
-          ConflictAlgorithm.abort,
+      conflictAlgorithm: ConflictAlgorithm.abort,
     );
   }
 
@@ -69,12 +57,10 @@ class AccountTransactionRepository {
   // Opening + Credit - Debit
   // ============================================================
 
-  Future<List<AccountTransaction>>
-      getTransactionsByAccount(
+  Future<List<AccountTransaction>> getTransactionsByAccount(
     int accountId,
   ) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'account_transactions',
@@ -82,62 +68,38 @@ class AccountTransactionRepository {
         account_id = ?
         AND transaction_type NOT IN (?, ?)
       ''',
-      whereArgs: [
-        accountId,
-        'OPENING_BALANCE',
-        'OPENING',
-      ],
-      orderBy:
-          'transaction_date ASC, id ASC',
+      whereArgs: [accountId, 'OPENING_BALANCE', 'OPENING'],
+      orderBy: 'transaction_date ASC, id ASC',
     );
 
-    return maps
-        .map(
-          (map) =>
-              AccountTransaction.fromMap(
-            map,
-          ),
-        )
-        .toList();
+    return maps.map((map) => AccountTransaction.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET ALL TRANSACTIONS
   // ============================================================
 
-  Future<List<AccountTransaction>>
-      getAllTransactions() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<List<AccountTransaction>> getAllTransactions() async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'account_transactions',
-      orderBy:
-          'transaction_date ASC, id ASC',
+      orderBy: 'transaction_date ASC, id ASC',
     );
 
-    return maps
-        .map(
-          (map) =>
-              AccountTransaction.fromMap(
-            map,
-          ),
-        )
-        .toList();
+    return maps.map((map) => AccountTransaction.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET TRANSACTIONS BY DATE RANGE
   // ============================================================
 
-  Future<List<AccountTransaction>>
-      getTransactionsByDateRange({
+  Future<List<AccountTransaction>> getTransactionsByDateRange({
     required int accountId,
     required DateTime fromDate,
     required DateTime toDate,
   }) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     final from = DateTime(
       fromDate.year,
@@ -162,35 +124,19 @@ class AccountTransactionRepository {
         AND transaction_date >= ?
         AND transaction_date <= ?
       ''',
-      whereArgs: [
-        accountId,
-        from,
-        to,
-      ],
-      orderBy:
-          'transaction_date ASC, id ASC',
+      whereArgs: [accountId, from, to],
+      orderBy: 'transaction_date ASC, id ASC',
     );
 
-    return maps
-        .map(
-          (map) =>
-              AccountTransaction.fromMap(
-            map,
-          ),
-        )
-        .toList();
+    return maps.map((map) => AccountTransaction.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET SINGLE TRANSACTION
   // ============================================================
 
-  Future<AccountTransaction?>
-      getTransactionById(
-    int id,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<AccountTransaction?> getTransactionById(int id) async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'account_transactions',
@@ -203,20 +149,15 @@ class AccountTransactionRepository {
       return null;
     }
 
-    return AccountTransaction.fromMap(
-      maps.first,
-    );
+    return AccountTransaction.fromMap(maps.first);
   }
 
   // ============================================================
   // DELETE TRANSACTION
   // ============================================================
 
-  Future<int> deleteTransaction(
-    int id,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> deleteTransaction(int id) async {
+    final Database db = await _databaseHelper.database;
 
     return await db.delete(
       'account_transactions',
@@ -229,13 +170,11 @@ class AccountTransactionRepository {
   // DELETE BY REFERENCE
   // ============================================================
 
-  Future<int>
-      deleteTransactionsByReference({
+  Future<int> deleteTransactionsByReference({
     required String referenceType,
     required int referenceId,
   }) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     return await db.delete(
       'account_transactions',
@@ -243,10 +182,7 @@ class AccountTransactionRepository {
         reference_type = ?
         AND reference_id = ?
       ''',
-      whereArgs: [
-        referenceType,
-        referenceId,
-      ],
+      whereArgs: [referenceType, referenceId],
     );
   }
 
@@ -254,12 +190,8 @@ class AccountTransactionRepository {
   // DELETE SUPPLIER PAYMENT TRANSACTION
   // ============================================================
 
-  Future<int>
-      deleteSupplierPaymentTransaction(
-    String voucherNo,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> deleteSupplierPaymentTransaction(String voucherNo) async {
+    final Database db = await _databaseHelper.database;
 
     return await db.delete(
       'account_transactions',
@@ -267,10 +199,7 @@ class AccountTransactionRepository {
         reference_type = ?
         AND voucher_no = ?
       ''',
-      whereArgs: [
-        'SUPPLIER_PAYMENT',
-        voucherNo,
-      ],
+      whereArgs: ['SUPPLIER_PAYMENT', voucherNo],
     );
   }
 
@@ -278,12 +207,8 @@ class AccountTransactionRepository {
   // GET TRANSACTION BY VOUCHER
   // ============================================================
 
-  Future<AccountTransaction?>
-      getTransactionByVoucher(
-    String voucherNo,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<AccountTransaction?> getTransactionByVoucher(String voucherNo) async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'account_transactions',
@@ -296,34 +221,24 @@ class AccountTransactionRepository {
       return null;
     }
 
-    return AccountTransaction.fromMap(
-      maps.first,
-    );
+    return AccountTransaction.fromMap(maps.first);
   }
 
   // ============================================================
   // CHECK SUPPLIER PAYMENT TRANSACTION
   // ============================================================
 
-  Future<bool>
-      supplierPaymentTransactionExists(
-    String voucherNo,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<bool> supplierPaymentTransactionExists(String voucherNo) async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.query(
+    final result = await db.query(
       'account_transactions',
       columns: ['id'],
       where: '''
         reference_type = ?
         AND voucher_no = ?
       ''',
-      whereArgs: [
-        'SUPPLIER_PAYMENT',
-        voucherNo,
-      ],
+      whereArgs: ['SUPPLIER_PAYMENT', voucherNo],
       limit: 1,
     );
 
@@ -362,125 +277,210 @@ class AccountTransactionRepository {
     }
 
     if (amount <= 0) {
-      throw ArgumentError(
-        'Transfer amount must be greater than zero.',
-      );
+      throw ArgumentError('Transfer amount must be greater than zero.');
     }
 
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
-    await db.transaction(
-      (txn) async {
-        // ------------------------------------------------------
-        // Verify source account exists
-        // ------------------------------------------------------
+    await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // Verify source account exists
+      // ------------------------------------------------------
 
-        final source = await txn.query(
-          'accounts',
-          columns: ['id'],
-          where: 'id = ?',
-          whereArgs: [fromAccountId],
-          limit: 1,
-        );
+      final source = await txn.query(
+        'accounts',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [fromAccountId],
+        limit: 1,
+      );
 
-        if (source.isEmpty) {
-          throw StateError(
-            'Source account does not exist.',
-          );
-        }
+      if (source.isEmpty) {
+        throw StateError('Source account does not exist.');
+      }
 
-        // ------------------------------------------------------
-        // Verify destination account exists
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // Verify destination account exists
+      // ------------------------------------------------------
 
-        final destination = await txn.query(
-          'accounts',
-          columns: ['id'],
-          where: 'id = ?',
-          whereArgs: [toAccountId],
-          limit: 1,
-        );
+      final destination = await txn.query(
+        'accounts',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [toAccountId],
+        limit: 1,
+      );
 
-        if (destination.isEmpty) {
-          throw StateError(
-            'Destination account does not exist.',
-          );
-        }
+      if (destination.isEmpty) {
+        throw StateError('Destination account does not exist.');
+      }
 
-        // ------------------------------------------------------
-        // Prevent duplicate transfer voucher
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // Prevent duplicate transfer voucher
+      // ------------------------------------------------------
 
-        final existing = await txn.query(
-          'account_transactions',
-          columns: ['id'],
-          where: '''
+      final existing = await txn.query(
+        'account_transactions',
+        columns: ['id'],
+        where: '''
             reference_type = ?
             AND voucher_no = ?
           ''',
-          whereArgs: [
-            'FUND_TRANSFER',
-            voucherNo,
-          ],
-          limit: 1,
-        );
+        whereArgs: ['FUND_TRANSFER', voucherNo],
+        limit: 1,
+      );
 
-        if (existing.isNotEmpty) {
-          throw StateError(
-            'This transfer voucher already exists.',
-          );
-        }
+      if (existing.isNotEmpty) {
+        throw StateError('This transfer voucher already exists.');
+      }
 
-        final createdAt =
-            DateTime.now().toIso8601String();
+      final createdAt = DateTime.now().toIso8601String();
 
-        // ------------------------------------------------------
-        // SOURCE ACCOUNT
-        // Money goes OUT
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // SOURCE ACCOUNT
+      // Money goes OUT
+      // ------------------------------------------------------
 
-        await txn.insert(
-          'account_transactions',
-          {
-            'account_id': fromAccountId,
-            'transaction_type': 'FUND_TRANSFER_OUT',
-            'reference_type': 'FUND_TRANSFER',
-            'reference_id': null,
-            'voucher_no': voucherNo,
-            'debit': amount,
-            'credit': 0,
-            'transaction_date': transactionDate,
-            'note': note,
-            'created_at': createdAt,
-          },
-          conflictAlgorithm:
-              ConflictAlgorithm.abort,
-        );
+      await txn.insert('account_transactions', {
+        'account_id': fromAccountId,
+        'transaction_type': 'FUND_TRANSFER_OUT',
+        'reference_type': 'FUND_TRANSFER',
+        'reference_id': null,
+        'voucher_no': voucherNo,
+        'debit': amount,
+        'credit': 0,
+        'transaction_date': transactionDate,
+        'note': note,
+        'created_at': createdAt,
+      }, conflictAlgorithm: ConflictAlgorithm.abort);
 
-        // ------------------------------------------------------
-        // DESTINATION ACCOUNT
-        // Money comes IN
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DESTINATION ACCOUNT
+      // Money comes IN
+      // ------------------------------------------------------
 
-        await txn.insert(
-          'account_transactions',
-          {
-            'account_id': toAccountId,
-            'transaction_type': 'FUND_TRANSFER_IN',
-            'reference_type': 'FUND_TRANSFER',
-            'reference_id': null,
-            'voucher_no': voucherNo,
-            'debit': 0,
-            'credit': amount,
-            'transaction_date': transactionDate,
-            'note': note,
-            'created_at': createdAt,
-          },
-          conflictAlgorithm:
-              ConflictAlgorithm.abort,
-        );
-      },
+      await txn.insert('account_transactions', {
+        'account_id': toAccountId,
+        'transaction_type': 'FUND_TRANSFER_IN',
+        'reference_type': 'FUND_TRANSFER',
+        'reference_id': null,
+        'voucher_no': voucherNo,
+        'debit': 0,
+        'credit': amount,
+        'transaction_date': transactionDate,
+        'note': note,
+        'created_at': createdAt,
+      }, conflictAlgorithm: ConflictAlgorithm.abort);
+    });
+  }
+
+  Future<String> getNextJournalVoucherNo() async {
+    final Database db = await _databaseHelper.database;
+
+    final result = await db.rawQuery('''
+      SELECT voucher_no
+      FROM account_transactions
+      WHERE reference_type = 'JOURNAL'
+        AND voucher_no LIKE 'JR#%'
+      ORDER BY id DESC
+      LIMIT 1
+    ''');
+
+    if (result.isEmpty) return 'JR#1';
+
+    final voucher = result.first['voucher_no']?.toString() ?? '';
+    final number = int.tryParse(voucher.replaceFirst('JR#', '')) ?? 0;
+
+    return 'JR#${number + 1}';
+  }
+
+  Future<void> createJournal({
+    required List<AccountTransaction> entries,
+  }) async {
+    if (entries.isEmpty) {
+      throw ArgumentError('Journal must contain at least one entry.');
+    }
+
+    final totalDebit = entries.fold<double>(
+      0,
+      (sum, entry) => sum + entry.debit,
     );
+
+    final totalCredit = entries.fold<double>(
+      0,
+      (sum, entry) => sum + entry.credit,
+    );
+
+    if (totalDebit <= 0 || totalCredit <= 0) {
+      throw ArgumentError(
+        'Journal debit and credit must be greater than zero.',
+      );
+    }
+
+    if ((totalDebit - totalCredit).abs() > 0.000001) {
+      throw ArgumentError('Journal debit and credit must be equal.');
+    }
+
+    final voucherNo = entries.first.voucherNo?.trim();
+
+    if (voucherNo == null || voucherNo.isEmpty) {
+      throw ArgumentError('Journal voucher number is required.');
+    }
+
+    for (final entry in entries) {
+      if (entry.accountId <= 0) {
+        throw ArgumentError('Invalid account.');
+      }
+
+      if (entry.debit < 0 || entry.credit < 0) {
+        throw ArgumentError('Debit and credit cannot be negative.');
+      }
+
+      if (entry.debit > 0 && entry.credit > 0) {
+        throw ArgumentError(
+          'A journal line cannot have both debit and credit.',
+        );
+      }
+
+      if (entry.debit == 0 && entry.credit == 0) {
+        throw ArgumentError('A journal line must have debit or credit.');
+      }
+
+      if (entry.transactionType != 'JOURNAL' ||
+          entry.referenceType != 'JOURNAL') {
+        throw ArgumentError('Invalid journal transaction.');
+      }
+
+      if (entry.voucherNo?.trim() != voucherNo) {
+        throw ArgumentError('All journal lines must use the same voucher.');
+      }
+    }
+
+    final Database db = await _databaseHelper.database;
+
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'account_transactions',
+        columns: ['id'],
+        where: '''
+          reference_type = ?
+          AND voucher_no = ?
+        ''',
+        whereArgs: ['JOURNAL', voucherNo],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        throw StateError('Journal voucher already exists: $voucherNo');
+      }
+
+      for (final entry in entries) {
+        await txn.insert(
+          'account_transactions',
+          entry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.abort,
+        );
+      }
+    });
   }
 }

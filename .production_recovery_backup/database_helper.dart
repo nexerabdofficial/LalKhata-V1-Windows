@@ -1,10 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'dart:io';
 
 class DatabaseHelper {
   DatabaseHelper._();
@@ -17,329 +13,57 @@ class DatabaseHelper {
   // DATABASE VERSION
   // ============================================================
 
-  static const int _databaseVersion = 39;
-
-  // ============================================================
-  // LICENSE DATABASE
-  //
-  // Every customer/license gets its own SQLite database file.
-  //
-  // Example:
-  //
-  // NXR-RAHIM-001
-  //   ↓
-  // lalkhata_TlhSLVJBSElNLTAwMQ.db
-  //
-  // NXR-KOMEDA
-  //   ↓
-  // another separate database
-  //
-  // ============================================================
-
-  static const String _customerCodeKey = 'nexera_license_customer_code';
-
-  // ============================================================
-  // DATABASE GETTER
-  // ============================================================
+  static const int _databaseVersion = 35;
 
   Future<Database> get database async {
-    if (_database != null && _database!.isOpen) {
-      return _database!;
-    }
+    if (_database != null) return _database!;
 
     _database = await _initDatabase();
-
     return _database!;
   }
 
-  // ============================================================
-  // CLOSE CURRENT DATABASE
-  //
-  // Required before switching from one license to another.
-  // ============================================================
+Future<Database> _initDatabase() async {
+  late final String databasePath;
 
-  Future<void> closeDatabase() async {
-    final db = _database;
+  if (Platform.isWindows) {
+    final localAppData =
+        Platform.environment['LOCALAPPDATA'];
 
-    _database = null;
-
-    if (db != null && db.isOpen) {
-      await db.close();
-    }
-  }
-
-  // ============================================================
-  // SWITCH TO LICENSE DATABASE
-  //
-  // This method closes the current database and prepares the
-  // database belonging to the supplied customer/license code.
-  //
-  // The license code should already have been saved locally by
-  // LicenseService before calling this method.
-  // ============================================================
-
-  Future<void> switchToLicense(String customerCode) async {
-    final normalizedCode = _normalizeCustomerCode(customerCode);
-
-    if (normalizedCode.isEmpty) {
-      throw Exception('Cannot switch database: customer code is empty.');
+    if (localAppData == null ||
+        localAppData.trim().isEmpty) {
+      throw Exception(
+        'LOCALAPPDATA environment variable is not available.',
+      );
     }
 
-    await closeDatabase();
-
-    _database = await _initDatabase(customerCode: normalizedCode);
-  }
-
-  // ============================================================
-  // NORMALIZE CUSTOMER CODE
-  // ============================================================
-
-  String _normalizeCustomerCode(String customerCode) {
-    return customerCode.trim().toUpperCase();
-  }
-
-  // ============================================================
-  // DATABASE KEY
-  //
-  // Base64 URL encoding keeps the customer code safe for use
-  // inside a filename without adding another package.
-  // ============================================================
-
-  String _databaseKey(String customerCode) {
-    final bytes = utf8.encode(_normalizeCustomerCode(customerCode));
-
-    final encoded = base64UrlEncode(bytes);
-
-    return encoded.replaceAll('=', '');
-  }
-
-  // ============================================================
-  // DATABASE DIRECTORY
-  // ============================================================
-
-  Future<String> _getDatabaseDirectory() async {
-    if (Platform.isWindows) {
-      final localAppData = Platform.environment['LOCALAPPDATA'];
-
-      if (localAppData == null || localAppData.trim().isEmpty) {
-        throw Exception('LOCALAPPDATA environment variable is not available.');
-      }
-
-      final databasePath = join(localAppData, 'LalKhata');
-
-      final directory = Directory(databasePath);
-
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-
-      return databasePath;
-    }
-
-    final directory = await getApplicationSupportDirectory();
-
-    final databasePath = join(directory.path, 'LalKhataData');
-
-    final databaseDirectory = Directory(databasePath);
-
-    if (!await databaseDirectory.exists()) {
-      await databaseDirectory.create(recursive: true);
-    }
-
-    return databasePath;
-  }
-
-  // ============================================================
-  // DATABASE INITIALIZATION
-  // ============================================================
-
-  Future<Database> _initDatabase({String? customerCode}) async {
-    String normalizedCode;
-
-    if (customerCode != null && customerCode.trim().isNotEmpty) {
-      normalizedCode = _normalizeCustomerCode(customerCode);
-    } else {
-      final prefs = await SharedPreferences.getInstance();
-
-      final savedCode = prefs.getString(_customerCodeKey);
-
-      if (savedCode == null || savedCode.trim().isEmpty) {
-        throw Exception(
-          'No active license/customer code found. '
-          'Database cannot be opened before license activation.',
-        );
-      }
-
-      normalizedCode = _normalizeCustomerCode(savedCode);
-    }
-
-    final databasePath = await _getDatabaseDirectory();
-
-    final dbKey = _databaseKey(normalizedCode);
-
-    final path = join(databasePath, 'lalkhata_$dbKey.db');
-
-    // ==========================================================
-    // LEGACY DATABASE MIGRATION
-    //
-    // Old version used:
-    //
-    // nexera_inventory.db
-    //
-    // If that database exists and this license-specific database
-    // does not exist, move the old database to the new filename.
-    //
-    // IMPORTANT:
-    // We MOVE instead of COPY so that the old database cannot be
-    // accidentally imported into multiple different licenses.
-    // ==========================================================
-
-    // ==========================================================
-    // LEGACY DATABASE MIGRATION
-    //
-    // The legacy database may belong to the previously active
-    // license. It must NEVER be imported into a different/new
-    // customer's database.
-    // ==========================================================
-
-    final prefs = await SharedPreferences.getInstance();
-
-    final savedLicenseCode = prefs.getString(_customerCodeKey);
-
-    await _migrateLegacyDatabaseIfNeeded(
-      databasePath: databasePath,
-      targetPath: path,
-      legacyOwnerCode: savedLicenseCode,
-      requestedLicenseCode: normalizedCode,
+    databasePath = join(
+      localAppData,
+      'LalKhata',
     );
 
-    return await openDatabase(
-      path,
-      version: _databaseVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    final directory = Directory(databasePath);
+
+    if (!await directory.exists()) {
+      await directory.create(
+        recursive: true,
+      );
+    }
+  } else {
+    databasePath = await getDatabasesPath();
   }
 
-  // ============================================================
-  // LEGACY DATABASE MIGRATION
-  // ============================================================
+  final path = join(
+    databasePath,
+    'nexera_inventory.db',
+  );
 
-  Future<void> _migrateLegacyDatabaseIfNeeded({
-    required String databasePath,
-    required String targetPath,
-    required String? legacyOwnerCode,
-    required String requestedLicenseCode,
-  }) async {
-    final targetFile = File(targetPath);
-
-    // ==========================================================
-    // TARGET ALREADY EXISTS
-    // ==========================================================
-
-    if (await targetFile.exists()) {
-      return;
-    }
-
-    final legacyPath = join(databasePath, 'nexera_inventory.db');
-
-    final legacyFile = File(legacyPath);
-
-    // ==========================================================
-    // NO LEGACY DATABASE
-    //
-    // This is a genuinely new license/database.
-    // ==========================================================
-
-    if (!await legacyFile.exists()) {
-      return;
-    }
-
-    // ==========================================================
-    // SAFETY CHECK
-    //
-    // A legacy database is migrated ONLY when the requested
-    // license is the same license that was already saved locally.
-    //
-    // This protects multi-company usage:
-    //
-    // Company A legacy DB + Company B activation
-    // => DO NOT migrate A data into B.
-    //
-    // Company A legacy DB + Company A verification
-    // => migrate A data into A's license database.
-    //
-    // A genuinely new activation has no saved license code,
-    // therefore the legacy database is NOT imported.
-    // ==========================================================
-
-    final normalizedLegacyOwner = legacyOwnerCode?.trim().toUpperCase() ?? '';
-
-    if (normalizedLegacyOwner.isEmpty ||
-        normalizedLegacyOwner != requestedLicenseCode) {
-      return;
-    }
-
-    // ==========================================================
-    // LEGACY DATABASE MIGRATION
-    //
-    // Another database initialization may be running at the
-    // same time. Therefore we handle a possible race safely.
-    // ==========================================================
-
-    try {
-      await legacyFile.rename(targetPath);
-    } on FileSystemException {
-      // ========================================================
-      // RACE CONDITION SAFETY
-      //
-      // Another initialization may have already moved the
-      // legacy database to the target path.
-      //
-      // If target now exists, migration is already complete.
-      // ========================================================
-
-      if (await targetFile.exists()) {
-        return;
-      }
-
-      // Neither source nor target is available.
-      // This is a genuine filesystem error.
-      rethrow;
-    }
-
-    // ==========================================================
-    // SQLITE WAL / SHM SIDE FILES
-    // ==========================================================
-
-    final legacyWal = File('$legacyPath-wal');
-
-    final targetWal = File('$targetPath-wal');
-
-    if (await legacyWal.exists()) {
-      try {
-        await legacyWal.rename(targetWal.path);
-      } on FileSystemException {
-        if (!await targetWal.exists()) {
-          rethrow;
-        }
-      }
-    }
-
-    final legacyShm = File('$legacyPath-shm');
-
-    final targetShm = File('$targetPath-shm');
-
-    if (await legacyShm.exists()) {
-      try {
-        await legacyShm.rename(targetShm.path);
-      } on FileSystemException {
-        if (!await targetShm.exists()) {
-          rethrow;
-        }
-      }
-    }
-  }
+  return await openDatabase(
+    path,
+    version: _databaseVersion,
+    onCreate: _onCreate,
+    onUpgrade: _onUpgrade,
+  );
+}
 
   // ============================================================
   // SAFE COLUMN HELPER
@@ -351,12 +75,18 @@ class DatabaseHelper {
     String column,
     String definition,
   ) async {
-    final result = await db.rawQuery('PRAGMA table_info($table)');
+    final result = await db.rawQuery(
+      'PRAGMA table_info($table)',
+    );
 
-    final exists = result.any((row) => row['name'] == column);
+    final exists = result.any(
+      (row) => row['name'] == column,
+    );
 
     if (!exists) {
-      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+      await db.execute(
+        'ALTER TABLE $table ADD COLUMN $column $definition',
+      );
     }
   }
 
@@ -364,7 +94,11 @@ class DatabaseHelper {
   // DATABASE UPGRADE
   // ============================================================
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
     // ------------------------------------------------------------
     // VERSION 2
     // Suppliers
@@ -597,7 +331,12 @@ class DatabaseHelper {
     // ------------------------------------------------------------
 
     if (oldVersion < 16) {
-      await _addColumnIfMissing(db, 'purchases', 'account_id', 'INTEGER');
+      await _addColumnIfMissing(
+        db,
+        'purchases',
+        'account_id',
+        'INTEGER',
+      );
 
       await _addColumnIfMissing(
         db,
@@ -634,7 +373,12 @@ class DatabaseHelper {
     // ------------------------------------------------------------
 
     if (oldVersion < 18) {
-      await _addColumnIfMissing(db, 'expenses', 'account_id', 'INTEGER');
+      await _addColumnIfMissing(
+        db,
+        'expenses',
+        'account_id',
+        'INTEGER',
+      );
     }
 
     // ------------------------------------------------------------
@@ -713,7 +457,11 @@ class DatabaseHelper {
           AND opening_balance = 0
           AND balance = 0
         ''',
-        whereArgs: ['Cash', 'Bank', 'Mobile Banking'],
+        whereArgs: [
+          'Cash',
+          'Bank',
+          'Mobile Banking',
+        ],
       );
     }
 
@@ -756,7 +504,12 @@ class DatabaseHelper {
     // ------------------------------------------------------------
 
     if (oldVersion < 26) {
-      await _addColumnIfMissing(db, 'incomes', 'voucher_no', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'incomes',
+        'voucher_no',
+        'TEXT',
+      );
     }
 
     // ------------------------------------------------------------
@@ -765,7 +518,12 @@ class DatabaseHelper {
     // ------------------------------------------------------------
 
     if (oldVersion < 27) {
-      await _addColumnIfMissing(db, 'expenses', 'voucher_no', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'expenses',
+        'voucher_no',
+        'TEXT',
+      );
     }
 
     // ============================================================
@@ -774,9 +532,19 @@ class DatabaseHelper {
     // ============================================================
 
     if (oldVersion < 28) {
-      await _addColumnIfMissing(db, 'incomes', 'voucher_no', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'incomes',
+        'voucher_no',
+        'TEXT',
+      );
 
-      await _addColumnIfMissing(db, 'expenses', 'voucher_no', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'expenses',
+        'voucher_no',
+        'TEXT',
+      );
 
       await db.execute('''
         CREATE TABLE IF NOT EXISTS business_profile(
@@ -803,9 +571,19 @@ class DatabaseHelper {
     // ============================================================
 
     if (oldVersion < 29) {
-      await _addColumnIfMissing(db, 'customers', 'supabase_id', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'customers',
+        'supabase_id',
+        'TEXT',
+      );
 
-      await _addColumnIfMissing(db, 'customers', 'customer_code', 'TEXT');
+      await _addColumnIfMissing(
+        db,
+        'customers',
+        'customer_code',
+        'TEXT',
+      );
     }
 
     // ============================================================
@@ -830,7 +608,10 @@ class DatabaseHelper {
     if (oldVersion < 31) {
       final purchases = await db.query(
         'purchases',
-        columns: ['id', 'invoice_no'],
+        columns: [
+          'id',
+          'invoice_no',
+        ],
         orderBy: 'id ASC',
       );
 
@@ -838,12 +619,16 @@ class DatabaseHelper {
         final id = purchase['id'] as int;
         final invoiceNo = purchase['invoice_no'];
 
-        if (invoiceNo == null || invoiceNo.toString().trim().isEmpty) {
-          final voucherNo = 'PUR-${id.toString().padLeft(6, '0')}';
+        if (invoiceNo == null ||
+            invoiceNo.toString().trim().isEmpty) {
+          final voucherNo =
+              'PUR-${id.toString().padLeft(6, '0')}';
 
           await db.update(
             'purchases',
-            {'invoice_no': voucherNo},
+            {
+              'invoice_no': voucherNo,
+            },
             where: 'id = ?',
             whereArgs: [id],
           );
@@ -871,6 +656,10 @@ class DatabaseHelper {
     // ============================================================
 
     if (oldVersion < 33) {
+      // ----------------------------------------------------------
+      // LOANS
+      // ----------------------------------------------------------
+
       await db.execute('''
         CREATE TABLE loans(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -907,6 +696,10 @@ class DatabaseHelper {
         )
       ''');
 
+      // ----------------------------------------------------------
+      // LOAN PAYMENTS
+      // ----------------------------------------------------------
+
       await db.execute('''
         CREATE TABLE loan_payments(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -937,6 +730,22 @@ class DatabaseHelper {
     // ============================================================
     // VERSION 34
     // LOAN ACCRUED INTEREST
+    //
+    // IMPORTANT:
+    //
+    // accrued_interest is NOT part of principal.
+    //
+    // Example:
+    //
+    // Principal        = 50,000
+    // Paid Principal   = 10,000
+    // Remaining        = 40,000
+    // Accrued Interest = 16.44
+    //
+    // Total Outstanding
+    // = 40,000 + 16.44
+    //
+    // Interest is kept separately until actual payment/receipt.
     // ============================================================
 
     if (oldVersion < 34) {
@@ -947,191 +756,41 @@ class DatabaseHelper {
         'REAL NOT NULL DEFAULT 0',
       );
     }
+  // ============================================================
+// VERSION 35
+// LOAN INTEREST ACCRUAL DATE
+//
+// last_interest_date keeps track of the last date up to which
+// interest has been accrued.
+//
+// This is separate from principal and accrued_interest.
+// ============================================================
 
-    // ============================================================
-    // VERSION 35
-    // LOAN INTEREST ACCRUAL DATE
-    // ============================================================
+if (oldVersion < 35) {
+  await _addColumnIfMissing(
+    db,
+    'loans',
+    'accrued_interest',
+    'REAL NOT NULL DEFAULT 0',
+  );
 
-    if (oldVersion < 35) {
-      await _addColumnIfMissing(
-        db,
-        'loans',
-        'accrued_interest',
-        'REAL NOT NULL DEFAULT 0',
-      );
-
-      await _addColumnIfMissing(db, 'loans', 'last_interest_date', 'TEXT');
-    }
-
-    // ============================================================
-    // VERSION 36 - PRODUCTION / BOM
-    // ============================================================
-
-    if (oldVersion < 36) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS production_boms(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          product_id INTEGER NOT NULL,
-          name TEXT NOT NULL,
-          note TEXT,
-          is_active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL,
-          updated_at TEXT,
-          FOREIGN KEY(product_id) REFERENCES products(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS production_bom_items(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          bom_id INTEGER NOT NULL,
-          material_product_id INTEGER NOT NULL,
-          quantity REAL NOT NULL,
-          note TEXT,
-          FOREIGN KEY(bom_id) REFERENCES production_boms(id)
-            ON DELETE CASCADE,
-          FOREIGN KEY(material_product_id) REFERENCES products(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS productions(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          product_id INTEGER NOT NULL,
-          bom_id INTEGER,
-          production_no TEXT,
-          production_date TEXT NOT NULL,
-          quantity REAL NOT NULL,
-          total_material_cost REAL NOT NULL DEFAULT 0,
-          other_cost REAL NOT NULL DEFAULT 0,
-          total_production_cost REAL NOT NULL DEFAULT 0,
-          unit_cost REAL NOT NULL DEFAULT 0,
-          note TEXT,
-          created_at TEXT NOT NULL,
-          FOREIGN KEY(product_id) REFERENCES products(id),
-          FOREIGN KEY(bom_id) REFERENCES production_boms(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS production_items(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          production_id INTEGER NOT NULL,
-          material_product_id INTEGER NOT NULL,
-          material_name TEXT NOT NULL,
-          quantity REAL NOT NULL,
-          unit_cost REAL NOT NULL,
-          total_cost REAL NOT NULL,
-          FOREIGN KEY(production_id) REFERENCES productions(id)
-            ON DELETE CASCADE,
-          FOREIGN KEY(material_product_id) REFERENCES products(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_boms_product
-        ON production_boms(product_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_bom_items_bom
-        ON production_bom_items(bom_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_bom_items_material
-        ON production_bom_items(material_product_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_productions_product
-        ON productions(product_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_productions_date
-        ON productions(production_date)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_items_production
-        ON production_items(production_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_items_material
-        ON production_items(material_product_id)
-      ''');
-    }
-
-    // ============================================================
-    // VERSION 37 - PRODUCTION COST HISTORY
-    // ============================================================
-
-    if (oldVersion < 37) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS production_costs(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          production_id INTEGER NOT NULL,
-          cost_type TEXT NOT NULL,
-          cost_per_unit REAL NOT NULL DEFAULT 0,
-          total_cost REAL NOT NULL DEFAULT 0,
-          note TEXT,
-          FOREIGN KEY(production_id) REFERENCES productions(id)
-            ON DELETE CASCADE
-        )
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_production_costs_production
-        ON production_costs(production_id)
-      ''');
-    }
-
-    // ============================================================
-    // VERSION 38 - PRODUCT TYPE
-    // ============================================================
-
-    if (oldVersion < 38) {
-      await _addColumnIfMissing(
-        db,
-        'products',
-        'product_type',
-        "TEXT NOT NULL DEFAULT 'BOTH'",
-      );
-    }
-
-    // ============================================================
-    // VERSION 39 - OPENING STOCK HISTORY
-    // ============================================================
-
-    if (oldVersion < 39) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS opening_stock_entries(
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          product_id INTEGER NOT NULL,
-          quantity INTEGER NOT NULL,
-          unit_cost REAL NOT NULL,
-          total_value REAL NOT NULL,
-          opening_date TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          FOREIGN KEY(product_id) REFERENCES products(id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_opening_stock_entries_product
-        ON opening_stock_entries(product_id)
-      ''');
-    }
+  await _addColumnIfMissing(
+    db,
+    'loans',
+    'last_interest_date',
+    'TEXT',
+  );
+}
   }
 
   // ============================================================
-  // CREATE NEW DATABASE
+  // FRESH DATABASE
   // ============================================================
 
-  Future<void> _onCreate(Database db, int version) async {
+  Future<void> _onCreate(
+    Database db,
+    int version,
+  ) async {
     // ------------------------------------------------------------
     // PRODUCTS
     // ------------------------------------------------------------
@@ -1150,31 +809,8 @@ class DatabaseHelper {
 
         stock_value REAL NOT NULL DEFAULT 0,
 
-        unit TEXT NOT NULL DEFAULT 'PCS',
-        product_type TEXT NOT NULL DEFAULT 'BOTH'
+        unit TEXT NOT NULL DEFAULT 'PCS'
       )
-    ''');
-
-    // ------------------------------------------------------------
-    // OPENING STOCK ENTRIES
-    // ------------------------------------------------------------
-
-    await db.execute('''
-      CREATE TABLE opening_stock_entries(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        quantity INTEGER NOT NULL,
-        unit_cost REAL NOT NULL,
-        total_value REAL NOT NULL,
-        opening_date TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(product_id) REFERENCES products(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE INDEX idx_opening_stock_entries_product
-      ON opening_stock_entries(product_id)
     ''');
 
     // ------------------------------------------------------------
@@ -1578,83 +1214,6 @@ class DatabaseHelper {
         note TEXT,
 
         created_at TEXT NOT NULL
-      )
-    ''');
-
-    // ------------------------------------------------------------
-    // PRODUCTION / BOM
-    // ------------------------------------------------------------
-
-    await db.execute('''
-      CREATE TABLE production_boms(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        note TEXT,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT,
-        FOREIGN KEY(product_id) REFERENCES products(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE production_bom_items(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        bom_id INTEGER NOT NULL,
-        material_product_id INTEGER NOT NULL,
-        quantity REAL NOT NULL,
-        note TEXT,
-        FOREIGN KEY(bom_id) REFERENCES production_boms(id)
-          ON DELETE CASCADE,
-        FOREIGN KEY(material_product_id) REFERENCES products(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE productions(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER NOT NULL,
-        bom_id INTEGER,
-        production_no TEXT,
-        production_date TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        total_material_cost REAL NOT NULL DEFAULT 0,
-        other_cost REAL NOT NULL DEFAULT 0,
-        total_production_cost REAL NOT NULL DEFAULT 0,
-        unit_cost REAL NOT NULL DEFAULT 0,
-        note TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(product_id) REFERENCES products(id),
-        FOREIGN KEY(bom_id) REFERENCES production_boms(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE production_items(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        production_id INTEGER NOT NULL,
-        material_product_id INTEGER NOT NULL,
-        material_name TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        unit_cost REAL NOT NULL,
-        total_cost REAL NOT NULL,
-        FOREIGN KEY(production_id) REFERENCES productions(id)
-          ON DELETE CASCADE,
-        FOREIGN KEY(material_product_id) REFERENCES products(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE production_costs(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        production_id INTEGER NOT NULL,
-        cost_type TEXT NOT NULL,
-        cost_per_unit REAL NOT NULL DEFAULT 0,
-        total_cost REAL NOT NULL DEFAULT 0,
-        note TEXT,
-        FOREIGN KEY(production_id) REFERENCES productions(id)
-          ON DELETE CASCADE
       )
     ''');
   }

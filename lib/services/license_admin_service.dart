@@ -104,12 +104,10 @@ class LicenseAdminService {
 
       final session = _supabase.auth.currentSession;
 
-      print('================ LICENSE ADMIN DEBUG ================');
       print('User ID: ${session?.user.id}');
       print('Email: ${session?.user.email}');
       print('Role: ${session?.user.role}');
       print('Access Token Exists: ${session?.accessToken.isNotEmpty}');
-      print('======================================================');
 
       // ==========================================================
       // CREATE CUSTOMER

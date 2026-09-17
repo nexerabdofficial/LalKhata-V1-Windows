@@ -5,25 +5,20 @@ import '../models/expense.dart';
 import 'refresh_service.dart';
 
 class ExpenseRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   // ============================================================
   // INSERT EXPENSE
   // ============================================================
 
-  Future<int> insertExpense(
-    Expense expense,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> insertExpense(Expense expense) async {
+    final Database db = await _databaseHelper.database;
 
     final id = await db.transaction((txn) async {
       final id = await txn.insert(
         'expenses',
         expense.toMap(),
-        conflictAlgorithm:
-            ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
       if (expense.accountId != null) {
@@ -33,10 +28,7 @@ class ExpenseRepository {
           SET balance = balance - ?
           WHERE id = ?
           ''',
-          [
-            expense.amount,
-            expense.accountId,
-          ],
+          [expense.amount, expense.accountId],
         );
       }
 
@@ -53,16 +45,14 @@ class ExpenseRepository {
   // ============================================================
 
   Future<String> getNextExpenseVoucherNo() async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.rawQuery('''
       SELECT COUNT(*) AS total
       FROM expenses
     ''');
 
-    final total =
-        (result.first['total'] as num?)?.toInt() ?? 0;
+    final total = (result.first['total'] as num?)?.toInt() ?? 0;
 
     return 'EX#${total + 1}';
   }
@@ -72,31 +62,22 @@ class ExpenseRepository {
   // ============================================================
 
   Future<List<Expense>> getExpenses() async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
-    final List<Map<String, dynamic>> maps =
-        await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'expenses',
       orderBy: 'expense_date DESC',
     );
 
-    return maps
-        .map(
-          (e) => Expense.fromMap(e),
-        )
-        .toList();
+    return maps.map((e) => Expense.fromMap(e)).toList();
   }
 
   // ============================================================
   // DELETE EXPENSE
   // ============================================================
 
-  Future<int> deleteExpense(
-    int id,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> deleteExpense(int id) async {
+    final Database db = await _databaseHelper.database;
 
     final data = await db.query(
       'expenses',
@@ -109,11 +90,9 @@ class ExpenseRepository {
       return 0;
     }
 
-    final expense =
-        Expense.fromMap(data.first);
+    final expense = Expense.fromMap(data.first);
 
-    final result =
-        await db.transaction((txn) async {
+    final result = await db.transaction((txn) async {
       if (expense.accountId != null) {
         await txn.rawUpdate(
           '''
@@ -121,18 +100,11 @@ class ExpenseRepository {
           SET balance = balance + ?
           WHERE id = ?
           ''',
-          [
-            expense.amount,
-            expense.accountId,
-          ],
+          [expense.amount, expense.accountId],
         );
       }
 
-      return await txn.delete(
-        'expenses',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
+      return await txn.delete('expenses', where: 'id = ?', whereArgs: [id]);
     });
 
     RefreshService.notify();
@@ -145,18 +117,14 @@ class ExpenseRepository {
   // ============================================================
 
   Future<double> getTotalExpense() async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT SUM(amount) AS total
       FROM expenses
-      ''',
-    );
+      ''');
 
-    final total =
-        result.first['total'];
+    final total = result.first['total'];
 
     if (total == null) {
       return 0;
@@ -169,13 +137,11 @@ class ExpenseRepository {
   // CATEGORY-WISE EXPENSE SUMMARY
   // ============================================================
 
-  Future<List<Map<String, dynamic>>>
-      getExpenseCategorySummary({
+  Future<List<Map<String, dynamic>>> getExpenseCategorySummary({
     required String startDate,
     required String endDate,
   }) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.rawQuery(
       '''
@@ -188,10 +154,7 @@ class ExpenseRepository {
       GROUP BY category
       ORDER BY category ASC
       ''',
-      [
-        startDate,
-        endDate,
-      ],
+      [startDate, endDate],
     );
 
     return result;
@@ -201,14 +164,12 @@ class ExpenseRepository {
   // CATEGORY-WISE EXPENSE DETAILS
   // ============================================================
 
-  Future<List<Expense>>
-      getExpenseByCategory({
+  Future<List<Expense>> getExpenseByCategory({
     required String category,
     required String startDate,
     required String endDate,
   }) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     final result = await db.query(
       'expenses',
@@ -217,19 +178,10 @@ class ExpenseRepository {
         AND expense_date >= ?
         AND expense_date < date(?, '+1 day')
       ''',
-      whereArgs: [
-        category,
-        startDate,
-        endDate,
-      ],
-      orderBy:
-          'expense_date ASC, id ASC',
+      whereArgs: [category, startDate, endDate],
+      orderBy: 'expense_date ASC, id ASC',
     );
 
-    return result
-        .map(
-          (e) => Expense.fromMap(e),
-        )
-        .toList();
+    return result.map((e) => Expense.fromMap(e)).toList();
   }
 }

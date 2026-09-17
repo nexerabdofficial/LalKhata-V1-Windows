@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../screens/incomes/add_income_screen.dart';
 import '../screens/accounts/add_account_screen.dart';
 import '../screens/customers/add_customer_screen.dart';
@@ -7,6 +8,8 @@ import '../screens/purchases/purchase_screen.dart';
 import '../screens/sales/add_sale_screen.dart';
 import '../screens/suppliers/add_supplier_screen.dart';
 import '../screens/expenses/add_expense_screen.dart';
+import '../screens/production/actual_production_screen.dart';
+import '../screens/production/production_bom_screen.dart';
 
 class QuickActionSheet {
   static Future<void> show(BuildContext context) async {
@@ -111,6 +114,29 @@ class QuickActionSheet {
                   ),
                 ),
 
+                // ==================================================
+                // PRODUCTION
+                // ==================================================
+
+                _item(
+                  context,
+                  Icons.factory,
+                  "Production",
+                  () => _open(
+                    context,
+                    const ActualProductionScreen(),
+                  ),
+                ),
+
+                _item(
+                  context,
+                  Icons.account_tree,
+                  "BOM Management",
+                  () => _open(
+                    context,
+                    const ProductionBomScreen(),
+                  ),
+                ),
               ],
             ),
           ),
@@ -136,22 +162,22 @@ class QuickActionSheet {
   }
 
   static Future<void> _open(
-  BuildContext context,
-  Widget page,
-) async {
-  Navigator.pop(context);
+    BuildContext context,
+    Widget page,
+  ) async {
+    Navigator.pop(context);
 
-  await Future.delayed(
-    const Duration(milliseconds: 150),
-  );
+    await Future.delayed(
+      const Duration(milliseconds: 150),
+    );
 
-  if (!context.mounted) return;
+    if (!context.mounted) return;
 
-  await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => page,
-    ),
-  );
-}
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => page,
+      ),
+    );
+  }
 }

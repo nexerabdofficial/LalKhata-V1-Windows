@@ -18,7 +18,6 @@ class Product {
   // 5 pcs × ৳12  = ৳60
   // Total stock value = ৳160
   final double stockValue;
-  final String productType;
 
   const Product({
     this.id,
@@ -28,7 +27,6 @@ class Product {
     required this.stock,
     this.stockValue = 0,
     this.unit = 'PCS',
-    this.productType = 'BOTH',
   });
 
   Map<String, dynamic> toMap() {
@@ -40,20 +38,24 @@ class Product {
       'stock': stock,
       'stock_value': stockValue,
       'unit': unit,
-      'product_type': productType,
     };
   }
 
-  factory Product.fromMap(Map<String, dynamic> map) {
+  factory Product.fromMap(
+    Map<String, dynamic> map,
+  ) {
     return Product(
       id: map['id'] as int?,
       name: map['name'] as String,
-      purchasePrice: ((map['purchase_price'] ?? 0) as num).toDouble(),
-      sellingPrice: ((map['selling_price'] ?? 0) as num).toDouble(),
-      stock: ((map['stock'] ?? 0) as num).toInt(),
-      stockValue: ((map['stock_value'] ?? 0) as num).toDouble(),
+      purchasePrice:
+          ((map['purchase_price'] ?? 0) as num).toDouble(),
+      sellingPrice:
+          ((map['selling_price'] ?? 0) as num).toDouble(),
+      stock:
+          ((map['stock'] ?? 0) as num).toInt(),
+      stockValue:
+          ((map['stock_value'] ?? 0) as num).toDouble(),
       unit: map['unit'] ?? 'PCS',
-      productType: map['product_type'] ?? 'BOTH',
     );
   }
 
@@ -65,17 +67,18 @@ class Product {
     int? stock,
     double? stockValue,
     String? unit,
-    String? productType,
   }) {
     return Product(
       id: id ?? this.id,
       name: name ?? this.name,
-      purchasePrice: purchasePrice ?? this.purchasePrice,
-      sellingPrice: sellingPrice ?? this.sellingPrice,
+      purchasePrice:
+          purchasePrice ?? this.purchasePrice,
+      sellingPrice:
+          sellingPrice ?? this.sellingPrice,
       stock: stock ?? this.stock,
-      stockValue: stockValue ?? this.stockValue,
+      stockValue:
+          stockValue ?? this.stockValue,
       unit: unit ?? this.unit,
-      productType: productType ?? this.productType,
     );
   }
 }

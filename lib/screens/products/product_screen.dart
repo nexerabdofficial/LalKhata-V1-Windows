@@ -4,6 +4,7 @@ import '../../models/product.dart';
 import '../../services/product_repository.dart';
 import 'add_product_screen.dart';
 import 'product_ledger_screen.dart';
+import 'opening_stock_screen.dart';
 
 class ProductScreen extends StatefulWidget {
   const ProductScreen({super.key});
@@ -97,6 +98,25 @@ class _ProductScreenState extends State<ProductScreen> {
     );
 
     _loadProducts();
+  }
+
+  // ============================================================
+  // OPENING STOCK
+  // ============================================================
+
+  Future<void> _openOpeningStock(Product product) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OpeningStockScreen(
+          product: product,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _loadProducts();
+    }
   }
 
   // ============================================================
@@ -381,6 +401,11 @@ class _ProductScreenState extends State<ProductScreen> {
                                           product,
                                         );
                                       } else if (value ==
+                                          'opening_stock') {
+                                        _openOpeningStock(
+                                          product,
+                                        );
+                                      } else if (value ==
                                           'edit') {
                                         _editProduct(
                                           product,
@@ -408,6 +433,24 @@ class _ProductScreenState extends State<ProductScreen> {
                                             ),
                                             Text(
                                               "Product Ledger",
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'opening_stock',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons
+                                                  .inventory_2_outlined,
+                                              size: 20,
+                                            ),
+                                            SizedBox(
+                                              width: 10,
+                                            ),
+                                            Text(
+                                              "Opening Stock",
                                             ),
                                           ],
                                         ),

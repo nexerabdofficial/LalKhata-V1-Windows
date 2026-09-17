@@ -7,8 +7,7 @@ import '../models/account_transaction.dart';
 import 'refresh_service.dart';
 
 class CustomerRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   Future<int> insertCustomer(Customer customer) async {
     final Database db = await _databaseHelper.database;
@@ -19,42 +18,36 @@ class CustomerRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
-Future<List<Customer>> getCustomers() async {
-  final Database db = await _databaseHelper.database;
 
-  final maps = await db.query(
-    'customers',
-    orderBy: 'id DESC',
-  );
+  Future<List<Customer>> getCustomers() async {
+    final Database db = await _databaseHelper.database;
 
-  final List<Customer> customers = [];
+    final maps = await db.query('customers', orderBy: 'id DESC');
 
-  for (final map in maps) {
-    final customer = Customer.fromMap(map);
+    final List<Customer> customers = [];
 
-    final balance = await getCustomerBalance(
-      customer.id!,
-    );
+    for (final map in maps) {
+      final customer = Customer.fromMap(map);
 
-    customers.add(
-      Customer(
-        id: customer.id,
-        name: customer.name,
-        phone: customer.phone,
-        address: customer.address,
-        balance: balance,
-        openingBalance: customer.openingBalance,
-        openingDate: customer.openingDate,
-      ),
-    );
+      final balance = await getCustomerBalance(customer.id!);
+
+      customers.add(
+        Customer(
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone,
+          address: customer.address,
+          balance: balance,
+          openingBalance: customer.openingBalance,
+          openingDate: customer.openingDate,
+        ),
+      );
+    }
+
+    return customers;
   }
 
-
-  return customers;
-}
-  Future<double> getCustomerBalance(
-    int customerId,
-  ) async {
+  Future<double> getCustomerBalance(int customerId) async {
     final db = await _databaseHelper.database;
 
     final result = await db.rawQuery(
@@ -87,20 +80,14 @@ Future<List<Customer>> getCustomers() async {
           0
         ) AS balance
       ''',
-      [
-        customerId,
-        customerId,
-        customerId,
-      ],
+      [customerId, customerId, customerId],
     );
 
-    return ((result.first['balance'] ?? 0) as num)
-        .toDouble();
+    return ((result.first['balance'] ?? 0) as num).toDouble();
   }
 
   Future<int> updateCustomer(Customer customer) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     return await db.update(
       'customers',
@@ -111,8 +98,7 @@ Future<List<Customer>> getCustomers() async {
   }
 
   Future<int> deleteCustomer(int id) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     final customer = await db.query(
       'customers',
@@ -124,18 +110,13 @@ Future<List<Customer>> getCustomers() async {
       throw Exception("Customer not found.");
     }
 
-    return await db.delete(
-      'customers',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.delete('customers', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Customer>> getDueCustomers() async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT
         c.id,
         c.name,
@@ -186,35 +167,30 @@ Future<List<Customer>> getCustomers() async {
         )
       ) > 0
       ORDER BY c.name ASC
-      ''',
-    );
+      ''');
 
-    return result
-        .map((e) => Customer.fromMap(e))
-        .toList();
+    return result.map((e) => Customer.fromMap(e)).toList();
   }
 
   // ============================================================
   // CUSTOMER PAYMENT
   // ============================================================
 
-Future<int> saveCustomerPayment({
-  required int customerId,
-  required double amount,
-  required String voucherNo,
-  required int accountId,
-  required String paymentMethod,
-  String note = "",
-}) async {
-  final db = await _databaseHelper.database;
+  Future<int> saveCustomerPayment({
+    required int customerId,
+    required double amount,
+    required String voucherNo,
+    required int accountId,
+    required String paymentMethod,
+    String note = "",
+  }) async {
+    final db = await _databaseHelper.database;
 
-  final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toIso8601String();
 
-  final paymentId = await db.transaction((txn) async {
-    // 1. Save customer payment
-    final id = await txn.insert(
-      'customer_payments',
-      {
+    final paymentId = await db.transaction((txn) async {
+      // 1. Save customer payment
+      final id = await txn.insert('customer_payments', {
         'customer_id': customerId,
         'voucher_no': voucherNo,
         'amount': amount,
@@ -222,55 +198,54 @@ Future<int> saveCustomerPayment({
         'payment_method': paymentMethod,
         'note': note,
         'created_at': now,
-      },
-    );
+      });
 
-    // 2. Increase account balance
-    await txn.rawUpdate(
-      '''
+      // 2. Decrease customer balance
+      await txn.rawUpdate(
+        '''
+      UPDATE customers
+      SET balance = balance - ?
+      WHERE id = ?
+      ''',
+        [amount, customerId],
+      );
+
+      // 3. Increase account balance
+      await txn.rawUpdate(
+        '''
       UPDATE accounts
       SET balance = balance + ?
       WHERE id = ?
       ''',
-      [
-        amount,
-        accountId,
-      ],
-    );
+        [amount, accountId],
+      );
 
-    // 3. Add account ledger transaction
-    final transaction = AccountTransaction(
-      accountId: accountId,
-      transactionType: 'CUSTOMER_PAYMENT',
-      referenceType: 'CUSTOMER_PAYMENT',
-      referenceId: id,
-      voucherNo: voucherNo,
-      debit: 0,
-      credit: amount,
-      transactionDate: now,
-      note: note.isNotEmpty
-          ? note
-          : 'Customer Payment',
-      createdAt: now,
-    );
+      // 4. Add account ledger transaction
+      final transaction = AccountTransaction(
+        accountId: accountId,
+        transactionType: 'CUSTOMER_PAYMENT',
+        referenceType: 'CUSTOMER_PAYMENT',
+        referenceId: id,
+        voucherNo: voucherNo,
+        debit: 0,
+        credit: amount,
+        transactionDate: now,
+        note: note.isNotEmpty ? note : 'Customer Payment',
+        createdAt: now,
+      );
 
-    await txn.insert(
-      'account_transactions',
-      transaction.toMap(),
-    );
+      await txn.insert('account_transactions', transaction.toMap());
 
-    return id;
-  });
+      return id;
+    });
 
-  // 4. Refresh dashboard/accounts/ledger
-  RefreshService.notify();
+    // 5. Refresh dashboard/accounts/ledger
+    RefreshService.notify();
 
-  return paymentId;
-}
+    return paymentId;
+  }
 
-  Future<bool> customerNameExists(
-    String name,
-  ) async {
+  Future<bool> customerNameExists(String name) async {
     final db = await _databaseHelper.database;
 
     final result = await db.query(
@@ -292,27 +267,19 @@ Future<int> saveCustomerPayment({
     final result = await db.query(
       'customers',
       where: 'LOWER(name) = ? AND id != ?',
-      whereArgs: [
-        name.toLowerCase(),
-        customerId,
-      ],
+      whereArgs: [name.toLowerCase(), customerId],
       limit: 1,
     );
 
     return result.isNotEmpty;
   }
 
-  Future<bool> customerExists(
-    String name, {
-    int? ignoreId,
-  }) async {
+  Future<bool> customerExists(String name, {int? ignoreId}) async {
     final db = await _databaseHelper.database;
 
     String where = 'LOWER(name) = ?';
 
-    final List<Object?> args = [
-      name.toLowerCase(),
-    ];
+    final List<Object?> args = [name.toLowerCase()];
 
     if (ignoreId != null) {
       where += ' AND id != ?';
@@ -332,8 +299,7 @@ Future<int> saveCustomerPayment({
   Future<double> getTotalDue() async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT
         COALESCE(
           SUM(
@@ -360,20 +326,16 @@ Future<int> saveCustomerPayment({
           0
         ) AS total
       FROM customers c
-      ''',
-    );
+      ''');
 
-    return ((result.first['total'] ?? 0) as num)
-        .toDouble();
+    return ((result.first['total'] ?? 0) as num).toDouble();
   }
 
   // ============================================================
   // CUSTOMER LEDGER
   // ============================================================
 
-  Future<List<CustomerLedger>> getCustomerLedger(
-    int customerId,
-  ) async {
+  Future<List<CustomerLedger>> getCustomerLedger(int customerId) async {
     final db = await _databaseHelper.database;
 
     final result = await db.rawQuery(
@@ -414,21 +376,16 @@ Future<int> saveCustomerPayment({
 
       ORDER BY sort_order ASC, date ASC
       ''',
-      [
-        customerId,
-        customerId,
-        customerId,
-      ],
+      [customerId, customerId, customerId],
     );
 
-    return result
-        .map((e) => CustomerLedger.fromMap(e))
-        .toList();
+    return result.map((e) => CustomerLedger.fromMap(e)).toList();
   }
-  Future<String> getNextCustomerPaymentVoucherNo() async {
-  final db = await _databaseHelper.database;
 
-  final result = await db.rawQuery('''
+  Future<String> getNextCustomerPaymentVoucherNo() async {
+    final db = await _databaseHelper.database;
+
+    final result = await db.rawQuery('''
     SELECT voucher_no
     FROM customer_payments
     WHERE voucher_no LIKE 'CP#%'
@@ -436,44 +393,39 @@ Future<int> saveCustomerPayment({
     LIMIT 1
   ''');
 
-  if (result.isEmpty) {
-    return 'CP#1';
+    if (result.isEmpty) {
+      return 'CP#1';
+    }
+
+    final lastVoucher = result.first['voucher_no']?.toString() ?? '';
+
+    final number = int.tryParse(lastVoucher.replaceFirst('CP#', '')) ?? 0;
+
+    return 'CP#${number + 1}';
   }
 
-  final lastVoucher =
-      result.first['voucher_no']?.toString() ?? '';
+  Future<double> getCustomerBalanceBeforeSale({
+    required int customerId,
+    required int saleId,
+  }) async {
+    final db = await _databaseHelper.database;
 
-  final number =
-      int.tryParse(
-        lastVoucher.replaceFirst('CP#', ''),
-      ) ??
-      0;
+    final saleResult = await db.query(
+      'sales',
+      columns: ['sale_date'],
+      where: 'id = ?',
+      whereArgs: [saleId],
+      limit: 1,
+    );
 
-  return 'CP#${number + 1}';
-}
-Future<double> getCustomerBalanceBeforeSale({
-  required int customerId,
-  required int saleId,
-}) async {
-  final db = await _databaseHelper.database;
+    if (saleResult.isEmpty) {
+      return 0;
+    }
 
-  final saleResult = await db.query(
-    'sales',
-    columns: ['sale_date'],
-    where: 'id = ?',
-    whereArgs: [saleId],
-    limit: 1,
-  );
+    final saleDate = saleResult.first['sale_date'].toString();
 
-  if (saleResult.isEmpty) {
-    return 0;
-  }
-
-  final saleDate =
-      saleResult.first['sale_date'].toString();
-
-  final result = await db.rawQuery(
-    '''
+    final result = await db.rawQuery(
+      '''
     SELECT
       (
         SELECT IFNULL(opening_balance, 0)
@@ -501,21 +453,21 @@ Future<double> getCustomerBalanceBeforeSale({
           AND created_at < ?
       ) AS balance
     ''',
-    [
-      customerId,
-      customerId,
-      saleDate,
-      saleDate,
-      saleId,
-      customerId,
-      saleDate,
-    ],
-  );
+      [
+        customerId,
+        customerId,
+        saleDate,
+        saleDate,
+        saleId,
+        customerId,
+        saleDate,
+      ],
+    );
 
-  if (result.isEmpty) {
-    return 0;
+    if (result.isEmpty) {
+      return 0;
+    }
+
+    return (result.first['balance'] as num?)?.toDouble() ?? 0;
   }
-
-  return (result.first['balance'] as num?)?.toDouble() ?? 0;
-}
 }

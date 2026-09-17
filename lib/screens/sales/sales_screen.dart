@@ -3,17 +3,12 @@ import 'package:flutter/material.dart';
 import '../../services/sale_repository.dart';
 import 'sale_details_screen.dart';
 
-enum SalesDateFilter {
-  all,
-  today,
-  yesterday,
-  thisWeek,
-  thisMonth,
-  custom,
-}
+enum SalesDateFilter { all, today, yesterday, thisWeek, thisMonth, custom }
 
 class SalesScreen extends StatefulWidget {
-  const SalesScreen({super.key});
+  final SalesDateFilter initialFilter;
+
+  const SalesScreen({super.key, this.initialFilter = SalesDateFilter.all});
 
   @override
   State<SalesScreen> createState() => _SalesScreenState();
@@ -27,7 +22,7 @@ class _SalesScreenState extends State<SalesScreen> {
   bool _loading = true;
   String _search = "";
 
-  SalesDateFilter _dateFilter = SalesDateFilter.all;
+  late SalesDateFilter _dateFilter;
 
   DateTime? _customFromDate;
   DateTime? _customToDate;
@@ -35,6 +30,7 @@ class _SalesScreenState extends State<SalesScreen> {
   @override
   void initState() {
     super.initState();
+    _dateFilter = widget.initialFilter;
     _loadSales();
   }
 
@@ -67,8 +63,7 @@ class _SalesScreenState extends State<SalesScreen> {
           break;
 
         case SalesDateFilter.yesterday:
-          final yesterday =
-              DateTime.now().subtract(const Duration(days: 1));
+          final yesterday = DateTime.now().subtract(const Duration(days: 1));
 
           sales = await _repository.getSalesByDateRange(
             fromDate: _formatDate(yesterday),
@@ -80,8 +75,7 @@ class _SalesScreenState extends State<SalesScreen> {
           final now = DateTime.now();
 
           // Monday = start of week
-          final from =
-              now.subtract(Duration(days: now.weekday - 1));
+          final from = now.subtract(Duration(days: now.weekday - 1));
 
           sales = await _repository.getSalesByDateRange(
             fromDate: _formatDate(from),
@@ -92,11 +86,7 @@ class _SalesScreenState extends State<SalesScreen> {
         case SalesDateFilter.thisMonth:
           final now = DateTime.now();
 
-          final from = DateTime(
-            now.year,
-            now.month,
-            1,
-          );
+          final from = DateTime(now.year, now.month, 1);
 
           sales = await _repository.getSalesByDateRange(
             fromDate: _formatDate(from),
@@ -105,8 +95,7 @@ class _SalesScreenState extends State<SalesScreen> {
           break;
 
         case SalesDateFilter.custom:
-          if (_customFromDate == null ||
-              _customToDate == null) {
+          if (_customFromDate == null || _customToDate == null) {
             sales = await _repository.getSales();
           } else {
             sales = await _repository.getSalesByDateRange(
@@ -130,13 +119,9 @@ class _SalesScreenState extends State<SalesScreen> {
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Failed to load sales: $e",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to load sales: $e")));
     }
   }
 
@@ -170,8 +155,7 @@ class _SalesScreenState extends State<SalesScreen> {
         return "This Month";
 
       case SalesDateFilter.custom:
-        if (_customFromDate == null ||
-            _customToDate == null) {
+        if (_customFromDate == null || _customToDate == null) {
           return "Custom";
         }
 
@@ -190,9 +174,7 @@ class _SalesScreenState extends State<SalesScreen> {
   // CHANGE DATE FILTER
   // ============================================================
 
-  Future<void> _changeDateFilter(
-    SalesDateFilter filter,
-  ) async {
+  Future<void> _changeDateFilter(SalesDateFilter filter) async {
     if (filter == SalesDateFilter.custom) {
       await _selectCustomDateRange();
       return;
@@ -212,23 +194,17 @@ class _SalesScreenState extends State<SalesScreen> {
   Future<void> _selectCustomDateRange() async {
     final now = DateTime.now();
 
-    final initialStart =
-        _customFromDate ?? now;
+    final initialStart = _customFromDate ?? now;
 
-    final initialEnd =
-        _customToDate ?? now;
+    final initialEnd = _customToDate ?? now;
 
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
       lastDate: DateTime(now.year + 5),
       initialDateRange: DateTimeRange(
-        start: initialStart.isBefore(initialEnd)
-            ? initialStart
-            : initialEnd,
-        end: initialEnd.isAfter(initialStart)
-            ? initialEnd
-            : initialStart,
+        start: initialStart.isBefore(initialEnd) ? initialStart : initialEnd,
+        end: initialEnd.isAfter(initialStart) ? initialEnd : initialStart,
       ),
       helpText: "Select Sales Date Range",
       saveText: "APPLY",
@@ -255,25 +231,19 @@ class _SalesScreenState extends State<SalesScreen> {
   double get totalSales {
     return _sales.fold(
       0,
-      (sum, sale) =>
-          sum + (sale['grand_total'] as num).toDouble(),
+      (sum, sale) => sum + (sale['grand_total'] as num).toDouble(),
     );
   }
 
   double get totalPaid {
     return _sales.fold(
       0,
-      (sum, sale) =>
-          sum + (sale['paid'] as num).toDouble(),
+      (sum, sale) => sum + (sale['paid'] as num).toDouble(),
     );
   }
 
   double get totalDue {
-    return _sales.fold(
-      0,
-      (sum, sale) =>
-          sum + (sale['due'] as num).toDouble(),
-    );
+    return _sales.fold(0, (sum, sale) => sum + (sale['due'] as num).toDouble());
   }
 
   int get totalTransactions => _sales.length;
@@ -290,18 +260,11 @@ class _SalesScreenState extends State<SalesScreen> {
     final query = _search.trim().toLowerCase();
 
     return _sales.where((sale) {
-      final customer =
-          (sale['customer_name'] ?? "")
-              .toString()
-              .toLowerCase();
+      final customer = (sale['customer_name'] ?? "").toString().toLowerCase();
 
-      final invoice =
-          (sale['invoice_no'] ?? "")
-              .toString()
-              .toLowerCase();
+      final invoice = (sale['invoice_no'] ?? "").toString().toLowerCase();
 
-      return customer.contains(query) ||
-          invoice.contains(query);
+      return customer.contains(query) || invoice.contains(query);
     }).toList();
   }
 
@@ -312,27 +275,21 @@ class _SalesScreenState extends State<SalesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Sales History"),
-      ),
+      appBar: AppBar(title: const Text("Sales History")),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
 
-                  final horizontalPadding =
-                      width >= 900 ? 24.0 : 12.0;
+                  final horizontalPadding = width >= 900 ? 24.0 : 12.0;
 
                   return Column(
                     children: [
                       // ==================================================
                       // SEARCH
                       // ==================================================
-
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
@@ -344,19 +301,13 @@ class _SalesScreenState extends State<SalesScreen> {
                           height: 44,
                           child: TextField(
                             decoration: InputDecoration(
-                              hintText:
-                                  "Search customer or invoice...",
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                size: 21,
-                              ),
-                              contentPadding:
-                                  const EdgeInsets.symmetric(
+                              hintText: "Search customer or invoice...",
+                              prefixIcon: const Icon(Icons.search, size: 21),
+                              contentPadding: const EdgeInsets.symmetric(
                                 vertical: 0,
                               ),
                               border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             onChanged: (value) {
@@ -371,7 +322,6 @@ class _SalesScreenState extends State<SalesScreen> {
                       // ==================================================
                       // DATE FILTER
                       // ==================================================
-
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
@@ -383,26 +333,16 @@ class _SalesScreenState extends State<SalesScreen> {
                           height: 36,
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.calendar_month,
-                                size: 19,
-                              ),
+                              const Icon(Icons.calendar_month, size: 19),
                               const SizedBox(width: 7),
 
                               Expanded(
                                 child: SingleChildScrollView(
-                                  scrollDirection:
-                                      Axis.horizontal,
+                                  scrollDirection: Axis.horizontal,
                                   child: Row(
                                     children: [
-                                      _dateChip(
-                                        "All",
-                                        SalesDateFilter.all,
-                                      ),
-                                      _dateChip(
-                                        "Today",
-                                        SalesDateFilter.today,
-                                      ),
+                                      _dateChip("All", SalesDateFilter.all),
+                                      _dateChip("Today", SalesDateFilter.today),
                                       _dateChip(
                                         "Yesterday",
                                         SalesDateFilter.yesterday,
@@ -431,114 +371,112 @@ class _SalesScreenState extends State<SalesScreen> {
                       // ==================================================
                       // KPI CARDS
                       // ==================================================
-
                       Padding(
-  padding: EdgeInsets.symmetric(
-    horizontal: horizontalPadding,
-  ),
-  child: LayoutBuilder(
-    builder: (context, cardConstraints) {
-      final isPhone = cardConstraints.maxWidth < 600;
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, cardConstraints) {
+                            final isPhone = cardConstraints.maxWidth < 600;
 
-      if (isPhone) {
-        return Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _kpiCard(
-                    "Sales",
-                    "৳${totalSales.toStringAsFixed(0)}",
-                    Icons.payments,
-                    Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _kpiCard(
-                    "Paid",
-                    "৳${totalPaid.toStringAsFixed(0)}",
-                    Icons.check_circle,
-                    Colors.blue,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _kpiCard(
-                    "Due",
-                    "৳${totalDue.toStringAsFixed(0)}",
-                    Icons.warning,
-                    Colors.red,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _kpiCard(
-                    "Bills",
-                    totalTransactions.toString(),
-                    Icons.receipt_long,
-                    Colors.deepPurple,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      }
+                            if (isPhone) {
+                              return Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _kpiCard(
+                                          "Sales",
+                                          "৳${totalSales.toStringAsFixed(0)}",
+                                          Icons.payments,
+                                          Colors.green,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _kpiCard(
+                                          "Paid",
+                                          "৳${totalPaid.toStringAsFixed(0)}",
+                                          Icons.check_circle,
+                                          Colors.blue,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _kpiCard(
+                                          "Due",
+                                          "৳${totalDue.toStringAsFixed(0)}",
+                                          Icons.warning,
+                                          Colors.red,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _kpiCard(
+                                          "Bills",
+                                          totalTransactions.toString(),
+                                          Icons.receipt_long,
+                                          Colors.deepPurple,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            }
 
-      return Row(
-        children: [
-          Expanded(
-            child: _kpiCard(
-              "Sales",
-              "৳${totalSales.toStringAsFixed(0)}",
-              Icons.payments,
-              Colors.green,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _kpiCard(
-              "Paid",
-              "৳${totalPaid.toStringAsFixed(0)}",
-              Icons.check_circle,
-              Colors.blue,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _kpiCard(
-              "Due",
-              "৳${totalDue.toStringAsFixed(0)}",
-              Icons.warning,
-              Colors.red,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _kpiCard(
-              "Bills",
-              totalTransactions.toString(),
-              Icons.receipt_long,
-              Colors.deepPurple,
-            ),
-          ),
-        ],
-      );
-    },
-  ),
-),
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: _kpiCard(
+                                    "Sales",
+                                    "৳${totalSales.toStringAsFixed(0)}",
+                                    Icons.payments,
+                                    Colors.green,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _kpiCard(
+                                    "Paid",
+                                    "৳${totalPaid.toStringAsFixed(0)}",
+                                    Icons.check_circle,
+                                    Colors.blue,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _kpiCard(
+                                    "Due",
+                                    "৳${totalDue.toStringAsFixed(0)}",
+                                    Icons.warning,
+                                    Colors.red,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _kpiCard(
+                                    "Bills",
+                                    totalTransactions.toString(),
+                                    Icons.receipt_long,
+                                    Colors.deepPurple,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
 
                       const SizedBox(height: 7),
 
                       // ==================================================
                       // RECORD HEADER
                       // ==================================================
-
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
@@ -569,14 +507,11 @@ class _SalesScreenState extends State<SalesScreen> {
                             Text(
                               _dateFilterLabel,
                               maxLines: 1,
-                              overflow:
-                                  TextOverflow.ellipsis,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color:
-                                    Colors.grey.shade600,
+                                color: Colors.grey.shade600,
                                 fontSize: 11,
-                                fontWeight:
-                                    FontWeight.w600,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
 
@@ -586,11 +521,9 @@ class _SalesScreenState extends State<SalesScreen> {
                               Text(
                                 "${filteredSales.length}",
                                 style: TextStyle(
-                                  color:
-                                      Colors.grey.shade600,
+                                  color: Colors.grey.shade600,
                                   fontSize: 14,
-                                  fontWeight:
-                                      FontWeight.w600,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                           ],
@@ -600,38 +533,23 @@ class _SalesScreenState extends State<SalesScreen> {
                       // ==================================================
                       // SALES LIST
                       // ==================================================
-
                       Expanded(
                         child: filteredSales.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  "No Sales Found",
-                                ),
-                              )
+                            ? const Center(child: Text("No Sales Found"))
                             : ListView.separated(
-                                padding:
-                                    EdgeInsets.fromLTRB(
+                                padding: EdgeInsets.fromLTRB(
                                   horizontalPadding,
                                   0,
                                   horizontalPadding,
                                   12,
                                 ),
-                                itemCount:
-                                    filteredSales.length,
-                                separatorBuilder:
-                                    (_, __) =>
-                                        const SizedBox(
-                                  height: 2,
-                                ),
-                                itemBuilder:
-                                    (context, index) {
-                                  final sale =
-                                      filteredSales[index];
+                                itemCount: filteredSales.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 2),
+                                itemBuilder: (context, index) {
+                                  final sale = filteredSales[index];
 
-                                  return _saleCard(
-                                    context,
-                                    sale,
-                                  );
+                                  return _saleCard(context, sale);
                                 },
                               ),
                       ),
@@ -647,10 +565,7 @@ class _SalesScreenState extends State<SalesScreen> {
   // DATE CHIP
   // ============================================================
 
-  Widget _dateChip(
-    String label,
-    SalesDateFilter filter,
-  ) {
+  Widget _dateChip(String label, SalesDateFilter filter) {
     final selected = _dateFilter == filter;
 
     return Padding(
@@ -660,25 +575,16 @@ class _SalesScreenState extends State<SalesScreen> {
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: selected
-                ? FontWeight.bold
-                : FontWeight.w500,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w500,
           ),
         ),
         selected: selected,
         onSelected: (_) {
           _changeDateFilter(filter);
         },
-        visualDensity: const VisualDensity(
-          horizontal: -2,
-          vertical: -2,
-        ),
-        materialTapTargetSize:
-            MaterialTapTargetSize.shrinkWrap,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 7,
-          vertical: 0,
-        ),
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 0),
       ),
     );
   }
@@ -687,38 +593,25 @@ class _SalesScreenState extends State<SalesScreen> {
   // SALE CARD
   // ============================================================
 
-  Widget _saleCard(
-    BuildContext context,
-    Map<String, dynamic> sale,
-  ) {
+  Widget _saleCard(BuildContext context, Map<String, dynamic> sale) {
     return Card(
-      margin: const EdgeInsets.symmetric(
-        vertical: 3,
-      ),
+      margin: const EdgeInsets.symmetric(vertical: 3),
       elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => SaleDetailsScreen(
-                saleId: sale['id'],
-              ),
+              builder: (_) => SaleDetailsScreen(saleId: sale['id']),
             ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
@@ -727,8 +620,7 @@ class _SalesScreenState extends State<SalesScreen> {
                     height: 34,
                     decoration: BoxDecoration(
                       color: Colors.blue.shade100,
-                      borderRadius:
-                          BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(9),
                     ),
                     alignment: Alignment.center,
                     child: Text(
@@ -744,30 +636,24 @@ class _SalesScreenState extends State<SalesScreen> {
 
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          sale['customer_name'] ??
-                              "Unknown Customer",
+                          sale['customer_name'] ?? "Unknown Customer",
                           maxLines: 1,
-                          overflow:
-                              TextOverflow.ellipsis,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 15,
-                            fontWeight:
-                                FontWeight.bold,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 1),
                         Text(
                           "Invoice : ${sale['invoice_no']}",
                           maxLines: 1,
-                          overflow:
-                              TextOverflow.ellipsis,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color:
-                                Colors.grey.shade600,
+                            color: Colors.grey.shade600,
                             fontSize: 11,
                           ),
                         ),
@@ -799,11 +685,7 @@ class _SalesScreenState extends State<SalesScreen> {
                     ),
                   ),
                   Expanded(
-                    child: _amountColumn(
-                      "Due",
-                      "৳${sale['due']}",
-                      Colors.red,
-                    ),
+                    child: _amountColumn("Due", "৳${sale['due']}", Colors.red),
                   ),
                   Expanded(
                     child: _amountColumn(
@@ -825,21 +707,13 @@ class _SalesScreenState extends State<SalesScreen> {
   // AMOUNT COLUMN
   // ============================================================
 
-  Widget _amountColumn(
-    String title,
-    String value,
-    Color? color,
-  ) {
+  Widget _amountColumn(String title, String value, Color? color) {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: TextStyle(
-            color: Colors.grey.shade600,
-            fontSize: 10,
-          ),
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
         ),
         const SizedBox(height: 1),
         Text(
@@ -860,52 +734,34 @@ class _SalesScreenState extends State<SalesScreen> {
   // KPI CARD
   // ============================================================
 
-  Widget _kpiCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _kpiCard(String title, String value, IconData icon, Color color) {
     return SizedBox(
       height: 60,
       child: Card(
         elevation: 1,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(11),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 7,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 15,
-                backgroundColor:
-                    color.withOpacity(.12),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 16,
-                ),
+                backgroundColor: color.withOpacity(.12),
+                child: Icon(icon, color: color, size: 16),
               ),
 
               const SizedBox(width: 6),
 
               Expanded(
                 child: Column(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       value,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
@@ -915,12 +771,10 @@ class _SalesScreenState extends State<SalesScreen> {
                     Text(
                       title,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 10,
-                        color:
-                            Colors.grey.shade600,
+                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],

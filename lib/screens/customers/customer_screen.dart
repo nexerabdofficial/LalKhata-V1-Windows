@@ -249,6 +249,7 @@ if (result == true) {
         const SizedBox(height: 12),
 
         Text("Phone : ${customer.phone ?? "-"}"),
+        Text("Address : ${customer.address?.isNotEmpty == true ? customer.address! : "-"}"),
         Text("Due : ৳${customer.balance.toStringAsFixed(2)}"),
 
         const SizedBox(height: 15),

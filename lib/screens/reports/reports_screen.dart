@@ -7,14 +7,14 @@ import '../purchases/purchase_history_screen.dart';
 import 'profit_report_screen.dart';
 import 'balance_sheet_screen.dart';
 import 'income_expense_report_screen.dart';
+import 'internal_audit_screen.dart';
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final bool isDesktop =
-        MediaQuery.of(context).size.width >= 900;
+    final bool isDesktop = MediaQuery.of(context).size.width >= 900;
 
     return Scaffold(
       appBar: AppBar(
@@ -22,19 +22,12 @@ class ReportsScreen extends StatelessWidget {
         elevation: 0,
         title: const Text(
           "Reports",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
       body: SafeArea(
         child: GridView.count(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            24,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
 
           // ============================================================
           // DESKTOP + MOBILE
@@ -47,10 +40,7 @@ class ReportsScreen extends StatelessWidget {
 
           // Desktop-এ card একটু compact
           // Mobile-এ original size
-          childAspectRatio:
-              isDesktop
-                  ? 2.2
-                  : 1.05,
+          childAspectRatio: isDesktop ? 2.2 : 1.05,
 
           children: [
             // =========================
@@ -96,6 +86,17 @@ class ReportsScreen extends StatelessWidget {
               Colors.deepOrange,
               const IncomeExpenseReportScreen(),
             ),
+
+            // =========================
+            // INTERNAL AUDIT
+            // =========================
+            _reportCard(
+              context,
+              "Internal Audit",
+              Icons.fact_check_rounded,
+              Colors.red,
+              const InternalAuditScreen(),
+            ),
           ],
         ),
       ),
@@ -115,39 +116,22 @@ class ReportsScreen extends StatelessWidget {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => screen,
-            ),
-          );
+          Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 16,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
           child: Column(
-            mainAxisAlignment:
-                MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor:
-                    color.withOpacity(.12),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 26,
-                ),
+                backgroundColor: color.withOpacity(.12),
+                child: Icon(icon, color: color, size: 26),
               ),
 
               const SizedBox(height: 10),

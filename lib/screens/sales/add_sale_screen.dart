@@ -26,17 +26,13 @@ class AddSaleScreen extends StatefulWidget {
 }
 
 class _AddSaleScreenState extends State<AddSaleScreen> {
-  final CustomerRepository _customerRepository =
-      CustomerRepository();
+  final CustomerRepository _customerRepository = CustomerRepository();
 
-  final ProductRepository _productRepository =
-      ProductRepository();
+  final ProductRepository _productRepository = ProductRepository();
 
-  final SaleRepository _saleRepository =
-      SaleRepository();
+  final SaleRepository _saleRepository = SaleRepository();
 
-  final AccountRepository _accountRepository =
-      AccountRepository();
+  final AccountRepository _accountRepository = AccountRepository();
 
   List<Customer> _customers = [];
   List<Product> _products = [];
@@ -52,8 +48,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // CUSTOMER SEARCH
   // ============================================================
 
-  final TextEditingController _customerController =
-      TextEditingController();
+  final TextEditingController _customerController = TextEditingController();
 
   bool _showCustomerSuggestions = false;
 
@@ -61,8 +56,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // PRODUCT SEARCH
   // ============================================================
 
-  final TextEditingController _productController =
-      TextEditingController();
+  final TextEditingController _productController = TextEditingController();
 
   bool _showProductSuggestions = false;
 
@@ -70,20 +64,18 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // OTHER CONTROLLERS
   // ============================================================
 
-  final TextEditingController _qtyController =
-      TextEditingController();
+  final TextEditingController _qtyController = TextEditingController();
 
-  final TextEditingController _paidController =
-      TextEditingController();
+  final TextEditingController _paidController = TextEditingController();
 
   final TextEditingController _additionalChargeController =
       TextEditingController(text: "0");
 
-  final TextEditingController _discountController =
-      TextEditingController(text: "0");
+  final TextEditingController _discountController = TextEditingController(
+    text: "0",
+  );
 
-  final TextEditingController _noteController =
-      TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
 
   bool _loading = true;
   bool _saving = false;
@@ -121,14 +113,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   }
 
   double get _balanceDue {
-    final paid =
-        double.tryParse(
-              _paidController.text.trim(),
-            ) ??
-            0;
+    final paid = double.tryParse(_paidController.text.trim()) ?? 0;
 
-    final balance =
-        _totalOutstanding - paid;
+    final balance = _totalOutstanding - paid;
 
     return balance < 0 ? 0 : balance;
   }
@@ -138,27 +125,26 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // ============================================================
 
   List<Customer> get _filteredCustomers {
-    final query =
-        _customerController.text.trim().toLowerCase();
+    final query = _customerController.text.trim().toLowerCase();
 
     if (query.isEmpty) {
       return [];
     }
 
-    return _customers.where((customer) {
-      final name =
-          customer.name.toLowerCase();
+    return _customers
+        .where((customer) {
+          final name = customer.name.toLowerCase();
 
-      final id =
-          customer.id?.toString().toLowerCase() ?? "";
+          final id = customer.id?.toString().toLowerCase() ?? "";
 
-      final phone =
-          customer.phone?.toLowerCase() ?? "";
+          final phone = customer.phone?.toLowerCase() ?? "";
 
-      return name.contains(query) ||
-          id.contains(query) ||
-          phone.contains(query);
-    }).take(10).toList();
+          return name.contains(query) ||
+              id.contains(query) ||
+              phone.contains(query);
+        })
+        .take(10)
+        .toList();
   }
 
   // ============================================================
@@ -166,23 +152,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // ============================================================
 
   List<Product> get _filteredProducts {
-    final query =
-        _productController.text.trim().toLowerCase();
+    final query = _productController.text.trim().toLowerCase();
 
     if (query.isEmpty) {
       return [];
     }
 
-    return _products.where((product) {
-      final name =
-          product.name.toLowerCase();
+    return _products
+        .where((product) {
+          final name = product.name.toLowerCase();
 
-      final id =
-          product.id?.toString().toLowerCase() ?? "";
+          final id = product.id?.toString().toLowerCase() ?? "";
 
-      return name.contains(query) ||
-          id.contains(query);
-    }).take(10).toList();
+          return name.contains(query) || id.contains(query);
+        })
+        .take(10)
+        .toList();
   }
 
   // ============================================================
@@ -196,24 +181,17 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     _qtyController.text = "1";
     _paidController.text = "0";
 
-    _paidController.addListener(
-      _calculateTotal,
-    );
+    _paidController.addListener(_calculateTotal);
 
-    _additionalChargeController.addListener(
-      _calculateTotal,
-    );
+    _additionalChargeController.addListener(_calculateTotal);
 
-    _discountController.addListener(
-      _calculateTotal,
-    );
+    _discountController.addListener(_calculateTotal);
 
     _customerController.addListener(() {
       if (!mounted) return;
 
       setState(() {
-        _showCustomerSuggestions =
-            _customerController.text.trim().isNotEmpty;
+        _showCustomerSuggestions = _customerController.text.trim().isNotEmpty;
       });
     });
 
@@ -221,8 +199,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       if (!mounted) return;
 
       setState(() {
-        _showProductSuggestions =
-            _productController.text.trim().isNotEmpty;
+        _showProductSuggestions = _productController.text.trim().isNotEmpty;
       });
     });
 
@@ -235,14 +212,11 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   Future<void> _loadData() async {
     try {
-      final customers =
-          await _customerRepository.getCustomers();
+      final customers = await _customerRepository.getCustomers();
 
-      final products =
-          await _productRepository.getProducts();
+      final products = await _productRepository.getProducts();
 
-      final accounts =
-          await _accountRepository.getAccounts();
+      final accounts = await _accountRepository.getAccounts();
 
       if (!mounted) return;
 
@@ -253,15 +227,11 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
         if (_accounts.isNotEmpty) {
           try {
-            _selectedAccount =
-                _accounts.firstWhere(
-              (e) =>
-                  e.type.toUpperCase() ==
-                  "CASH",
+            _selectedAccount = _accounts.firstWhere(
+              (e) => e.type.toUpperCase() == "CASH",
             );
           } catch (_) {
-            _selectedAccount =
-                _accounts.first;
+            _selectedAccount = _accounts.first;
           }
         }
 
@@ -276,13 +246,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Failed to load data: $e",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to load data: $e")));
     }
   }
 
@@ -293,15 +259,11 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   Future<void> _openAddCustomer() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) =>
-            const AddCustomerScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const AddCustomerScreen()),
     );
 
     if (result == true) {
-      final customers =
-          await _customerRepository.getCustomers();
+      final customers = await _customerRepository.getCustomers();
 
       if (!mounted) return;
 
@@ -311,13 +273,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         _showCustomerSuggestions = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Customer list updated.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Customer list updated.")));
     }
   }
 
@@ -328,15 +286,11 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   Future<void> _openAddProduct() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) =>
-            const AddProductScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const AddProductScreen()),
     );
 
     if (result == true) {
-      final products =
-          await _productRepository.getProducts();
+      final products = await _productRepository.getProducts();
 
       if (!mounted) return;
 
@@ -347,13 +301,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         _showProductSuggestions = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Product list updated.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Product list updated.")));
     }
   }
 
@@ -361,19 +311,15 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // CUSTOMER
   // ============================================================
 
-  void _selectCustomer(
-    Customer customer,
-  ) {
+  void _selectCustomer(Customer customer) {
     FocusScope.of(context).unfocus();
 
     setState(() {
       _selectedCustomer = customer;
 
-      _customerController.text =
-          customer.name;
+      _customerController.text = customer.name;
 
-      _balanceForward =
-          customer.balance;
+      _balanceForward = customer.balance;
 
       _showCustomerSuggestions = false;
     });
@@ -399,16 +345,10 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // PRODUCT
   // ============================================================
 
-  void _selectProduct(
-    Product product,
-  ) {
+  void _selectProduct(Product product) {
     if (product.stock <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "This product is out of stock.",
-          ),
-        ),
+        const SnackBar(content: Text("This product is out of stock.")),
       );
       return;
     }
@@ -418,8 +358,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     setState(() {
       _selectedProduct = product;
 
-      _productController.text =
-          product.name;
+      _productController.text = product.name;
 
       _qtyController.text = "1";
 
@@ -451,16 +390,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
 
     double additionalCharge =
-        double.tryParse(
-              _additionalChargeController.text.trim(),
-            ) ??
-            0;
+        double.tryParse(_additionalChargeController.text.trim()) ?? 0;
 
-    double discount =
-        double.tryParse(
-              _discountController.text.trim(),
-            ) ??
-            0;
+    double discount = double.tryParse(_discountController.text.trim()) ?? 0;
 
     if (additionalCharge < 0) {
       additionalCharge = 0;
@@ -470,31 +402,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       discount = 0;
     }
 
-    final maximumDiscount =
-        subtotal + additionalCharge;
+    final maximumDiscount = subtotal + additionalCharge;
 
     if (discount > maximumDiscount) {
       discount = maximumDiscount;
     }
 
-    final grandTotal =
-        subtotal +
-        additionalCharge -
-        discount;
+    final grandTotal = subtotal + additionalCharge - discount;
 
     if (!mounted) return;
 
     setState(() {
-      _additionalCharge =
-          additionalCharge;
+      _additionalCharge = additionalCharge;
 
-      _invoiceDiscount =
-          discount;
+      _invoiceDiscount = discount;
 
-      _grandTotal =
-          grandTotal < 0
-              ? 0
-              : grandTotal;
+      _grandTotal = grandTotal < 0 ? 0 : grandTotal;
     });
   }
 
@@ -505,77 +428,50 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   void _editCartRate(int index) {
     final item = _cart[index];
 
-    final controller =
-        TextEditingController(
-      text: item.saleRate.toString(),
-    );
+    final controller = TextEditingController(text: item.saleRate.toString());
 
     showDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text(
-            "Edit Selling Rate",
-          ),
+          title: const Text("Edit Selling Rate"),
           content: TextField(
             controller: controller,
             autofocus: true,
-            keyboardType:
-                const TextInputType.numberWithOptions(
-              decimal: true,
-            ),
-            decoration:
-                const InputDecoration(
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
               labelText: "Rate",
               prefixText: "৳ ",
-              border:
-                  OutlineInputBorder(),
+              border: OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                );
+                Navigator.pop(dialogContext);
               },
-              child:
-                  const Text("Cancel"),
+              child: const Text("Cancel"),
             ),
             ElevatedButton(
               onPressed: () {
-                final newRate =
-                    double.tryParse(
-                  controller.text.trim(),
-                );
+                final newRate = double.tryParse(controller.text.trim());
 
-                if (newRate == null ||
-                    newRate < 0) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        "Please enter a valid rate.",
-                      ),
-                    ),
+                if (newRate == null || newRate < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Please enter a valid rate.")),
                   );
                   return;
                 }
 
                 setState(() {
-                  item.saleRate =
-                      newRate;
+                  item.saleRate = newRate;
                 });
 
-                Navigator.pop(
-                  dialogContext,
-                );
+                Navigator.pop(dialogContext);
 
                 _calculateTotal();
               },
-              child:
-                  const Text("Apply"),
+              child: const Text("Apply"),
             ),
           ],
         );
@@ -589,35 +485,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   void _addProduct() {
     if (_selectedProduct == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Select a product.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Select a product.")));
       return;
     }
 
-    final qty =
-        int.tryParse(
-              _qtyController.text.trim(),
-            ) ??
-            0;
+    final qty = int.tryParse(_qtyController.text.trim()) ?? 0;
 
     if (qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Invalid quantity.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Invalid quantity.")));
       return;
     }
 
-    if (qty >
-        _selectedProduct!.stock) {
+    if (qty > _selectedProduct!.stock) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -630,35 +513,23 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     }
 
     setState(() {
-      final index =
-          _cart.indexWhere(
-        (e) =>
-            e.product.id ==
-            _selectedProduct!.id,
+      final index = _cart.indexWhere(
+        (e) => e.product.id == _selectedProduct!.id,
       );
 
       if (index == -1) {
         _cart.add(
           CartItem(
-            product:
-                _selectedProduct!,
-            quantity:
-                qty,
-            saleRate:
-                _selectedProduct!
-                    .sellingPrice,
+            product: _selectedProduct!,
+            quantity: qty,
+            saleRate: _selectedProduct!.sellingPrice,
           ),
         );
       } else {
-        final newQty =
-            _cart[index].quantity +
-                qty;
+        final newQty = _cart[index].quantity + qty;
 
-        if (newQty >
-            _selectedProduct!.stock) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(
+        if (newQty > _selectedProduct!.stock) {
+          ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 "Available Stock : "
@@ -669,8 +540,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
           return;
         }
 
-        _cart[index].quantity =
-            newQty;
+        _cart[index].quantity = newQty;
       }
 
       _selectedProduct = null;
@@ -679,8 +549,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
       _qtyController.text = "1";
 
-      _showProductSuggestions =
-          false;
+      _showProductSuggestions = false;
     });
 
     FocusScope.of(context).unfocus();
@@ -708,57 +577,36 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     if (_saving) return;
 
     if (_selectedCustomer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Please select customer.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please select customer.")));
       return;
     }
 
     if (_selectedAccount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Please select account.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please select account.")));
       return;
     }
 
     if (_cart.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Cart is empty.",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Cart is empty.")));
       return;
     }
 
-    final paid =
-        double.tryParse(
-              _paidController.text.trim(),
-            ) ??
-            0;
+    final paid = double.tryParse(_paidController.text.trim()) ?? 0;
 
     if (paid < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Paid amount cannot be negative.",
-          ),
-        ),
+        const SnackBar(content: Text("Paid amount cannot be negative.")),
       );
       return;
     }
 
-    final totalOutstanding =
-        _totalOutstanding;
+    final totalOutstanding = _totalOutstanding;
 
     if (paid > totalOutstanding) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -781,63 +629,40 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       // CURRENT INVOICE DUE
       // ==========================================================
 
-      final invoiceDue =
-          _grandTotal - paid;
+      final invoiceDue = _grandTotal - paid;
 
-      final now =
-          DateTime.now().toIso8601String();
+      final now = DateTime.now().toIso8601String();
 
       final sale = Sale(
-        customerId:
-            _selectedCustomer!.id!,
+        customerId: _selectedCustomer!.id!,
         invoiceNo: "",
-        saleDate:
-            now,
-        grandTotal:
-            _grandTotal,
-        additionalCharge:
-            _additionalCharge,
-        invoiceDiscount:
-            _invoiceDiscount,
-        paid:
-            paid,
-        due:
-            invoiceDue < 0
-                ? 0
-                : invoiceDue,
-        note:
-            _noteController.text.trim(),
-        paymentMethod:
-            _selectedAccount!.name,
-        createdAt:
-            now,
+        saleDate: now,
+        grandTotal: _grandTotal,
+        additionalCharge: _additionalCharge,
+        invoiceDiscount: _invoiceDiscount,
+        paid: paid,
+        due: invoiceDue < 0 ? 0 : invoiceDue,
+        note: _noteController.text.trim(),
+        paymentMethod: _selectedAccount!.name,
+        createdAt: now,
       );
 
       final List<SaleItem> items = [];
 
       for (final cart in _cart) {
-        if (cart.quantity >
-            cart.product.stock) {
-          throw Exception(
-            "${cart.product.name} stock unavailable.",
-          );
+        if (cart.quantity > cart.product.stock) {
+          throw Exception("${cart.product.name} stock unavailable.");
         }
 
         items.add(
           SaleItem(
             saleId: 0,
-            productId:
-                cart.product.id!,
-            productName:
-                cart.product.name,
-            qty:
-                cart.quantity,
-            purchasePrice:
-                cart.product.purchasePrice,
-            sellingPrice:
-                cart.saleRate,
-            subtotal:
-                cart.subtotal,
+            productId: cart.product.id!,
+            productName: cart.product.name,
+            qty: cart.quantity,
+            purchasePrice: cart.product.purchasePrice,
+            sellingPrice: cart.saleRate,
+            subtotal: cart.subtotal,
           ),
         );
       }
@@ -846,33 +671,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       // SAVE SALE
       // ==========================================================
 
-      final saleId =
-          await _saleRepository.saveSale(
-        sale: sale,
-        items: items,
-      );
+      final saleId = await _saleRepository.saveSale(sale: sale, items: items);
 
       // ==========================================================
       // CUSTOMER PAYMENT / CP#
       // ==========================================================
 
       if (paid > 0) {
-        final voucherNo =
-            await _customerRepository
-                .getNextCustomerPaymentVoucherNo();
+        final voucherNo = await _customerRepository
+            .getNextCustomerPaymentVoucherNo();
 
-        await _customerRepository
-            .saveCustomerPayment(
-          customerId:
-              sale.customerId,
-          amount:
-              paid,
-          accountId:
-              _selectedAccount!.id!,
-          paymentMethod:
-              _selectedAccount!.name,
-          voucherNo:
-              voucherNo,
+        await _customerRepository.saveCustomerPayment(
+          customerId: sale.customerId,
+          amount: paid,
+          accountId: _selectedAccount!.id!,
+          paymentMethod: _selectedAccount!.name,
+          voucherNo: voucherNo,
         );
       }
 
@@ -881,10 +695,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       // ==========================================================
 
       if (paid > 0) {
-        await _accountRepository.addBalance(
-          _selectedAccount!.id!,
-          paid,
-        );
+        await _accountRepository.addBalance(_selectedAccount!.id!, paid);
       }
 
       // ==========================================================
@@ -897,55 +708,33 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       // GET SAVED SALE
       // ==========================================================
 
-      final savedSale =
-          await _saleRepository.getSale(
-        saleId,
-      );
+      final savedSale = await _saleRepository.getSale(saleId);
 
-      final savedItems =
-          await _saleRepository.getSaleItems(
-        saleId,
-      );
+      final savedItems = await _saleRepository.getSaleItems(saleId);
 
       if (savedSale == null) {
-        throw Exception(
-          "Saved sale could not be loaded.",
-        );
+        throw Exception("Saved sale could not be loaded.");
       }
 
       // ==========================================================
       // GENERATE PDF
       // ==========================================================
 
-      await _generateInvoicePdf(
-        savedSale,
-        savedItems,
-      );
+      await _generateInvoicePdf(savedSale, savedItems);
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Sale saved successfully.",
-          ),
-        ),
-      );
-
-      Navigator.pop(
+      ScaffoldMessenger.of(
         context,
-        true,
-      );
+      ).showSnackBar(const SnackBar(content: Text("Sale saved successfully.")));
+
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString(),
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) {
         setState(() {
@@ -959,20 +748,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // PDF
   // ============================================================
 
-  Future<void> _generateInvoicePdf(
-    Sale sale,
-    List<SaleItem> items,
-  ) async {
+  Future<void> _generateInvoicePdf(Sale sale, List<SaleItem> items) async {
     try {
-      final saleInfo =
-          await _saleRepository.getSaleById(
-        sale.id!,
-      );
+      final saleInfo = await _saleRepository.getSaleById(sale.id!);
 
       if (saleInfo == null) {
-        throw Exception(
-          "Sale not found.",
-        );
+        throw Exception("Sale not found.");
       }
 
       await SaleInvoicePdf.savePdf(
@@ -989,13 +770,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "PDF Error: $e",
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("PDF Error: $e")));
     }
   }
 
@@ -1023,242 +800,141 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "New Sale",
-        ),
-      ),
+      appBar: AppBar(title: const Text("New Sale")),
 
       body: _loading
-          ? const Center(
-              child:
-                  CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : SafeArea(
-              child:
-                  SingleChildScrollView(
+              child: SingleChildScrollView(
                 keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior
-                        .onDrag,
-                padding:
-                    const EdgeInsets.all(
-                  16,
-                ),
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     // ==================================================
                     // CUSTOMER SEARCH + ADD CUSTOMER
                     // ==================================================
-
                     Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child:
-                              Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               TextFormField(
-                                controller:
-                                    _customerController,
-                                decoration:
-                                    InputDecoration(
-                                  labelText:
-                                      "Search Customer",
-                                  hintText:
-                                      "Name, ID or phone...",
-                                  border:
-                                      const OutlineInputBorder(),
-                                  prefixIcon:
-                                      const Icon(
-                                    Icons
-                                        .person_search,
-                                  ),
-                                  suffixIcon:
-                                      _selectedCustomer !=
-                                              null
-                                          ? IconButton(
-                                              icon:
-                                                  const Icon(
-                                                Icons
-                                                    .clear,
-                                              ),
-                                              onPressed:
-                                                  _clearCustomer,
-                                            )
-                                          : null,
+                                controller: _customerController,
+                                decoration: InputDecoration(
+                                  labelText: "Search Customer",
+                                  hintText: "Name, ID or phone...",
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.person_search),
+                                  suffixIcon: _selectedCustomer != null
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: _clearCustomer,
+                                        )
+                                      : null,
                                 ),
                                 onTap: () {
-                                  if (_customerController
-                                      .text
+                                  if (_customerController.text
                                       .trim()
                                       .isNotEmpty) {
                                     setState(() {
-                                      _showCustomerSuggestions =
-                                          true;
+                                      _showCustomerSuggestions = true;
                                     });
                                   }
                                 },
                               ),
 
                               if (_showCustomerSuggestions &&
-                                  _filteredCustomers
-                                      .isNotEmpty)
+                                  _filteredCustomers.isNotEmpty)
                                 Container(
-                                  margin:
-                                      const EdgeInsets
-                                          .only(
-                                    top: 4,
+                                  margin: const EdgeInsets.only(top: 4),
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 280,
                                   ),
-                                  constraints:
-                                      const BoxConstraints(
-                                    maxHeight:
-                                        280,
-                                  ),
-                                  decoration:
-                                      BoxDecoration(
-                                    color:
-                                        Colors.white,
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      8,
-                                    ),
-                                    border:
-                                        Border.all(
-                                      color: Colors
-                                          .grey
-                                          .shade300,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors
-                                            .black
-                                            .withOpacity(
-                                          0.12,
-                                        ),
-                                        blurRadius:
-                                            8,
-                                        offset:
-                                            const Offset(
-                                          0,
-                                          3,
-                                        ),
+                                        color: Colors.black.withOpacity(0.12),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
                                       ),
                                     ],
                                   ),
-                                  child:
-                                      ListView.builder(
-                                    shrinkWrap:
-                                        true,
-                                    padding:
-                                        EdgeInsets
-                                            .zero,
-                                    itemCount:
-                                        _filteredCustomers
-                                            .length,
-                                    itemBuilder:
-                                        (
-                                      context,
-                                      index,
-                                    ) {
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    padding: EdgeInsets.zero,
+                                    itemCount: _filteredCustomers.length,
+                                    itemBuilder: (context, index) {
                                       final customer =
-                                          _filteredCustomers[
-                                              index];
+                                          _filteredCustomers[index];
 
                                       return InkWell(
                                         onTap: () {
-                                          _selectCustomer(
-                                            customer,
-                                          );
+                                          _selectCustomer(customer);
                                         },
-                                        child:
-                                            Padding(
-                                          padding:
-                                              const EdgeInsets
-                                                  .symmetric(
-                                            horizontal:
-                                                12,
-                                            vertical:
-                                                10,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
                                           ),
-                                          child:
-                                              Row(
+                                          child: Row(
                                             children: [
                                               CircleAvatar(
-                                                radius:
-                                                    20,
+                                                radius: 20,
                                                 backgroundColor:
-                                                    Colors
-                                                        .green
-                                                        .shade100,
-                                                child:
-                                                    Text(
-                                                  customer
-                                                          .name
-                                                          .isNotEmpty
-                                                      ? customer
-                                                          .name[
-                                                              0]
-                                                          .toUpperCase()
+                                                    Colors.green.shade100,
+                                                child: Text(
+                                                  customer.name.isNotEmpty
+                                                      ? customer.name[0]
+                                                            .toUpperCase()
                                                       : "?",
-                                                  style:
-                                                      TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
                                                     color:
                                                         Colors.green.shade800,
                                                   ),
                                                 ),
                                               ),
 
-                                              const SizedBox(
-                                                width:
-                                                    12,
-                                              ),
+                                              const SizedBox(width: 12),
 
                                               Expanded(
-                                                child:
-                                                    Column(
+                                                child: Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
                                                     Text(
                                                       customer.name,
-                                                      maxLines:
-                                                          1,
+                                                      maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
-                                                      style:
-                                                          const TextStyle(
+                                                      style: const TextStyle(
                                                         fontWeight:
                                                             FontWeight.bold,
-                                                        fontSize:
-                                                            15,
+                                                        fontSize: 15,
                                                       ),
                                                     ),
 
-                                                    const SizedBox(
-                                                      height:
-                                                          3,
-                                                    ),
+                                                    const SizedBox(height: 3),
 
                                                     Text(
                                                       "ID: ${customer.id}   "
                                                       "Balance: ৳${customer.balance.toStringAsFixed(2)}",
-                                                      maxLines:
-                                                          1,
+                                                      maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
-                                                      style:
-                                                          TextStyle(
-                                                        fontSize:
-                                                            12,
-                                                        color:
-                                                            Colors.grey.shade700,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade700,
                                                       ),
                                                     ),
                                                   ],
@@ -1275,45 +951,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                           ),
                         ),
 
-                        const SizedBox(
-                          width: 8,
-                        ),
+                        const SizedBox(width: 8),
 
                         SizedBox(
                           height: 56,
-                          child:
-                              ElevatedButton(
-                            onPressed:
-                                _openAddCustomer,
-                            style:
-                                ElevatedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets
-                                      .symmetric(
-                                horizontal:
-                                    12,
+                          child: ElevatedButton(
+                            onPressed: _openAddCustomer,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
                               ),
                             ),
-                            child:
-                                const Column(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .center,
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons
-                                      .person_add,
-                                  size:
-                                      20,
-                                ),
-                                Text(
-                                  "Add",
-                                  style:
-                                      TextStyle(
-                                    fontSize:
-                                        11,
-                                  ),
-                                ),
+                                Icon(Icons.person_add, size: 20),
+                                Text("Add", style: TextStyle(fontSize: 11)),
                               ],
                             ),
                           ),
@@ -1321,234 +974,138 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       ],
                     ),
 
-                    const SizedBox(
-                      height: 16,
-                    ),
+                    const SizedBox(height: 16),
 
                     // ==================================================
                     // PRODUCT SEARCH + ADD PRODUCT
                     // ==================================================
-
                     Row(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child:
-                              Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               TextFormField(
-                                controller:
-                                    _productController,
-                                decoration:
-                                    InputDecoration(
-                                  labelText:
-                                      "Search Product",
-                                  hintText:
-                                      "Product name or ID...",
-                                  border:
-                                      const OutlineInputBorder(),
-                                  prefixIcon:
-                                      const Icon(
-                                    Icons
-                                        .inventory_2,
-                                  ),
-                                  suffixIcon:
-                                      _selectedProduct !=
-                                              null
-                                          ? IconButton(
-                                              icon:
-                                                  const Icon(
-                                                Icons
-                                                    .clear,
-                                              ),
-                                              onPressed:
-                                                  _clearProduct,
-                                            )
-                                          : null,
+                                controller: _productController,
+                                decoration: InputDecoration(
+                                  labelText: "Search Product",
+                                  hintText: "Product name or ID...",
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.inventory_2),
+                                  suffixIcon: _selectedProduct != null
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: _clearProduct,
+                                        )
+                                      : null,
                                 ),
                                 onTap: () {
-                                  if (_productController
-                                      .text
+                                  if (_productController.text
                                       .trim()
                                       .isNotEmpty) {
                                     setState(() {
-                                      _showProductSuggestions =
-                                          true;
+                                      _showProductSuggestions = true;
                                     });
                                   }
                                 },
                               ),
 
                               if (_showProductSuggestions &&
-                                  _filteredProducts
-                                      .isNotEmpty)
+                                  _filteredProducts.isNotEmpty)
                                 Container(
-                                  margin:
-                                      const EdgeInsets
-                                          .only(
-                                    top: 4,
+                                  margin: const EdgeInsets.only(top: 4),
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 300,
                                   ),
-                                  constraints:
-                                      const BoxConstraints(
-                                    maxHeight:
-                                        300,
-                                  ),
-                                  decoration:
-                                      BoxDecoration(
-                                    color:
-                                        Colors.white,
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      8,
-                                    ),
-                                    border:
-                                        Border.all(
-                                      color: Colors
-                                          .grey
-                                          .shade300,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors
-                                            .black
-                                            .withOpacity(
-                                          0.12,
-                                        ),
-                                        blurRadius:
-                                            8,
-                                        offset:
-                                            const Offset(
-                                          0,
-                                          3,
-                                        ),
+                                        color: Colors.black.withOpacity(0.12),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
                                       ),
                                     ],
                                   ),
-                                  child:
-                                      ListView.builder(
-                                    shrinkWrap:
-                                        true,
-                                    padding:
-                                        EdgeInsets
-                                            .zero,
-                                    itemCount:
-                                        _filteredProducts
-                                            .length,
-                                    itemBuilder:
-                                        (
-                                      context,
-                                      index,
-                                    ) {
-                                      final product =
-                                          _filteredProducts[
-                                              index];
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    padding: EdgeInsets.zero,
+                                    itemCount: _filteredProducts.length,
+                                    itemBuilder: (context, index) {
+                                      final product = _filteredProducts[index];
 
-                                      final bool
-                                          outOfStock =
-                                          product.stock <=
-                                              0;
+                                      final bool outOfStock =
+                                          product.stock <= 0;
 
-                                      final bool
-                                          lowStock =
-                                          product.stock >
-                                                  0 &&
-                                              product.stock <=
-                                                  10;
+                                      final bool lowStock =
+                                          product.stock > 0 &&
+                                          product.stock <= 10;
 
                                       return InkWell(
-                                        onTap:
-                                            outOfStock
-                                                ? null
-                                                : () {
-                                                    _selectProduct(
-                                                      product,
-                                                    );
-                                                  },
-                                        child:
-                                            Padding(
-                                          padding:
-                                              const EdgeInsets
-                                                  .symmetric(
-                                            horizontal:
-                                                12,
-                                            vertical:
-                                                10,
+                                        onTap: outOfStock
+                                            ? null
+                                            : () {
+                                                _selectProduct(product);
+                                              },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
                                           ),
-                                          child:
-                                              Row(
+                                          child: Row(
                                             children: [
                                               Container(
-                                                width:
-                                                    40,
-                                                height:
-                                                    40,
-                                                decoration:
-                                                    BoxDecoration(
-                                                  color:
-                                                      outOfStock
-                                                          ? Colors.red.shade50
-                                                          : Colors.blue.shade50,
+                                                width: 40,
+                                                height: 40,
+                                                decoration: BoxDecoration(
+                                                  color: outOfStock
+                                                      ? Colors.red.shade50
+                                                      : Colors.blue.shade50,
                                                   borderRadius:
-                                                      BorderRadius.circular(
-                                                    8,
-                                                  ),
+                                                      BorderRadius.circular(8),
                                                 ),
-                                                child:
-                                                    Icon(
-                                                  Icons
-                                                      .inventory_2,
-                                                  color:
-                                                      outOfStock
-                                                          ? Colors.red
-                                                          : Colors.blue,
+                                                child: Icon(
+                                                  Icons.inventory_2,
+                                                  color: outOfStock
+                                                      ? Colors.red
+                                                      : Colors.blue,
                                                 ),
                                               ),
 
-                                              const SizedBox(
-                                                width:
-                                                    12,
-                                              ),
+                                              const SizedBox(width: 12),
 
                                               Expanded(
-                                                child:
-                                                    Column(
+                                                child: Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
                                                     Text(
                                                       product.name,
-                                                      maxLines:
-                                                          1,
+                                                      maxLines: 1,
                                                       overflow:
                                                           TextOverflow.ellipsis,
-                                                      style:
-                                                          const TextStyle(
+                                                      style: const TextStyle(
                                                         fontWeight:
                                                             FontWeight.bold,
-                                                        fontSize:
-                                                            15,
+                                                        fontSize: 15,
                                                       ),
                                                     ),
 
-                                                    const SizedBox(
-                                                      height:
-                                                          3,
-                                                    ),
+                                                    const SizedBox(height: 3),
 
                                                     Text(
                                                       "ID: ${product.id}   "
                                                       "৳${product.sellingPrice.toStringAsFixed(2)}",
-                                                      style:
-                                                          TextStyle(
-                                                        fontSize:
-                                                            12,
-                                                        color:
-                                                            Colors.grey.shade700,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade700,
                                                       ),
                                                     ),
                                                   ],
@@ -1557,43 +1114,31 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
                                               Container(
                                                 padding:
-                                                    const EdgeInsets
-                                                        .symmetric(
-                                                  horizontal:
-                                                      8,
-                                                  vertical:
-                                                      5,
-                                                ),
-                                                decoration:
-                                                    BoxDecoration(
-                                                  color:
-                                                      outOfStock
-                                                          ? Colors.red.shade100
-                                                          : lowStock
-                                                              ? Colors.orange.shade100
-                                                              : Colors.green.shade100,
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 5,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: outOfStock
+                                                      ? Colors.red.shade100
+                                                      : lowStock
+                                                      ? Colors.orange.shade100
+                                                      : Colors.green.shade100,
                                                   borderRadius:
-                                                      BorderRadius.circular(
-                                                    6,
-                                                  ),
+                                                      BorderRadius.circular(6),
                                                 ),
-                                                child:
-                                                    Text(
+                                                child: Text(
                                                   outOfStock
                                                       ? "Out"
                                                       : "${product.stock} ${product.unit}",
-                                                  style:
-                                                      TextStyle(
-                                                    fontSize:
-                                                        11,
-                                                    fontWeight:
-                                                        FontWeight.bold,
-                                                    color:
-                                                        outOfStock
-                                                            ? Colors.red
-                                                            : lowStock
-                                                                ? Colors.orange.shade800
-                                                                : Colors.green.shade800,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: outOfStock
+                                                        ? Colors.red
+                                                        : lowStock
+                                                        ? Colors.orange.shade800
+                                                        : Colors.green.shade800,
                                                   ),
                                                 ),
                                               ),
@@ -1608,45 +1153,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                           ),
                         ),
 
-                        const SizedBox(
-                          width: 8,
-                        ),
+                        const SizedBox(width: 8),
 
                         SizedBox(
                           height: 56,
-                          child:
-                              ElevatedButton(
-                            onPressed:
-                                _openAddProduct,
-                            style:
-                                ElevatedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets
-                                      .symmetric(
-                                horizontal:
-                                    12,
+                          child: ElevatedButton(
+                            onPressed: _openAddProduct,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
                               ),
                             ),
-                            child:
-                                const Column(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .center,
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons
-                                      .add_box,
-                                  size:
-                                      20,
-                                ),
-                                Text(
-                                  "Add",
-                                  style:
-                                      TextStyle(
-                                    fontSize:
-                                        11,
-                                  ),
-                                ),
+                                Icon(Icons.add_box, size: 20),
+                                Text("Add", style: TextStyle(fontSize: 11)),
                               ],
                             ),
                           ),
@@ -1654,110 +1176,62 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       ],
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // SELECTED PRODUCT / QTY
                     // ==================================================
-
                     Row(
                       children: [
                         Expanded(
-                          child:
-                              TextFormField(
-                            controller:
-                                _qtyController,
-                            keyboardType:
-                                TextInputType
-                                    .number,
-                            decoration:
-                                const InputDecoration(
-                              labelText:
-                                  "Qty",
-                              border:
-                                  OutlineInputBorder(),
+                          child: TextFormField(
+                            controller: _qtyController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: "Qty",
+                              border: OutlineInputBorder(),
                             ),
                           ),
                         ),
 
-                        const SizedBox(
-                          width: 12,
-                        ),
+                        const SizedBox(width: 12),
 
                         Expanded(
-                          child:
-                              SizedBox(
+                          child: SizedBox(
                             height: 56,
-                            child:
-                                ElevatedButton.icon(
-                              icon:
-                                  const Icon(
-                                Icons
-                                    .add_shopping_cart,
-                              ),
-                              label:
-                                  const Text(
-                                "Add",
-                              ),
-                              onPressed:
-                                  _addProduct,
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.add_shopping_cart),
+                              label: const Text("Add"),
+                              onPressed: _addProduct,
                             ),
                           ),
                         ),
                       ],
                     ),
 
-                    if (_selectedProduct !=
-                        null)
+                    if (_selectedProduct != null)
                       Container(
-                        width:
-                            double.infinity,
-                        margin:
-                            const EdgeInsets
-                                .only(
-                          top: 8,
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        padding:
-                            const EdgeInsets
-                                .all(
-                          10,
-                        ),
-                        decoration:
-                            BoxDecoration(
-                          color:
-                              Colors.green.shade50,
-                          borderRadius:
-                              BorderRadius.circular(
-                            8,
-                          ),
-                        ),
-                        child:
-                            Row(
+                        child: Row(
                           children: [
                             Icon(
-                              Icons
-                                  .check_circle,
-                              color:
-                                  Colors.green
-                                      .shade700,
+                              Icons.check_circle,
+                              color: Colors.green.shade700,
                             ),
-                            const SizedBox(
-                              width:
-                                  8,
-                            ),
+                            const SizedBox(width: 8),
                             Expanded(
-                              child:
-                                  Text(
+                              child: Text(
                                 "${_selectedProduct!.name}  •  "
                                 "Stock: ${_selectedProduct!.stock} ${_selectedProduct!.unit}",
-                                style:
-                                    TextStyle(
-                                  fontWeight:
-                                      FontWeight.bold,
-                                  color:
-                                      Colors.green.shade800,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade800,
                                 ),
                               ),
                             ),
@@ -1765,341 +1239,204 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                         ),
                       ),
 
-                    const SizedBox(
-                      height: 16,
-                    ),
+                    const SizedBox(height: 16),
 
                     // ==================================================
                     // CART
                     // ==================================================
-
                     SizedBox(
                       height: 270,
-                      child:
-                          Card(
-                        elevation:
-                            2,
-                        child:
-                            _cart.isEmpty
-                                ? const Center(
-                                    child:
-                                        Text(
-                                      "No Product Added",
+                      child: Card(
+                        elevation: 2,
+                        child: _cart.isEmpty
+                            ? const Center(child: Text("No Product Added"))
+                            : SingleChildScrollView(
+                                scrollDirection: Axis.vertical,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columnSpacing: 18,
+                                    headingRowColor: MaterialStateProperty.all(
+                                      Colors.green.shade100,
                                     ),
-                                  )
-                                : SingleChildScrollView(
-                                    scrollDirection:
-                                        Axis.vertical,
-                                    child:
-                                        SingleChildScrollView(
-                                      scrollDirection:
-                                          Axis.horizontal,
-                                      child:
-                                          DataTable(
-                                        columnSpacing:
-                                            18,
-                                        headingRowColor:
-                                            MaterialStateProperty.all(
-                                          Colors
-                                              .green
-                                              .shade100,
-                                        ),
-                                        columns:
-                                            const [
-                                          DataColumn(
-                                            label:
-                                                Text(
-                                              "Product",
+                                    columns: const [
+                                      DataColumn(label: Text("Product")),
+                                      DataColumn(
+                                        numeric: true,
+                                        label: Text("Qty"),
+                                      ),
+                                      DataColumn(
+                                        numeric: true,
+                                        label: Text("Rate"),
+                                      ),
+                                      DataColumn(
+                                        numeric: true,
+                                        label: Text("Total"),
+                                      ),
+                                      DataColumn(label: Text("")),
+                                    ],
+                                    rows: List.generate(_cart.length, (index) {
+                                      final item = _cart[index];
+
+                                      return DataRow(
+                                        cells: [
+                                          DataCell(
+                                            SizedBox(
+                                              width: 150,
+                                              child: Text(
+                                                item.product.name,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
                                           ),
-                                          DataColumn(
-                                            numeric:
-                                                true,
-                                            label:
-                                                Text(
-                                              "Qty",
+
+                                          DataCell(
+                                            Text(item.quantity.toString()),
+                                          ),
+
+                                          DataCell(
+                                            InkWell(
+                                              onTap: () {
+                                                _editCartRate(index);
+                                              },
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 6,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade50,
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: Colors.blue.shade200,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      item.saleRate
+                                                          .toStringAsFixed(2),
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Icon(
+                                                      Icons.edit,
+                                                      size: 14,
+                                                      color:
+                                                          Colors.blue.shade700,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                          DataColumn(
-                                            numeric:
-                                                true,
-                                            label:
-                                                Text(
-                                              "Rate",
+
+                                          DataCell(
+                                            Text(
+                                              item.subtotal.toStringAsFixed(2),
                                             ),
                                           ),
-                                          DataColumn(
-                                            numeric:
-                                                true,
-                                            label:
-                                                Text(
-                                              "Total",
-                                            ),
-                                          ),
-                                          DataColumn(
-                                            label:
-                                                Text(
-                                              "",
+
+                                          DataCell(
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                color: Colors.red,
+                                              ),
+                                              onPressed: () {
+                                                _removeCartItem(index);
+                                              },
                                             ),
                                           ),
                                         ],
-                                        rows:
-                                            List.generate(
-                                          _cart.length,
-                                          (
-                                            index,
-                                          ) {
-                                            final item =
-                                                _cart[index];
-
-                                            return DataRow(
-                                              cells: [
-                                                DataCell(
-                                                  SizedBox(
-                                                    width:
-                                                        150,
-                                                    child:
-                                                        Text(
-                                                      item.product.name,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ),
-
-                                                DataCell(
-                                                  Text(
-                                                    item.quantity.toString(),
-                                                  ),
-                                                ),
-
-                                                DataCell(
-                                                  InkWell(
-                                                    onTap:
-                                                        () {
-                                                      _editCartRate(
-                                                        index,
-                                                      );
-                                                    },
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      6,
-                                                    ),
-                                                    child:
-                                                        Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                        horizontal:
-                                                            8,
-                                                        vertical:
-                                                            6,
-                                                      ),
-                                                      decoration:
-                                                          BoxDecoration(
-                                                        color:
-                                                            Colors.blue.shade50,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                          6,
-                                                        ),
-                                                        border:
-                                                            Border.all(
-                                                          color:
-                                                              Colors.blue.shade200,
-                                                        ),
-                                                      ),
-                                                      child:
-                                                          Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            item.saleRate.toStringAsFixed(
-                                                              2,
-                                                            ),
-                                                            style:
-                                                                const TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight.bold,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width:
-                                                                4,
-                                                          ),
-                                                          Icon(
-                                                            Icons.edit,
-                                                            size:
-                                                                14,
-                                                            color:
-                                                                Colors.blue.shade700,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-
-                                                DataCell(
-                                                  Text(
-                                                    item.subtotal.toStringAsFixed(
-                                                      2,
-                                                    ),
-                                                  ),
-                                                ),
-
-                                                DataCell(
-                                                  IconButton(
-                                                    icon:
-                                                        const Icon(
-                                                      Icons.delete,
-                                                      color:
-                                                          Colors.red,
-                                                    ),
-                                                    onPressed:
-                                                        () {
-                                                      _removeCartItem(
-                                                        index,
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ),
+                                      );
+                                    }),
                                   ),
+                                ),
+                              ),
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // BILL SUMMARY
                     // ==================================================
-
                     Card(
-                      elevation:
-                          3,
-                      child:
-                          Padding(
-                        padding:
-                            const EdgeInsets.all(
-                          16,
-                        ),
-                        child:
-                            Column(
+                      elevation: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
                           children: [
-                            _summaryRow(
-                              "Subtotal",
-                              _subtotal,
-                            ),
+                            _summaryRow("Subtotal", _subtotal),
 
-                            const SizedBox(
-                              height: 8,
-                            ),
+                            const SizedBox(height: 8),
 
                             TextFormField(
-                              controller:
-                                  _additionalChargeController,
+                              controller: _additionalChargeController,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                decimal:
-                                    true,
-                              ),
-                              decoration:
-                                  const InputDecoration(
-                                labelText:
-                                    "Additional Charge",
-                                prefixIcon:
-                                    Icon(
-                                  Icons
-                                      .add_circle_outline,
-                                ),
-                                border:
-                                    OutlineInputBorder(),
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: "Additional Charge",
+                                prefixIcon: Icon(Icons.add_circle_outline),
+                                border: OutlineInputBorder(),
                               ),
                             ),
 
-                            const SizedBox(
-                              height: 12,
-                            ),
+                            const SizedBox(height: 12),
 
                             TextFormField(
-                              controller:
-                                  _discountController,
+                              controller: _discountController,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
-                                decimal:
-                                    true,
-                              ),
-                              decoration:
-                                  const InputDecoration(
-                                labelText:
-                                    "Invoice Discount",
-                                prefixIcon:
-                                    Icon(
-                                  Icons.discount,
-                                ),
-                                border:
-                                    OutlineInputBorder(),
+                                    decimal: true,
+                                  ),
+                              decoration: const InputDecoration(
+                                labelText: "Invoice Discount",
+                                prefixIcon: Icon(Icons.discount),
+                                border: OutlineInputBorder(),
                               ),
                             ),
 
-                            const Divider(
-                              height:
-                                  28,
-                            ),
+                            const Divider(height: 28),
 
                             _summaryRow(
                               "Invoice Total",
                               _invoiceTotal,
-                              bold:
-                                  true,
+                              bold: true,
                             ),
 
-                            const SizedBox(
-                              height: 12,
-                            ),
+                            const SizedBox(height: 12),
 
-                            _summaryRow(
-                              "Previous Due (BF)",
-                              _balanceForward,
-                            ),
+                            _summaryRow("Previous Due (BF)", _balanceForward),
 
-                            const SizedBox(
-                              height: 8,
-                            ),
+                            const SizedBox(height: 8),
 
                             Container(
-                              width:
-                                  double.infinity,
-                              padding:
-                                  const EdgeInsets.symmetric(
-                                vertical:
-                                    12,
-                                horizontal:
-                                    4,
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 4,
                               ),
-                              decoration:
-                                  BoxDecoration(
-                                color:
-                                    Colors.blue.shade50,
-                                borderRadius:
-                                    BorderRadius.circular(
-                                  8,
-                                ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              child:
-                                  _summaryRow(
+                              child: _summaryRow(
                                 "Total Outstanding",
                                 _totalOutstanding,
-                                bold:
-                                    true,
+                                bold: true,
                               ),
                             ),
                           ],
@@ -2107,223 +1444,129 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // PAYMENT METHOD
                     // ==================================================
-
                     DropdownButtonFormField<Account>(
-                      value:
-                          _selectedAccount,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "Receive To Account",
-                        prefixIcon:
-                            Icon(
-                          Icons
-                              .account_balance_wallet,
-                        ),
-                        border:
-                            OutlineInputBorder(),
+                      value: _selectedAccount,
+                      decoration: const InputDecoration(
+                        labelText: "Receive To Account",
+                        prefixIcon: Icon(Icons.account_balance_wallet),
+                        border: OutlineInputBorder(),
                       ),
-                      items:
-                          _accounts.map(
-                        (
-                          account,
-                        ) {
-                          return DropdownMenuItem<
-                              Account>(
-                            value:
-                                account,
-                            child:
-                                Text(
-                              account.name,
-                            ),
-                          );
-                        },
-                      ).toList(),
-                      onChanged:
-                          (value) {
-                        if (value ==
-                            null) {
+                      items: _accounts.map((account) {
+                        return DropdownMenuItem<Account>(
+                          value: account,
+                          child: Text(account.name),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value == null) {
                           return;
                         }
 
                         setState(() {
-                          _selectedAccount =
-                              value;
+                          _selectedAccount = value;
                         });
                       },
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // PAYMENT
                     // ==================================================
-
                     TextFormField(
-                      controller:
-                          _paidController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(
-                        decimal:
-                            true,
+                      controller: _paidController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                      textInputAction:
-                          TextInputAction.done,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "Paid Amount",
-                        prefixIcon:
-                            Icon(
-                          Icons.payments,
-                        ),
-                        border:
-                            OutlineInputBorder(),
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: "Paid Amount",
+                        prefixIcon: Icon(Icons.payments),
+                        border: OutlineInputBorder(),
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // BALANCE DUE
                     // ==================================================
-
                     Container(
-                      width:
-                          double.infinity,
-                      padding:
-                          const EdgeInsets.all(
-                        16,
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.shade100),
                       ),
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            Colors.red.shade50,
-                        borderRadius:
-                            BorderRadius.circular(
-                          10,
-                        ),
-                        border:
-                            Border.all(
-                          color:
-                              Colors.red.shade100,
-                        ),
-                      ),
-                      child:
-                          Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment
-                                .spaceBetween,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
                             "Balance Due",
-                            style:
-                                TextStyle(
-                              fontSize:
-                                  18,
-                              fontWeight:
-                                  FontWeight.bold,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             "৳${_balanceDue.toStringAsFixed(2)}",
-                            style:
-                                const TextStyle(
-                              fontSize:
-                                  22,
-                              fontWeight:
-                                  FontWeight.bold,
-                              color:
-                                  Colors.red,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 12,
-                    ),
+                    const SizedBox(height: 12),
 
                     // ==================================================
                     // NOTE
                     // ==================================================
-
                     TextFormField(
-                      controller:
-                          _noteController,
-                      maxLines:
-                          2,
-                      decoration:
-                          const InputDecoration(
-                        labelText:
-                            "Note",
-                        border:
-                            OutlineInputBorder(),
+                      controller: _noteController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: "Note",
+                        border: OutlineInputBorder(),
                       ),
                     ),
 
-                    const SizedBox(
-                      height: 16,
-                    ),
+                    const SizedBox(height: 16),
 
                     // ==================================================
                     // SAVE
                     // ==================================================
-
                     SizedBox(
-                      width:
-                          double.infinity,
-                      height:
-                          55,
-                      child:
-                          ElevatedButton.icon(
-                        icon:
-                            _saving
-                                ? const SizedBox(
-                                    width:
-                                        22,
-                                    height:
-                                        22,
-                                    child:
-                                        CircularProgressIndicator(
-                                      strokeWidth:
-                                          2,
-                                      color:
-                                          Colors.white,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.save,
-                                  ),
-                        label:
-                            Text(
-                          _saving
-                              ? "Saving..."
-                              : "Save Sale",
-                          style:
-                              const TextStyle(
-                            fontSize:
-                                18,
-                            fontWeight:
-                                FontWeight.bold,
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton.icon(
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save),
+                        label: Text(
+                          _saving ? "Saving..." : "Save Sale",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        onPressed:
-                            _saving
-                                ? null
-                                : _saveSale,
+                        onPressed: _saving ? null : _saveSale,
                       ),
                     ),
                   ],
@@ -2337,44 +1580,24 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // SUMMARY ROW
   // ============================================================
 
-  Widget _summaryRow(
-    String title,
-    double amount, {
-    bool bold = false,
-  }) {
+  Widget _summaryRow(String title, double amount, {bool bold = false}) {
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(
-        vertical: 4,
-      ),
-      child:
-          Row(
-        mainAxisAlignment:
-            MainAxisAlignment
-                .spaceBetween,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
-            style:
-                TextStyle(
-              fontSize:
-                  bold ? 18 : 15,
-              fontWeight:
-                  bold
-                      ? FontWeight.bold
-                      : FontWeight.w500,
+            style: TextStyle(
+              fontSize: bold ? 18 : 15,
+              fontWeight: bold ? FontWeight.bold : FontWeight.w500,
             ),
           ),
           Text(
             "৳${amount.toStringAsFixed(2)}",
-            style:
-                TextStyle(
-              fontSize:
-                  bold ? 20 : 16,
-              fontWeight:
-                  bold
-                      ? FontWeight.bold
-                      : FontWeight.w600,
+            style: TextStyle(
+              fontSize: bold ? 20 : 16,
+              fontWeight: bold ? FontWeight.bold : FontWeight.w600,
             ),
           ),
         ],

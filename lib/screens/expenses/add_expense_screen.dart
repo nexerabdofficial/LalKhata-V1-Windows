@@ -11,182 +11,150 @@ class AddExpenseScreen extends StatefulWidget {
   const AddExpenseScreen({super.key});
 
   @override
-  State<AddExpenseScreen> createState() =>
-      _AddExpenseScreenState();
+  State<AddExpenseScreen> createState() => _AddExpenseScreenState();
 }
 
-class _AddExpenseScreenState
-    extends State<AddExpenseScreen> {
+class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _categoryController =
-      TextEditingController();
+  final _categoryController = TextEditingController();
 
-  final _amountController =
-      TextEditingController();
+  final _amountController = TextEditingController();
 
-  final _noteController =
-      TextEditingController();
+  final _noteController = TextEditingController();
 
-  final ExpenseRepository _repository =
-      ExpenseRepository();
-  final AccountTransactionRepository
-      _transactionRepository =
+  final ExpenseRepository _repository = ExpenseRepository();
+  final AccountTransactionRepository _transactionRepository =
       AccountTransactionRepository();
 
   bool _isSaving = false;
-  final AccountRepository _accountRepository =
-    AccountRepository();
+  final AccountRepository _accountRepository = AccountRepository();
 
-List<Account> _accounts = [];
+  List<Account> _accounts = [];
 
-int? _selectedAccountId;
-@override
-void initState() {
-  super.initState();
-  _loadAccounts();
-}
+  int? _selectedAccountId;
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
 
-Future<void> _loadAccounts() async {
-  final data =
-      await _accountRepository.getAccounts();
+  Future<void> _loadAccounts() async {
+    final data = await _accountRepository.getAccounts();
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  setState(() {
-    _accounts = data;
+    setState(() {
+      _accounts = data;
 
-    if (data.isNotEmpty) {
-      _selectedAccountId = data.first.id;
-    }
-  });
-}
+      if (data.isNotEmpty) {
+        _selectedAccountId = data.first.id;
+      }
+    });
+  }
 
   Future<void> _saveExpense() async {
-  if (!_formKey.currentState!.validate()) {
-    return;
-  }
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
-  final amount =
-      double.tryParse(_amountController.text.trim());
+    final amount = double.tryParse(_amountController.text.trim());
 
-  if (amount == null || amount <= 0) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Enter a valid amount."),
-      ),
-    );
-    return;
-  }
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Enter a valid amount.")));
+      return;
+    }
 
-  if (_selectedAccountId == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Please select an account."),
-      ),
-    );
-    return;
-  }
+    if (_selectedAccountId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select an account.")),
+      );
+      return;
+    }
 
-  setState(() {
-    _isSaving = true;
-  });
+    setState(() {
+      _isSaving = true;
+    });
 
-  try {
-    final now =
-        DateTime.now().toIso8601String();
+    try {
+      final now = DateTime.now().toIso8601String();
 
-    // Generate voucher
-    final voucherNo =
-        await _repository.getNextExpenseVoucherNo();
+      // Generate voucher
+      final voucherNo = await _repository.getNextExpenseVoucherNo();
 
-    // Save expense
-    await _repository.insertExpense(
-      Expense(
-  category: _categoryController.text.trim(),
-  amount: amount,
-  accountId: _selectedAccountId,
-  voucherNo: voucherNo,
-  expenseDate: now,
-  note: _noteController.text.trim(),
-  createdAt: now,
-),
-    );
-
-    // Add account ledger transaction
-    await _transactionRepository.insertTransaction(
-      AccountTransaction(
-        accountId: _selectedAccountId!,
-        transactionType: "EXPENSE",
-        referenceType: "EXPENSE",
-        referenceId: null,
-        voucherNo: voucherNo,
-        debit: amount,
-        credit: 0,
-        transactionDate: now,
-        note: _categoryController.text.trim(),
-        createdAt: now,
-      ),
-    );
-
-    RefreshService.notify();
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "✅ Expense Saved — $voucherNo",
+      // Save expense
+      await _repository.insertExpense(
+        Expense(
+          category: _categoryController.text.trim(),
+          amount: amount,
+          accountId: _selectedAccountId,
+          voucherNo: voucherNo,
+          expenseDate: now,
+          note: _noteController.text.trim(),
+          createdAt: now,
         ),
-      ),
-    );
+      );
 
-    Navigator.pop(context, true);
-  } catch (e) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "Failed to save expense: $e",
+      // Add account ledger transaction
+      await _transactionRepository.insertTransaction(
+        AccountTransaction(
+          accountId: _selectedAccountId!,
+          transactionType: "EXPENSE",
+          referenceType: "EXPENSE",
+          referenceId: null,
+          voucherNo: voucherNo,
+          debit: amount,
+          credit: 0,
+          transactionDate: now,
+          note: _categoryController.text.trim(),
+          createdAt: now,
         ),
-      ),
-    );
-  } finally {
-    if (mounted) {
-      setState(() {
-        _isSaving = false;
-      });
+      );
+
+      RefreshService.notify();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("✅ Expense Saved — $voucherNo")));
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to save expense: $e")));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Add Expense"),
-      ),
+      appBar: AppBar(title: const Text("Add Expense")),
       body: Padding(
-        padding:
-            const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-
               TextFormField(
-                controller:
-                    _categoryController,
-                decoration:
-                    const InputDecoration(
+                controller: _categoryController,
+                decoration: const InputDecoration(
                   labelText: "Category",
-                  border:
-                      OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null ||
-                      value.isEmpty) {
+                  if (value == null || value.isEmpty) {
                     return "Enter category";
                   }
                   return null;
@@ -195,42 +163,36 @@ Future<void> _loadAccounts() async {
 
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
-  value: _selectedAccountId,
-  decoration: const InputDecoration(
-    labelText: "Paid From",
-    border: OutlineInputBorder(),
-  ),
-  items: _accounts.map((account) {
-    return DropdownMenuItem(
-      value: account.id,
-      child: Text(account.name),
-    );
-  }).toList(),
-  onChanged: (value) {
-    setState(() {
-      _selectedAccountId = value;
-    });
-  },
-),
-const SizedBox(height: 16),
+                value: _selectedAccountId,
+                decoration: const InputDecoration(
+                  labelText: "Paid From",
+                  border: OutlineInputBorder(),
+                ),
+                items: _accounts.map((account) {
+                  return DropdownMenuItem(
+                    value: account.id,
+                    child: Text(account.name),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedAccountId = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
 
               TextFormField(
-                controller:
-                    _amountController,
-                keyboardType:
-                    const TextInputType
-                        .numberWithOptions(
+                controller: _amountController,
+                keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: "Amount",
-                  border:
-                      OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null ||
-                      value.isEmpty) {
+                  if (value == null || value.isEmpty) {
                     return "Enter amount";
                   }
                   return null;
@@ -240,14 +202,11 @@ const SizedBox(height: 16),
               const SizedBox(height: 16),
 
               TextFormField(
-                controller:
-                    _noteController,
+                controller: _noteController,
                 maxLines: 3,
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: "Note",
-                  border:
-                      OutlineInputBorder(),
+                  border: OutlineInputBorder(),
                 ),
               ),
 
@@ -256,12 +215,8 @@ const SizedBox(height: 16),
               SizedBox(
                 height: 55,
                 child: ElevatedButton(
-                  onPressed: _isSaving
-                      ? null
-                      : _saveExpense,
-                  child: const Text(
-                    "Save Expense",
-                  ),
+                  onPressed: _isSaving ? null : _saveExpense,
+                  child: const Text("Save Expense"),
                 ),
               ),
             ],

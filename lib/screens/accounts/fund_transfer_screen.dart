@@ -9,26 +9,19 @@ class FundTransferScreen extends StatefulWidget {
   const FundTransferScreen({super.key});
 
   @override
-  State<FundTransferScreen> createState() =>
-      _FundTransferScreenState();
+  State<FundTransferScreen> createState() => _FundTransferScreenState();
 }
 
-class _FundTransferScreenState
-    extends State<FundTransferScreen> {
-  final AccountRepository _accountRepository =
-      AccountRepository();
+class _FundTransferScreenState extends State<FundTransferScreen> {
+  final AccountRepository _accountRepository = AccountRepository();
 
-  final AccountLedgerService _ledgerService =
-      AccountLedgerService();
+  final AccountLedgerService _ledgerService = AccountLedgerService();
 
-  final TextEditingController _amountController =
-      TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
 
-  final TextEditingController _noteController =
-      TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
 
-  final GlobalKey<FormState> _formKey =
-      GlobalKey<FormState>();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   List<Account> _accounts = [];
 
@@ -55,8 +48,7 @@ class _FundTransferScreenState
 
   Future<void> _loadAccounts() async {
     try {
-      final accounts =
-          await _accountRepository.getAccounts();
+      final accounts = await _accountRepository.getAccounts();
 
       if (!mounted) return;
 
@@ -71,13 +63,9 @@ class _FundTransferScreenState
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load accounts: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load accounts: $e')));
     }
   }
 
@@ -89,11 +77,29 @@ class _FundTransferScreenState
     return NumberFormat('#,##0.##').format(amount);
   }
 
-  String _generateVoucherNo() {
-    final timestamp =
-        DateTime.now().millisecondsSinceEpoch;
+  Future<String> _generateVoucherNo() async {
+    final transactions = await _ledgerService.getAllTransactions();
 
-    return 'TRF-$timestamp';
+    int maxNumber = 0;
+
+    for (final transaction in transactions) {
+      final voucher = (transaction.voucherNo ?? '').trim();
+
+      final match = RegExp(
+        r'^Contra#(\d+)$',
+        caseSensitive: false,
+      ).firstMatch(voucher);
+
+      if (match == null) continue;
+
+      final number = int.tryParse(match.group(1)!);
+
+      if (number != null && number > maxNumber) {
+        maxNumber = number;
+      }
+    }
+
+    return 'Contra#${maxNumber + 1}';
   }
 
   Future<void> _selectDate() async {
@@ -127,19 +133,14 @@ class _FundTransferScreenState
     }
 
     if (_fromAccount!.id == _toAccount!.id) {
-      _showError(
-        'Source and destination accounts cannot be the same.',
-      );
+      _showError('Source and destination accounts cannot be the same.');
       return;
     }
 
-    final amount =
-        double.tryParse(_amountController.text.trim());
+    final amount = double.tryParse(_amountController.text.trim());
 
     if (amount == null || amount <= 0) {
-      _showError(
-        'Please enter a valid transfer amount.',
-      );
+      _showError('Please enter a valid contra amount.');
       return;
     }
 
@@ -147,8 +148,7 @@ class _FundTransferScreenState
     // Check source account balance
     // ----------------------------------------------------------
 
-    final sourceBalance =
-        await _accountRepository.getAccountBalance(
+    final sourceBalance = await _accountRepository.getAccountBalance(
       _fromAccount!.id!,
     );
 
@@ -165,19 +165,18 @@ class _FundTransferScreenState
     });
 
     try {
-      final voucherNo = _generateVoucherNo();
+      final voucherNo = await _generateVoucherNo();
 
       await _ledgerService.transferFunds(
         fromAccountId: _fromAccount!.id!,
         toAccountId: _toAccount!.id!,
         amount: amount,
         voucherNo: voucherNo,
-        transactionDate:
-            DateTime(
-              _selectedDate.year,
-              _selectedDate.month,
-              _selectedDate.day,
-            ).toIso8601String(),
+        transactionDate: DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+        ).toIso8601String(),
         note: _noteController.text.trim().isEmpty
             ? null
             : _noteController.text.trim(),
@@ -188,7 +187,7 @@ class _FundTransferScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '৳${_formatMoney(amount)} transferred successfully.',
+            '৳${_formatMoney(amount)} contra entry saved successfully.',
           ),
         ),
       );
@@ -197,13 +196,9 @@ class _FundTransferScreenState
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Transfer failed: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Contra failed: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -214,258 +209,204 @@ class _FundTransferScreenState
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Fund Transfer'),
-      ),
+      appBar: AppBar(title: const Text('Contra')),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _accounts.length < 2
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'You need at least two accounts '
-                      'to make a fund transfer.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'You need at least two accounts '
+                  'to make a contra entry.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 17),
+                ),
+              ),
+            )
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // ------------------------------------------------
+                  // FROM ACCOUNT
+                  // ------------------------------------------------
+                  DropdownButtonFormField<Account>(
+                    value: _fromAccount,
+                    decoration: InputDecoration(
+                      labelText: 'From Account',
+                      prefixIcon: const Icon(Icons.account_balance_wallet),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: _accounts.map((account) {
+                      return DropdownMenuItem<Account>(
+                        value: account,
+                        child: Text(
+                          '${account.name} '
+                          '(৳${_formatMoney(account.balance)})',
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: _saving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _fromAccount = value;
+                            });
+                          },
+                    validator: (value) {
+                      if (value == null) {
+                        return 'Select source account';
+                      }
+
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ------------------------------------------------
+                  // TO ACCOUNT
+                  // ------------------------------------------------
+                  DropdownButtonFormField<Account>(
+                    value: _toAccount,
+                    decoration: InputDecoration(
+                      labelText: 'To Account',
+                      prefixIcon: const Icon(Icons.account_balance),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: _accounts.map((account) {
+                      return DropdownMenuItem<Account>(
+                        value: account,
+                        child: Text(account.name),
+                      );
+                    }).toList(),
+                    onChanged: _saving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _toAccount = value;
+                            });
+                          },
+                    validator: (value) {
+                      if (value == null) {
+                        return 'Select destination account';
+                      }
+
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ------------------------------------------------
+                  // AMOUNT
+                  // ------------------------------------------------
+                  TextFormField(
+                    controller: _amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '৳ ',
+                      prefixIcon: const Icon(Icons.payments),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Enter amount';
+                      }
+
+                      final amount = double.tryParse(value.trim());
+
+                      if (amount == null || amount <= 0) {
+                        return 'Enter a valid amount';
+                      }
+
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ------------------------------------------------
+                  // DATE
+                  // ------------------------------------------------
+                  InkWell(
+                    onTap: _saving ? null : _selectDate,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Transfer Date',
+                        prefixIcon: const Icon(Icons.calendar_today),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        DateFormat('dd MMM yyyy').format(_selectedDate),
                       ),
                     ),
                   ),
-                )
-              : Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // ------------------------------------------------
-                      // FROM ACCOUNT
-                      // ------------------------------------------------
 
-                      DropdownButtonFormField<Account>(
-                        value: _fromAccount,
-                        decoration: InputDecoration(
-                          labelText: 'From Account',
-                          prefixIcon: const Icon(
-                            Icons.account_balance_wallet,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: _accounts.map(
-                          (account) {
-                            return DropdownMenuItem<Account>(
-                              value: account,
-                              child: Text(
-                                '${account.name} '
-                                '(৳${_formatMoney(account.balance)})',
-                              ),
-                            );
-                          },
-                        ).toList(),
-                        onChanged: _saving
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _fromAccount = value;
-                                });
-                              },
-                        validator: (value) {
-                          if (value == null) {
-                            return 'Select source account';
-                          }
+                  const SizedBox(height: 16),
 
-                          return null;
-                        },
+                  // ------------------------------------------------
+                  // NOTE
+                  // ------------------------------------------------
+                  TextFormField(
+                    controller: _noteController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Note',
+                      hintText: 'Optional transfer note',
+                      prefixIcon: const Icon(Icons.note_alt_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-
-                      const SizedBox(height: 16),
-
-                      // ------------------------------------------------
-                      // TO ACCOUNT
-                      // ------------------------------------------------
-
-                      DropdownButtonFormField<Account>(
-                        value: _toAccount,
-                        decoration: InputDecoration(
-                          labelText: 'To Account',
-                          prefixIcon: const Icon(
-                            Icons.account_balance,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: _accounts.map(
-                          (account) {
-                            return DropdownMenuItem<Account>(
-                              value: account,
-                              child: Text(
-                                account.name,
-                              ),
-                            );
-                          },
-                        ).toList(),
-                        onChanged: _saving
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _toAccount = value;
-                                });
-                              },
-                        validator: (value) {
-                          if (value == null) {
-                            return 'Select destination account';
-                          }
-
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // ------------------------------------------------
-                      // AMOUNT
-                      // ------------------------------------------------
-
-                      TextFormField(
-                        controller: _amountController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Amount',
-                          prefixText: '৳ ',
-                          prefixIcon: const Icon(
-                            Icons.payments,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(12),
-                          ),
-                        ),
-                        validator: (value) {
-                          if (value == null ||
-                              value.trim().isEmpty) {
-                            return 'Enter amount';
-                          }
-
-                          final amount =
-                              double.tryParse(value.trim());
-
-                          if (amount == null ||
-                              amount <= 0) {
-                            return 'Enter a valid amount';
-                          }
-
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // ------------------------------------------------
-                      // DATE
-                      // ------------------------------------------------
-
-                      InkWell(
-                        onTap: _saving
-                            ? null
-                            : _selectDate,
-                        borderRadius:
-                            BorderRadius.circular(12),
-                        child: InputDecorator(
-                          decoration: InputDecoration(
-                            labelText: 'Transfer Date',
-                            prefixIcon: const Icon(
-                              Icons.calendar_today,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius:
-                                  BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            DateFormat(
-                              'dd MMM yyyy',
-                            ).format(_selectedDate),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // ------------------------------------------------
-                      // NOTE
-                      // ------------------------------------------------
-
-                      TextFormField(
-                        controller: _noteController,
-                        maxLines: 3,
-                        decoration: InputDecoration(
-                          labelText: 'Note',
-                          hintText:
-                              'Optional transfer note',
-                          prefixIcon: const Icon(
-                            Icons.note_alt_outlined,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // ------------------------------------------------
-                      // TRANSFER BUTTON
-                      // ------------------------------------------------
-
-                      SizedBox(
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          onPressed: _saving
-                              ? null
-                              : _submitTransfer,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child:
-                                      CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.swap_horiz,
-                                ),
-                          label: Text(
-                            _saving
-                                ? 'Transferring...'
-                                : 'Transfer Funds',
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+
+                  const SizedBox(height: 24),
+
+                  // ------------------------------------------------
+                  // TRANSFER BUTTON
+                  // ------------------------------------------------
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _saving ? null : _submitTransfer,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.swap_horiz),
+                      label: Text(
+                        _saving ? 'Transferring...' : 'Transfer Funds',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

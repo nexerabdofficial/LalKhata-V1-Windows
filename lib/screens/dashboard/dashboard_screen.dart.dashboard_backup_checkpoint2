@@ -1,0 +1,1775 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../gab/gab_branding.dart';
+
+import '../../services/account_repository.dart';
+import '../../services/customer_repository.dart';
+import '../../services/product_repository.dart';
+import '../../services/supplier_repository.dart';
+import '../../services/ar_data_service.dart';
+import '../../services/refresh_service.dart';
+
+import '../accounts/customer_due_list_screen.dart';
+import '../accounts/supplier_due_list_screen.dart';
+import '../sales/add_sale_screen.dart';
+import '../sales/sales_screen.dart';
+import '../purchases/purchase_history_screen.dart';
+import '../records/records_screen.dart';
+import '../reports/reports_screen.dart';
+import '../settings/settings_screen.dart';
+
+import '../../widgets/quick_action_sheet.dart';
+
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final ProductRepository _repository = ProductRepository();
+  final SupplierRepository _supplierRepository = SupplierRepository();
+  final CustomerRepository _customerRepository = CustomerRepository();
+  final AccountRepository _accountRepository = AccountRepository();
+  final ARDataService _arDataService = ARDataService();
+
+  StreamSubscription? _refreshSubscription;
+  Timer? _clockTimer;
+
+  DateTime _currentTime = DateTime.now();
+
+  bool _loading = true;
+
+  int _productCount = 0;
+  int _supplierCount = 0;
+  int _customerCount = 0;
+
+  double _stockValue = 0;
+
+  double _cashBalance = 0;
+  double _bankBalance = 0;
+  double _mobileBalance = 0;
+  double _totalBalance = 0;
+
+  double _customerDue = 0;
+  double _supplierDue = 0;
+
+  double _todaySales = 0;
+  double _todayPurchase = 0;
+  double _todayExpense = 0;
+  double _todayIncome = 0;
+  double _moneyReceived = 0;
+  double _moneyGiven = 0;
+  double _cashClosing = 0;
+
+  List<dynamic> _bestSellingProducts = [];
+
+  String _businessName = 'My Business';
+
+  @override
+  void initState() {
+    super.initState();
+
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _currentTime = DateTime.now();
+      });
+    });
+
+    _refreshSubscription = RefreshService.stream.listen((_) {
+      _loadDashboard();
+      _loadBusinessName();
+    });
+
+    _loadDashboard();
+    _loadBusinessName();
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    _refreshSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadBusinessName() async {
+    try {
+      final name = GABBranding.businessName;
+
+      if (!mounted) return;
+
+      setState(() {
+        if (name.trim().isNotEmpty) {
+          _businessName = name.trim();
+        }
+      });
+    } catch (_) {
+      // Keep fallback business name.
+    }
+  }
+
+  Future<void> _loadDashboard() async {
+    try {
+      if (mounted) {
+        setState(() {
+          _loading = true;
+        });
+      }
+
+      final results = await Future.wait<dynamic>([
+        _arDataService.getTodaySales(),
+        _arDataService.getTodayPurchase(),
+        _arDataService.getTodayExpense(),
+        _arDataService.getTodayIncome(),
+        _arDataService.getTodayMoneyReceived(),
+        _arDataService.getTodayMoneyGiven(),
+        _arDataService.getBestSellingProducts(limit: 5),
+
+        _repository.getProducts(),
+        _supplierRepository.getSuppliers(),
+        _customerRepository.getCustomers(),
+        _repository.getTotalStockValue(),
+
+        _accountRepository.getAccounts(),
+      ]);
+
+      final products = results[7] as List;
+      final suppliers = results[8] as List;
+      final customers = results[9] as List;
+      final stockValue = (results[10] as num).toDouble();
+      final accounts = results[11] as List;
+
+      double customerDue = 0;
+
+      for (final customer in customers) {
+        customerDue += (customer.balance as num).toDouble();
+      }
+
+      double supplierDue = 0;
+
+      for (final supplier in suppliers) {
+        supplierDue += (supplier.balance as num).toDouble();
+      }
+
+      double cashBalance = 0;
+      double bankBalance = 0;
+      double mobileBalance = 0;
+      double totalBalance = 0;
+
+      for (final account in accounts) {
+        final balance = (account.balance as num).toDouble();
+        final name = account.name.toString().toLowerCase();
+
+        totalBalance += balance;
+
+        if (name == 'cash') {
+          cashBalance = balance;
+        } else if (name == 'bank') {
+          bankBalance = balance;
+        } else if (name == 'mobile' ||
+            name.contains('mobile') ||
+            name.contains('bkash') ||
+            name.contains('nagad') ||
+            name.contains('rocket')) {
+          mobileBalance += balance;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _todaySales = (results[0] as num).toDouble();
+        _todayPurchase = (results[1] as num).toDouble();
+        _todayExpense = (results[2] as num).toDouble();
+        _todayIncome = (results[3] as num).toDouble();
+        _moneyReceived = (results[4] as num).toDouble();
+        _moneyGiven = (results[5] as num).toDouble();
+
+        _bestSellingProducts = results[6] as List;
+
+        _productCount = products.length;
+        _supplierCount = suppliers.length;
+        _customerCount = customers.length;
+
+        _stockValue = stockValue;
+
+        _customerDue = customerDue;
+        _supplierDue = supplierDue;
+
+        _cashBalance = cashBalance;
+        _bankBalance = bankBalance;
+        _mobileBalance = mobileBalance;
+        _totalBalance = totalBalance;
+
+        _cashClosing = cashBalance;
+
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+      });
+
+      debugPrint('Dashboard loading error: $e');
+    }
+  }
+
+  String _greeting() {
+    final hour = _currentTime.hour;
+
+    if (hour < 12) {
+      return 'Good Morning';
+    }
+
+    if (hour < 17) {
+      return 'Good Afternoon';
+    }
+
+    if (hour < 21) {
+      return 'Good Evening';
+    }
+
+    return 'Good Night';
+  }
+
+  String _money(double value) {
+    return '৳${value.toStringAsFixed(2)}';
+  }
+
+  String _formatClock() {
+    final hour = _currentTime.hour % 12 == 0 ? 12 : _currentTime.hour % 12;
+
+    final minute = _currentTime.minute.toString().padLeft(2, '0');
+    final second = _currentTime.second.toString().padLeft(2, '0');
+
+    final period = _currentTime.hour >= 12 ? 'PM' : 'AM';
+
+    return '$hour:$minute:$second $period';
+  }
+
+  String _formatDate() {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${months[_currentTime.month - 1]} '
+        '${_currentTime.day}, '
+        '${_currentTime.year}';
+  }
+
+  String _formatWeekday() {
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    return weekdays[_currentTime.weekday - 1];
+  }
+
+  void _openCustomerDue() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CustomerDueListScreen()),
+    );
+  }
+
+  void _openSupplierDue() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SupplierDueListScreen()),
+    );
+  }
+
+  Future<void> _openSalesHistory() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SalesScreen()),
+    );
+
+    if (!mounted) return;
+    _loadDashboard();
+  }
+
+  Future<void> _openPurchaseHistory() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PurchaseHistoryScreen()),
+    );
+
+    if (!mounted) return;
+    _loadDashboard();
+  }
+
+  Future<void> _openIncomeRecords() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RecordsScreen()),
+    );
+
+    if (!mounted) return;
+    _loadDashboard();
+  }
+
+  Future<void> _openExpenseRecords() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RecordsScreen()),
+    );
+
+    if (!mounted) return;
+    _loadDashboard();
+  }
+
+  Future<void> _openNewSale() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddSaleScreen()),
+    );
+
+    if (!mounted) return;
+
+    _loadDashboard();
+  }
+
+  Future<void> _openRecords() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RecordsScreen()),
+    );
+
+    if (!mounted) return;
+
+    _loadDashboard();
+  }
+
+  Future<void> _openReports() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ReportsScreen()),
+    );
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+
+    if (!mounted) return;
+
+    _loadDashboard();
+    _loadBusinessName();
+  }
+
+  void _showQuickAdd() {
+    QuickActionSheet.show(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xfff5f7fb),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showQuickAdd,
+        icon: const Icon(Icons.add),
+        label: const Text(
+          'Quick Add',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadDashboard,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+
+              final isMobile = width < 700;
+              final isTablet = width >= 700 && width < 1100;
+
+              return SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  isMobile ? 12 : 18,
+                  14,
+                  isMobile ? 12 : 18,
+                  90,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1450),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildPremiumHeader(isMobile: isMobile),
+
+                        const SizedBox(height: 14),
+
+                        if (_loading)
+                          const LinearProgressIndicator(minHeight: 3),
+
+                        const SizedBox(height: 14),
+
+                        if (isMobile)
+                          _buildMobileUpperSection()
+                        else
+                          _buildDesktopUpperSection(isTablet),
+
+                        const SizedBox(height: 16),
+
+                        _buildQuickActions(isMobile: isMobile),
+
+                        const SizedBox(height: 16),
+
+                        _buildBusinessOverview(isMobile: isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumHeader({required bool isMobile}) {
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 18 : 22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xff7f1d1d), Color(0xff991b1b), Color(0xffb91c1c)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xff7f1d1d).withOpacity(.20),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: isMobile
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeaderGreetingRow(),
+                const SizedBox(height: 16),
+                _buildHeaderClock(compact: true),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeaderGreetingRow(),
+                      const SizedBox(height: 7),
+                      Text(
+                        _businessName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: isMobile ? 24 : 30,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -.4,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Your business overview at a glance',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(.80),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 20),
+                _buildHeaderClock(),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildHeaderGreetingRow() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.16),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.wb_sunny_rounded,
+            color: Colors.white,
+            size: 21,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          _greeting(),
+          style: TextStyle(
+            color: Colors.white.withOpacity(.92),
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderClock({bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 16 : 20,
+        vertical: compact ? 12 : 15,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: compact ? 42 : 48,
+            height: compact ? 42 : 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.access_time_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Fixed visual width keeps Clock + Date aligned.
+          SizedBox(
+            width: compact ? 190 : 215,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    _formatClock(),
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: compact ? 19 : 21,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    '${_formatWeekday()} • ${_formatDate()}',
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(.78),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopUpperSection(bool isTablet) {
+    final upperHeight = isTablet ? 270.0 : 255.0;
+
+    return SizedBox(
+      height: upperHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: isTablet ? 5 : 5, child: _buildTodayPerformanceCard()),
+          const SizedBox(width: 14),
+          Expanded(flex: isTablet ? 5 : 5, child: _buildDueAndCountCard()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileUpperSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildDueAndCountCard(),
+        const SizedBox(height: 14),
+        _buildTodayPerformanceCard(),
+      ],
+    );
+  }
+
+  Widget _buildDueAndCountCard() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.055),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xff7f1d1d), Color(0xffdc2626)],
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.dashboard_customize_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Text(
+                  'Due & Business Count',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xff202124),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          Row(
+            children: [
+              Expanded(
+                child: _compactDueTile(
+                  title: 'Customer Due',
+                  value: _customerDue,
+                  icon: Icons.person_outline_rounded,
+                  iconColor: const Color(0xff2563eb),
+                  background: const Color(0xffeff6ff),
+                  onTap: _openCustomerDue,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _compactDueTile(
+                  title: 'Supplier Due',
+                  value: _supplierDue,
+                  icon: Icons.local_shipping_outlined,
+                  iconColor: const Color(0xffd97706),
+                  background: const Color(0xfffff7ed),
+                  onTap: _openSupplierDue,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 15),
+
+          Text(
+            'Business Count',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 9),
+
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _countTile(
+                    icon: Icons.people_alt_outlined,
+                    label: 'Customers',
+                    value: _customerCount,
+                    iconColor: const Color(0xff2563eb),
+                    background: const Color(0xffeff6ff),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _countTile(
+                    icon: Icons.local_shipping_outlined,
+                    label: 'Suppliers',
+                    value: _supplierCount,
+                    iconColor: const Color(0xff16a34a),
+                    background: const Color(0xfff0fdf4),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _countTile(
+                    icon: Icons.inventory_2_outlined,
+                    label: 'Products',
+                    value: _productCount,
+                    iconColor: const Color(0xff9333ea),
+                    background: const Color(0xfffaf5ff),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactDueTile({
+    required String title,
+    required double value,
+    required IconData icon,
+    required Color iconColor,
+    required Color background,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: iconColor.withOpacity(.08)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 35,
+              height: 35,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 19),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _money(value),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: iconColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _countTile({
+    required IconData icon,
+    required String label,
+    required int value,
+    required Color iconColor,
+    required Color background,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: iconColor, size: 17),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$value',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: iconColor,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 8.5,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodayPerformanceCard() {
+    final values = [_todaySales, _todayPurchase, _todayIncome, _todayExpense];
+
+    final maxValue = values.fold<double>(
+      0,
+      (previous, current) => current > previous ? current : previous,
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.055),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xffbe123c), Color(0xffe11d48)],
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.insights_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Text(
+                  "Today's Performance",
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xff202124),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xfffef2f2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'TODAY',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xffb91c1c),
+                    letterSpacing: .5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: 7,
+                  child: _buildMiniPerformanceChart(
+                    values: values,
+                    maxValue: maxValue,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  flex: 9,
+                  child: Row(
+                    children: [
+                      _performanceMetric(
+                        label: 'Sales',
+                        value: _todaySales,
+                        color: const Color(0xffdc2626),
+                        onTap: _openSalesHistory,
+                      ),
+                      _performanceMetric(
+                        label: 'Purchase',
+                        value: _todayPurchase,
+                        color: const Color(0xff2563eb),
+                        onTap: _openPurchaseHistory,
+                      ),
+                      _performanceMetric(
+                        label: 'Income',
+                        value: _todayIncome,
+                        color: const Color(0xff16a34a),
+                        onTap: _openIncomeRecords,
+                      ),
+                      _performanceMetric(
+                        label: 'Expense',
+                        value: _todayExpense,
+                        color: const Color(0xffd97706),
+                        onTap: _openExpenseRecords,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _performanceMetric({
+    required String label,
+    required double value,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 9),
+              decoration: BoxDecoration(
+                color: color.withOpacity(.045),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: color.withOpacity(.07)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 8,
+                        color: color.withOpacity(.55),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    _money(value),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniPerformanceChart({
+    required List<double> values,
+    required double maxValue,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      decoration: BoxDecoration(
+        color: const Color(0xfffafafa),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: CustomPaint(
+        painter: _MiniTrendPainter(values: values, maxValue: maxValue),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  Widget _performanceBar({
+    required String label,
+    required double value,
+    required double maxValue,
+    required IconData icon,
+    required Color color,
+  }) {
+    const double maxBarHeight = 105;
+
+    final ratio = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+
+    final barHeight = maxValue <= 0 ? 8.0 : 12 + (maxBarHeight - 12) * ratio;
+
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              _money(value),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Container(
+              height: barHeight,
+              width: 28,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [color.withOpacity(.55), color],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Icon(icon, size: 17, color: color),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions({required bool isMobile}) {
+    final actions = [
+      _QuickActionData(
+        title: 'New Sale',
+        icon: Icons.point_of_sale_rounded,
+        color: const Color(0xffdc2626),
+        onTap: _openNewSale,
+      ),
+      _QuickActionData(
+        title: 'Records',
+        icon: Icons.receipt_long_rounded,
+        color: const Color(0xff2563eb),
+        onTap: _openRecords,
+      ),
+      _QuickActionData(
+        title: 'Reports',
+        icon: Icons.analytics_rounded,
+        color: const Color(0xff16a34a),
+        onTap: _openReports,
+      ),
+      _QuickActionData(
+        title: 'Settings',
+        icon: Icons.settings_rounded,
+        color: const Color(0xff7c3aed),
+        onTap: _openSettings,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.045),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: isMobile
+          ? GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: actions.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisExtent: 68,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              itemBuilder: (context, index) {
+                return _quickActionButton(actions[index]);
+              },
+            )
+          : Row(
+              children: [
+                for (int i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: _quickActionButton(actions[i])),
+                ],
+              ],
+            ),
+    );
+  }
+
+  Widget _quickActionButton(_QuickActionData action) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          decoration: BoxDecoration(
+            color: action.color.withOpacity(.065),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: action.color.withOpacity(.10)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: action.color,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: action.color.withOpacity(.20),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(action.icon, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  action.title,
+                  style: TextStyle(
+                    color: action.color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 12,
+                color: action.color.withOpacity(.65),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessOverview({required bool isMobile}) {
+    if (isMobile) {
+      return Column(
+        children: [
+          _buildMoneyFlowCard(),
+          const SizedBox(height: 14),
+          _buildBalanceSummaryCard(),
+          const SizedBox(height: 14),
+          _buildBestSellingCard(),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 4, child: _buildMoneyFlowCard()),
+        const SizedBox(width: 14),
+        Expanded(flex: 4, child: _buildBalanceSummaryCard()),
+        const SizedBox(width: 14),
+        Expanded(flex: 5, child: _buildBestSellingCard()),
+      ],
+    );
+  }
+
+  Widget _buildMoneyFlowCard() {
+    return _overviewCard(
+      title: 'Money Flow',
+      icon: Icons.swap_vert_rounded,
+      iconColor: const Color(0xff2563eb),
+      child: Column(
+        children: [
+          _flowRow(
+            label: 'Money Received',
+            value: _moneyReceived,
+            icon: Icons.south_west_rounded,
+            color: const Color(0xff16a34a),
+          ),
+          const SizedBox(height: 9),
+          _flowRow(
+            label: 'Money Given',
+            value: _moneyGiven,
+            icon: Icons.north_east_rounded,
+            color: const Color(0xffdc2626),
+          ),
+          const SizedBox(height: 9),
+          _flowRow(
+            label: 'Cash Closing',
+            value: _cashClosing,
+            icon: Icons.account_balance_wallet_outlined,
+            color: const Color(0xff7c3aed),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _flowRow({
+    required String label,
+    required double value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.055),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 31,
+            height: 31,
+            decoration: BoxDecoration(
+              color: color.withOpacity(.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            _money(value),
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceSummaryCard() {
+    return _overviewCard(
+      title: 'Balance Summary',
+      icon: Icons.account_balance_rounded,
+      iconColor: const Color(0xff7c3aed),
+      child: Column(
+        children: [
+          _balanceRow(
+            label: 'Cash',
+            value: _cashBalance,
+            icon: Icons.payments_outlined,
+            color: const Color(0xff16a34a),
+          ),
+          const SizedBox(height: 8),
+          _balanceRow(
+            label: 'Bank',
+            value: _bankBalance,
+            icon: Icons.account_balance_outlined,
+            color: const Color(0xff2563eb),
+          ),
+          const SizedBox(height: 8),
+          _balanceRow(
+            label: 'Mobile',
+            value: _mobileBalance,
+            icon: Icons.phone_android_rounded,
+            color: const Color(0xff9333ea),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xff7f1d1d), Color(0xffb91c1c)],
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'Total Balance',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  _money(_totalBalance),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balanceRow({
+    required String label,
+    required double value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 31,
+          height: 31,
+          decoration: BoxDecoration(
+            color: color.withOpacity(.10),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, color: color, size: 17),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Text(
+          _money(value),
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBestSellingCard() {
+    return _overviewCard(
+      title: 'Best Selling',
+      icon: Icons.local_fire_department_rounded,
+      iconColor: const Color(0xffea580c),
+      child: _bestSellingProducts.isEmpty
+          ? const SizedBox(
+              height: 145,
+              child: Center(
+                child: Text(
+                  'No sales data available yet',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            )
+          : SizedBox(
+              height: 145,
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _bestSellingProducts.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 7),
+                itemBuilder: (context, index) {
+                  final item = _bestSellingProducts[index];
+
+                  String name = 'Product';
+                  double quantity = 0;
+
+                  try {
+                    if (item is Map) {
+                      name =
+                          item['product_name']?.toString() ??
+                          item['name']?.toString() ??
+                          'Product';
+
+                      quantity =
+                          (item['quantity'] as num?)?.toDouble() ??
+                          (item['total_quantity'] as num?)?.toDouble() ??
+                          0;
+                    } else {
+                      name = item.name?.toString() ?? 'Product';
+                      quantity = (item.quantity as num?)?.toDouble() ?? 0;
+                    }
+                  } catch (_) {}
+
+                  return Row(
+                    children: [
+                      Container(
+                        width: 27,
+                        height: 27,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xfffff7ed),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            color: Color(0xffea580c),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${quantity.toStringAsFixed(0)} sold',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+    );
+  }
+
+  Widget _overviewCard({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.045),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 37,
+                height: 37,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xff202124),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniTrendPainter extends CustomPainter {
+  final List<double> values;
+  final double maxValue;
+
+  const _MiniTrendPainter({required this.values, required this.maxValue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+
+    final chartHeight = size.height - 16;
+
+    final stepX = values.length <= 1 ? 0.0 : size.width / (values.length - 1);
+
+    final guidePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = Colors.grey.withOpacity(.10);
+
+    for (int i = 1; i <= 3; i++) {
+      final y = chartHeight * (i / 4.0);
+
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), guidePaint);
+    }
+
+    final points = <Offset>[];
+
+    for (int i = 0; i < values.length; i++) {
+      final ratio = maxValue <= 0
+          ? 0.10
+          : (values[i] / maxValue).clamp(0.10, 1.0).toDouble();
+
+      final x = i * stepX;
+      final y = chartHeight - (chartHeight * ratio);
+
+      points.add(Offset(x, y));
+    }
+
+    if (points.isEmpty) return;
+
+    // Soft filled area.
+    final fillPath = Path()
+      ..moveTo(points.first.dx, chartHeight)
+      ..lineTo(points.first.dx, points.first.dy);
+
+    for (int i = 1; i < points.length; i++) {
+      fillPath.lineTo(points[i].dx, points[i].dy);
+    }
+
+    fillPath
+      ..lineTo(points.last.dx, chartHeight)
+      ..close();
+
+    final fillPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xffb91c1c).withOpacity(.055);
+
+    canvas.drawPath(fillPath, fillPaint);
+
+    // Trend line.
+    final linePath = Path()..moveTo(points.first.dx, points.first.dy);
+
+    for (int i = 1; i < points.length; i++) {
+      linePath.lineTo(points[i].dx, points[i].dy);
+    }
+
+    final linePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = const Color(0xffb91c1c).withOpacity(.68);
+
+    canvas.drawPath(linePath, linePaint);
+
+    // Points.
+    final pointPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xffb91c1c).withOpacity(.82);
+
+    for (final point in points) {
+      canvas.drawCircle(point, 3.2, pointPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniTrendPainter oldDelegate) {
+    return oldDelegate.values != values || oldDelegate.maxValue != maxValue;
+  }
+}
+
+class _QuickActionData {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionData({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+}

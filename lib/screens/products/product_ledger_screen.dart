@@ -15,14 +15,11 @@ class ProductLedgerScreen extends StatefulWidget {
   });
 
   @override
-  State<ProductLedgerScreen> createState() =>
-      _ProductLedgerScreenState();
+  State<ProductLedgerScreen> createState() => _ProductLedgerScreenState();
 }
 
-class _ProductLedgerScreenState
-    extends State<ProductLedgerScreen> {
-  final ProductRepository _repository =
-      ProductRepository();
+class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
+  final ProductRepository _repository = ProductRepository();
 
   List<ProductLedger> _ledger = [];
 
@@ -47,10 +44,7 @@ class _ProductLedgerScreenState
     });
 
     try {
-      final result =
-          await _repository.getProductLedger(
-        widget.productId,
-      );
+      final result = await _repository.getProductLedger(widget.productId);
 
       if (!mounted) return;
 
@@ -66,11 +60,7 @@ class _ProductLedgerScreenState
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load product ledger: $e',
-          ),
-        ),
+        SnackBar(content: Text('Failed to load product ledger: $e')),
       );
     }
   }
@@ -128,8 +118,7 @@ class _ProductLedgerScreenState
   Future<void> _selectFromDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate:
-          _fromDate ?? DateTime.now(),
+      initialDate: _fromDate ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
@@ -144,8 +133,7 @@ class _ProductLedgerScreenState
   Future<void> _selectToDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate:
-          _toDate ?? DateTime.now(),
+      initialDate: _toDate ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
@@ -179,17 +167,12 @@ class _ProductLedgerScreenState
       return 0;
     }
 
-    final start = DateTime(
-      _fromDate!.year,
-      _fromDate!.month,
-      _fromDate!.day,
-    );
+    final start = DateTime(_fromDate!.year, _fromDate!.month, _fromDate!.day);
 
     int stock = 0;
 
     for (final item in _ledger) {
-      final date =
-          DateTime.tryParse(item.date);
+      final date = DateTime.tryParse(item.date);
 
       if (date == null) continue;
 
@@ -213,9 +196,7 @@ class _ProductLedgerScreenState
       return '-';
     }
 
-    return DateFormat(
-      'dd MMM yy',
-    ).format(date);
+    return DateFormat('dd MMM yy').format(date);
   }
 
   // ============================================================
@@ -223,15 +204,13 @@ class _ProductLedgerScreenState
   // ============================================================
 
   String _voucher(ProductLedger item) {
-    final reference =
-        item.reference.trim();
+    final reference = item.reference.trim();
 
     if (reference.isNotEmpty) {
       return reference;
     }
 
-    final particular =
-        item.particular.trim();
+    final particular = item.particular.trim();
 
     if (particular.isNotEmpty) {
       return particular;
@@ -251,9 +230,7 @@ class _ProductLedgerScreenState
     return item.stockIn - item.stockOut;
   }
 
-  String _stockChangeText(
-    ProductLedger item,
-  ) {
+  String _stockChangeText(ProductLedger item) {
     final change = _stockChange(item);
 
     if (change > 0) {
@@ -267,9 +244,7 @@ class _ProductLedgerScreenState
     return '0';
   }
 
-  Color _stockChangeColor(
-    ProductLedger item,
-  ) {
+  Color _stockChangeColor(ProductLedger item) {
     final change = _stockChange(item);
 
     if (change > 0) {
@@ -289,8 +264,7 @@ class _ProductLedgerScreenState
 
   @override
   Widget build(BuildContext context) {
-    final filteredLedger =
-        _filteredLedger;
+    final filteredLedger = _filteredLedger;
 
     // ==========================================================
     // TOTALS
@@ -308,10 +282,7 @@ class _ProductLedgerScreenState
     // PREVIOUS STOCK
     // ==========================================================
 
-    final previousStock =
-        _fromDate != null
-            ? _getPreviousStock()
-            : 0;
+    final previousStock = _fromDate != null ? _getPreviousStock() : 0;
 
     // ==========================================================
     // CURRENT STOCK
@@ -334,101 +305,57 @@ class _ProductLedgerScreenState
     int tableRunningStock = previousStock;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          '${widget.productName} Ledger',
-        ),
-      ),
+      appBar: AppBar(title: Text('${widget.productName} Ledger')),
 
       // ========================================================
       // BODY
       // ========================================================
-
       body: _loading
-          ? const Center(
-              child:
-                  CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadLedger,
               child: ListView(
-                padding:
-                    const EdgeInsets.only(
-                  bottom: 24,
-                ),
+                padding: const EdgeInsets.only(bottom: 24),
                 children: [
                   // ==================================================
                   // DATE FILTER
                   // ==================================================
-
                   Padding(
-                    padding:
-                        const EdgeInsets.all(
-                      12,
-                    ),
+                    padding: const EdgeInsets.all(12),
                     child: Row(
                       children: [
                         Expanded(
-                          child:
-                              OutlinedButton.icon(
-                            icon:
-                                const Icon(
-                              Icons
-                                  .calendar_today,
-                              size: 18,
-                            ),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 18),
                             label: Text(
-                              _fromDate ==
-                                      null
+                              _fromDate == null
                                   ? 'From'
                                   : DateFormat(
                                       'dd MMM yyyy',
-                                    ).format(
-                                      _fromDate!,
-                                    ),
+                                    ).format(_fromDate!),
                             ),
-                            onPressed:
-                                _selectFromDate,
+                            onPressed: _selectFromDate,
                           ),
                         ),
 
-                        const SizedBox(
-                          width: 8,
-                        ),
+                        const SizedBox(width: 8),
 
                         Expanded(
-                          child:
-                              OutlinedButton.icon(
-                            icon:
-                                const Icon(
-                              Icons
-                                  .calendar_today,
-                              size: 18,
-                            ),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 18),
                             label: Text(
-                              _toDate ==
-                                      null
+                              _toDate == null
                                   ? 'To'
-                                  : DateFormat(
-                                      'dd MMM yyyy',
-                                    ).format(
-                                      _toDate!,
-                                    ),
+                                  : DateFormat('dd MMM yyyy').format(_toDate!),
                             ),
-                            onPressed:
-                                _selectToDate,
+                            onPressed: _selectToDate,
                           ),
                         ),
 
                         IconButton(
-                          tooltip:
-                              'Clear Filter',
-                          icon:
-                              const Icon(
-                            Icons.refresh,
-                          ),
-                          onPressed:
-                              _clearDateFilter,
+                          tooltip: 'Clear Filter',
+                          icon: const Icon(Icons.refresh),
+                          onPressed: _clearDateFilter,
                         ),
                       ],
                     ),
@@ -437,408 +364,264 @@ class _ProductLedgerScreenState
                   // ==================================================
                   // PREVIOUS STOCK
                   // ==================================================
-
                   if (_fromDate != null)
                     Container(
-                      width:
-                          double.infinity,
-                      margin:
-                          const EdgeInsets
-                              .symmetric(
-                        horizontal: 12,
-                      ),
-                      padding:
-                          const EdgeInsets
-                              .symmetric(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
                       ),
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            Colors.blue.shade50,
-                        borderRadius:
-                            BorderRadius
-                                .circular(
-                          8,
-                        ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment
-                                .spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
                             'Previous Stock',
-                            style: TextStyle(
-                              fontWeight:
-                                  FontWeight
-                                      .bold,
-                            ),
+                            style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
                             '$previousStock',
-                            style:
-                                const TextStyle(
-                              fontWeight:
-                                  FontWeight
-                                      .bold,
-                              color:
-                                  Colors.blue,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                  const SizedBox(
-                    height: 8,
-                  ),
+                  const SizedBox(height: 8),
 
                   // ==================================================
                   // LEDGER
                   // ==================================================
-
                   if (filteredLedger.isEmpty)
                     const Padding(
-                      padding:
-                          EdgeInsets.all(30),
+                      padding: EdgeInsets.all(30),
                       child: Center(
                         child: Text(
                           'No Ledger Found',
-                          style:
-                              TextStyle(
-                            color:
-                                Colors.grey,
-                            fontSize: 16,
-                          ),
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
                         ),
                       ),
                     )
                   else
-                    SingleChildScrollView(
-                      padding:
-                          const EdgeInsets.all(
-                        12,
-                      ),
-                      child: Card(
-                        elevation: 3,
-                        child:
-                            SingleChildScrollView(
-                          scrollDirection:
-                              Axis.horizontal,
-                          child:
-                              DataTable(
-                            columnSpacing:
-                                32,
-                            horizontalMargin:
-                                16,
-
-                            headingRowColor:
-                                WidgetStateProperty
-                                    .all(
-                              Colors
-                                  .blue
-                                  .shade100,
-                            ),
-
-                            // ==================================================
-                            // 4 COLUMNS
-                            // ==================================================
-
-                            columns: const [
-                              DataColumn(
-                                label: Text(
+                    Column(
+                      children: [
+                        // ==================================================
+                        // HEADER — Customer Ledger exact sizing
+                        // ==================================================
+                        Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            children: [
+                              SizedBox(
+                                width: 70,
+                                child: Text(
                                   'Date',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
 
-                              DataColumn(
-                                label: Text(
+                              SizedBox(
+                                width: 72,
+                                child: Text(
                                   'Voucher',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
 
-                              DataColumn(
-                                numeric: true,
-                                label: Text(
+                              Expanded(
+                                child: Text(
                                   'In / Out',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
 
-                              DataColumn(
-                                numeric: true,
-                                label: Text(
+                              SizedBox(
+                                width: 105,
+                                child: Text(
                                   'Stock',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
                             ],
-
-                            // ==================================================
-                            // ROWS
-                            // ==================================================
-
-                            rows:
-                                filteredLedger.map(
-                              (item) {
-                                // Apply transaction
-                                // exactly once.
-                                tableRunningStock +=
-                                    item.stockIn;
-
-                                tableRunningStock -=
-                                    item.stockOut;
-
-                                return DataRow(
-                                  cells: [
-                                    // ==============================
-                                    // DATE
-                                    // ==============================
-
-                                    DataCell(
-                                      Text(
-                                        _formatDate(
-                                          item.date,
-                                        ),
-                                      ),
-                                    ),
-
-                                    // ==============================
-                                    // VOUCHER
-                                    // ==============================
-
-                                    DataCell(
-                                      Container(
-                                        padding:
-                                            const EdgeInsets
-                                                .symmetric(
-                                          horizontal:
-                                              8,
-                                          vertical:
-                                              4,
-                                        ),
-                                        decoration:
-                                            BoxDecoration(
-                                          color: Colors
-                                              .blue
-                                              .shade50,
-                                          borderRadius:
-                                              BorderRadius
-                                                  .circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child:
-                                            Text(
-                                          _voucher(
-                                            item,
-                                          ),
-                                          maxLines:
-                                              1,
-                                          overflow:
-                                              TextOverflow
-                                                  .ellipsis,
-                                          style:
-                                              const TextStyle(
-                                            fontWeight:
-                                                FontWeight
-                                                    .bold,
-                                            color: Colors
-                                                .blue,
-                                            fontSize:
-                                                12,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-
-                                    // ==============================
-                                    // IN / OUT
-                                    // ==============================
-
-                                    DataCell(
-                                      Text(
-                                        _stockChangeText(
-                                          item,
-                                        ),
-                                        style:
-                                            TextStyle(
-                                          color:
-                                              _stockChangeColor(
-                                            item,
-                                          ),
-                                          fontWeight:
-                                              FontWeight
-                                                  .bold,
-                                        ),
-                                      ),
-                                    ),
-
-                                    // ==============================
-                                    // RUNNING STOCK
-                                    // ==============================
-
-                                    DataCell(
-                                      Text(
-                                        '$tableRunningStock',
-                                        style:
-                                            const TextStyle(
-                                          fontWeight:
-                                              FontWeight
-                                                  .bold,
-                                          color: Colors
-                                              .blue,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ).toList(),
                           ),
                         ),
-                      ),
+
+                        // ==================================================
+                        // TRANSACTION ROWS
+                        // ==================================================
+                        ...filteredLedger.map((item) {
+                          // Apply transaction exactly once.
+                          tableRunningStock += item.stockIn;
+                          tableRunningStock -= item.stockOut;
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 3,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  // ==============================
+                                  // DATE
+                                  // ==============================
+                                  SizedBox(
+                                    width: 70,
+                                    child: Text(
+                                      _formatDate(item.date),
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 2),
+
+                                  // ==============================
+                                  // VOUCHER
+                                  // ==============================
+                                  SizedBox(
+                                    width: 72,
+                                    child: Text(
+                                      _voucher(item),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+
+                                  // ==============================
+                                  // IN / OUT
+                                  // ==============================
+                                  Expanded(
+                                    child: Text(
+                                      _stockChangeText(item),
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                        color: _stockChangeColor(item),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 8),
+
+                                  // ==============================
+                                  // RUNNING STOCK
+                                  // ==============================
+                                  SizedBox(
+                                    width: 105,
+                                    child: Text(
+                                      '$tableRunningStock',
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
                     ),
 
                   // ==================================================
                   // SUMMARY
                   // ==================================================
-
                   if (filteredLedger.isNotEmpty)
                     Card(
-                      margin:
-                          const EdgeInsets
-                              .symmetric(
-                        horizontal: 12,
-                      ),
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
                       child: Padding(
-                        padding:
-                            const EdgeInsets
-                                .all(14),
+                        padding: const EdgeInsets.all(14),
                         child: Column(
                           children: [
                             // TOTAL IN
-
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
                                   'Total Stock In',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                                 Text(
                                   '+$totalIn',
-                                  style:
-                                      const TextStyle(
-                                    color: Colors
-                                        .green,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
 
-                            const SizedBox(
-                              height: 6,
-                            ),
+                            const SizedBox(height: 6),
 
                             // TOTAL OUT
-
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
                                   'Total Stock Out',
-                                  style:
-                                      TextStyle(
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                                 Text(
                                   '-$totalOut',
-                                  style:
-                                      const TextStyle(
-                                    color:
-                                        Colors.red,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
 
-                            const Divider(
-                              height: 20,
-                            ),
+                            const Divider(height: 20),
 
                             // CURRENT STOCK
-
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
                                   'Current Stock',
-                                  style:
-                                      TextStyle(
-                                    fontSize:
-                                        17,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
                                   '$currentStock',
-                                  style:
-                                      const TextStyle(
-                                    fontSize:
-                                        19,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                    color:
-                                        Colors
-                                            .blue,
+                                  style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
                                   ),
                                 ),
                               ],
