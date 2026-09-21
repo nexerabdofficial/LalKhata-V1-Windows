@@ -1,0 +1,1870 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
+
+class DatabaseHelper {
+  DatabaseHelper._();
+
+  static final DatabaseHelper instance = DatabaseHelper._();
+
+  static Database? _database;
+
+  // ============================================================
+  // DATABASE VERSION
+  // ============================================================
+
+  static const int _databaseVersion = 42;
+
+  // ============================================================
+  // LICENSE DATABASE
+  //
+  // Every customer/license gets its own SQLite database file.
+  //
+  // Example:
+  //
+  // NXR-RAHIM-001
+  //   ↓
+  // lalkhata_TlhSLVJBSElNLTAwMQ.db
+  //
+  // NXR-KOMEDA
+  //   ↓
+  // another separate database
+  //
+  // ============================================================
+
+  static const String _customerCodeKey = 'nexera_license_customer_code';
+
+  // ============================================================
+  // DATABASE GETTER
+  // ============================================================
+
+  Future<Database> get database async {
+    if (_database != null && _database!.isOpen) {
+      return _database!;
+    }
+
+    _database = await _initDatabase();
+
+    return _database!;
+  }
+
+  // ============================================================
+  // CLOSE CURRENT DATABASE
+  //
+  // Required before switching from one license to another.
+  // ============================================================
+
+  Future<void> closeDatabase() async {
+    final db = _database;
+
+    _database = null;
+
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+  }
+
+  // ============================================================
+  // SWITCH TO LICENSE DATABASE
+  //
+  // This method closes the current database and prepares the
+  // database belonging to the supplied customer/license code.
+  //
+  // The license code should already have been saved locally by
+  // LicenseService before calling this method.
+  // ============================================================
+
+  Future<void> switchToLicense(String customerCode) async {
+    final normalizedCode = _normalizeCustomerCode(customerCode);
+
+    if (normalizedCode.isEmpty) {
+      throw Exception('Cannot switch database: customer code is empty.');
+    }
+
+    await closeDatabase();
+
+    _database = await _initDatabase(customerCode: normalizedCode);
+  }
+
+  // ============================================================
+  // NORMALIZE CUSTOMER CODE
+  // ============================================================
+
+  String _normalizeCustomerCode(String customerCode) {
+    return customerCode.trim().toUpperCase();
+  }
+
+  // ============================================================
+  // DATABASE KEY
+  //
+  // Base64 URL encoding keeps the customer code safe for use
+  // inside a filename without adding another package.
+  // ============================================================
+
+  String _databaseKey(String customerCode) {
+    final bytes = utf8.encode(_normalizeCustomerCode(customerCode));
+
+    final encoded = base64UrlEncode(bytes);
+
+    return encoded.replaceAll('=', '');
+  }
+
+  // ============================================================
+  // DATABASE DIRECTORY
+  // ============================================================
+
+  Future<String> _getDatabaseDirectory() async {
+    if (Platform.isWindows) {
+      final localAppData = Platform.environment['LOCALAPPDATA'];
+
+      if (localAppData == null || localAppData.trim().isEmpty) {
+        throw Exception('LOCALAPPDATA environment variable is not available.');
+      }
+
+      final databasePath = join(localAppData, 'LalKhata');
+
+      final directory = Directory(databasePath);
+
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+
+      return databasePath;
+    }
+
+    final directory = await getApplicationSupportDirectory();
+
+    final databasePath = join(directory.path, 'LalKhataData');
+
+    final databaseDirectory = Directory(databasePath);
+
+    if (!await databaseDirectory.exists()) {
+      await databaseDirectory.create(recursive: true);
+    }
+
+    return databasePath;
+  }
+
+  // ============================================================
+  // DATABASE INITIALIZATION
+  // ============================================================
+
+  Future<Database> _initDatabase({String? customerCode}) async {
+    String normalizedCode;
+
+    if (customerCode != null && customerCode.trim().isNotEmpty) {
+      normalizedCode = _normalizeCustomerCode(customerCode);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+
+      final savedCode = prefs.getString(_customerCodeKey);
+
+      if (savedCode == null || savedCode.trim().isEmpty) {
+        throw Exception(
+          'No active license/customer code found. '
+          'Database cannot be opened before license activation.',
+        );
+      }
+
+      normalizedCode = _normalizeCustomerCode(savedCode);
+    }
+
+    final databasePath = await _getDatabaseDirectory();
+
+    final dbKey = _databaseKey(normalizedCode);
+
+    final path = join(databasePath, 'lalkhata_$dbKey.db');
+
+    // ==========================================================
+    // LEGACY DATABASE MIGRATION
+    //
+    // Old version used:
+    //
+    // nexera_inventory.db
+    //
+    // If that database exists and this license-specific database
+    // does not exist, move the old database to the new filename.
+    //
+    // IMPORTANT:
+    // We MOVE instead of COPY so that the old database cannot be
+    // accidentally imported into multiple different licenses.
+    // ==========================================================
+
+    // ==========================================================
+    // LEGACY DATABASE MIGRATION
+    //
+    // The legacy database may belong to the previously active
+    // license. It must NEVER be imported into a different/new
+    // customer's database.
+    // ==========================================================
+
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedLicenseCode = prefs.getString(_customerCodeKey);
+
+    await _migrateLegacyDatabaseIfNeeded(
+      databasePath: databasePath,
+      targetPath: path,
+      legacyOwnerCode: savedLicenseCode,
+      requestedLicenseCode: normalizedCode,
+    );
+
+    return await openDatabase(
+      path,
+      version: _databaseVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  // ============================================================
+  // LEGACY DATABASE MIGRATION
+  // ============================================================
+
+  Future<void> _migrateLegacyDatabaseIfNeeded({
+    required String databasePath,
+    required String targetPath,
+    required String? legacyOwnerCode,
+    required String requestedLicenseCode,
+  }) async {
+    final targetFile = File(targetPath);
+
+    // ==========================================================
+    // TARGET ALREADY EXISTS
+    // ==========================================================
+
+    if (await targetFile.exists()) {
+      return;
+    }
+
+    final legacyPath = join(databasePath, 'nexera_inventory.db');
+
+    final legacyFile = File(legacyPath);
+
+    // ==========================================================
+    // NO LEGACY DATABASE
+    //
+    // This is a genuinely new license/database.
+    // ==========================================================
+
+    if (!await legacyFile.exists()) {
+      return;
+    }
+
+    // ==========================================================
+    // SAFETY CHECK
+    //
+    // A legacy database is migrated ONLY when the requested
+    // license is the same license that was already saved locally.
+    //
+    // This protects multi-company usage:
+    //
+    // Company A legacy DB + Company B activation
+    // => DO NOT migrate A data into B.
+    //
+    // Company A legacy DB + Company A verification
+    // => migrate A data into A's license database.
+    //
+    // A genuinely new activation has no saved license code,
+    // therefore the legacy database is NOT imported.
+    // ==========================================================
+
+    final normalizedLegacyOwner = legacyOwnerCode?.trim().toUpperCase() ?? '';
+
+    if (normalizedLegacyOwner.isEmpty ||
+        normalizedLegacyOwner != requestedLicenseCode) {
+      return;
+    }
+
+    // ==========================================================
+    // LEGACY DATABASE MIGRATION
+    //
+    // Another database initialization may be running at the
+    // same time. Therefore we handle a possible race safely.
+    // ==========================================================
+
+    try {
+      await legacyFile.rename(targetPath);
+    } on FileSystemException {
+      // ========================================================
+      // RACE CONDITION SAFETY
+      //
+      // Another initialization may have already moved the
+      // legacy database to the target path.
+      //
+      // If target now exists, migration is already complete.
+      // ========================================================
+
+      if (await targetFile.exists()) {
+        return;
+      }
+
+      // Neither source nor target is available.
+      // This is a genuine filesystem error.
+      rethrow;
+    }
+
+    // ==========================================================
+    // SQLITE WAL / SHM SIDE FILES
+    // ==========================================================
+
+    final legacyWal = File('$legacyPath-wal');
+
+    final targetWal = File('$targetPath-wal');
+
+    if (await legacyWal.exists()) {
+      try {
+        await legacyWal.rename(targetWal.path);
+      } on FileSystemException {
+        if (!await targetWal.exists()) {
+          rethrow;
+        }
+      }
+    }
+
+    final legacyShm = File('$legacyPath-shm');
+
+    final targetShm = File('$targetPath-shm');
+
+    if (await legacyShm.exists()) {
+      try {
+        await legacyShm.rename(targetShm.path);
+      } on FileSystemException {
+        if (!await targetShm.exists()) {
+          rethrow;
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // SAFE COLUMN HELPER
+  // ============================================================
+
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final result = await db.rawQuery('PRAGMA table_info($table)');
+
+    final exists = result.any((row) => row['name'] == column);
+
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
+  }
+
+  // ============================================================
+  // FF JOURNAL TABLES
+  // VERSION 40
+  // ============================================================
+
+  Future<void> _createFFJournalTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS journal_entries(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transaction_type TEXT NOT NULL,
+        voucher_no TEXT NOT NULL,
+        transaction_date TEXT NOT NULL,
+        reference_type TEXT,
+        reference_id INTEGER,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        total_debit REAL NOT NULL DEFAULT 0,
+        total_credit REAL NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS journal_lines(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        journal_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        entity_type TEXT,
+        entity_id INTEGER,
+        debit REAL NOT NULL DEFAULT 0,
+        credit REAL NOT NULL DEFAULT 0,
+        note TEXT,
+        FOREIGN KEY(journal_id)
+          REFERENCES journal_entries(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(account_id)
+          REFERENCES accounts(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_date
+      ON journal_entries(transaction_date)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_voucher
+      ON journal_entries(voucher_no)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_reference
+      ON journal_entries(reference_type, reference_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_journal
+      ON journal_lines(journal_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_account
+      ON journal_lines(account_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_entity
+      ON journal_lines(entity_type, entity_id)
+    ''');
+  }
+
+  // ============================================================
+  // FF ACCOUNT HIERARCHY TABLES
+  // VERSION 41
+  // ============================================================
+
+  Future<void> _createFFAccountHierarchyTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ff_account_groups(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        group_code TEXT,
+        group_kind TEXT,
+        account_nature TEXT,
+        is_system INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(parent_id)
+          REFERENCES ff_account_groups(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ff_account_links(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        is_primary INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(account_id, group_id),
+        FOREIGN KEY(account_id)
+          REFERENCES accounts(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(group_id)
+          REFERENCES ff_account_groups(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_groups_parent
+      ON ff_account_groups(parent_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_groups_code
+      ON ff_account_groups(group_code)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_links_account
+      ON ff_account_links(account_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_links_group
+      ON ff_account_links(group_id)
+    ''');
+  }
+
+  // ============================================================
+  // FF PAYMENT ALLOCATIONS
+  //
+  // One business transaction may be paid through multiple
+  // accounts:
+  //
+  // SALE     -> Cash + Bank + MFS
+  // PURCHASE -> Cash + Bank + MFS
+  //
+  // Existing paid/due/account_id/payment_method fields remain
+  // for backward compatibility.
+  // ============================================================
+
+  Future<void> _createPaymentAllocationTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS payment_allocations(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reference_type TEXT NOT NULL,
+        reference_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        payment_method TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(account_id) REFERENCES accounts(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_payment_allocations_reference
+      ON payment_allocations(reference_type, reference_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_payment_allocations_account
+      ON payment_allocations(account_id)
+    ''');
+  }
+
+  // ============================================================
+  // DATABASE UPGRADE
+  // ============================================================
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // ------------------------------------------------------------
+    // VERSION 40
+    // FF Central Journal
+    // ------------------------------------------------------------
+
+    if (oldVersion < 40) {
+      await _createFFJournalTables(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 41
+    // FF Account Hierarchy
+    // ------------------------------------------------------------
+
+    if (oldVersion < 41) {
+      await _createFFAccountHierarchyTables(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 42
+    // FF Split Payment Allocations
+    // ------------------------------------------------------------
+
+    if (oldVersion < 42) {
+      await _createPaymentAllocationTable(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 2
+    // Suppliers
+    // ------------------------------------------------------------
+
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE suppliers(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          phone TEXT,
+          address TEXT,
+          balance REAL NOT NULL DEFAULT 0
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 3
+    // Purchases
+    // ------------------------------------------------------------
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE purchases(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          supplier_id INTEGER NOT NULL,
+          invoice_no TEXT,
+          purchase_date TEXT NOT NULL,
+          grand_total REAL NOT NULL,
+          additional_charge REAL NOT NULL DEFAULT 0,
+          invoice_discount REAL NOT NULL DEFAULT 0,
+          note TEXT,
+          paid REAL NOT NULL DEFAULT 0,
+          due REAL NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE purchase_items(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purchase_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          qty INTEGER NOT NULL,
+          purchase_price REAL NOT NULL,
+          subtotal REAL NOT NULL
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 4
+    // Sales
+    // ------------------------------------------------------------
+
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE sales(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          invoice_no TEXT,
+          sale_date TEXT NOT NULL,
+          grand_total REAL NOT NULL,
+          additional_charge REAL NOT NULL DEFAULT 0,
+          invoice_discount REAL NOT NULL DEFAULT 0,
+          paid REAL NOT NULL DEFAULT 0,
+          due REAL NOT NULL DEFAULT 0,
+          note TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE sale_items(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          product_name TEXT NOT NULL,
+          qty INTEGER NOT NULL,
+          purchase_price REAL NOT NULL DEFAULT 0,
+          selling_price REAL NOT NULL,
+          subtotal REAL NOT NULL
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 5
+    // Customers
+    // ------------------------------------------------------------
+
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE customers(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          phone TEXT,
+          address TEXT,
+          balance REAL NOT NULL DEFAULT 0
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 8
+    // Expenses
+    // ------------------------------------------------------------
+
+    if (oldVersion < 8) {
+      await db.execute('''
+        CREATE TABLE expenses(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category TEXT NOT NULL,
+          amount REAL NOT NULL,
+          account_id INTEGER,
+          expense_date TEXT NOT NULL,
+          note TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 9
+    // Sales additional charge + discount
+    // ------------------------------------------------------------
+
+    if (oldVersion < 9) {
+      await _addColumnIfMissing(
+        db,
+        'sales',
+        'additional_charge',
+        'REAL NOT NULL DEFAULT 0',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'sales',
+        'invoice_discount',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 10
+    // Safety migration for sales columns
+    // ------------------------------------------------------------
+
+    if (oldVersion < 10) {
+      await _addColumnIfMissing(
+        db,
+        'sales',
+        'additional_charge',
+        'REAL NOT NULL DEFAULT 0',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'sales',
+        'invoice_discount',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 11
+    // Customer / Supplier Payments
+    // ------------------------------------------------------------
+
+    if (oldVersion < 11) {
+      await db.execute('''
+        CREATE TABLE customer_payments(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          voucher_no TEXT,
+          amount REAL NOT NULL,
+          account_id INTEGER,
+          payment_method TEXT,
+          note TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE supplier_payments(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          supplier_id INTEGER NOT NULL,
+          voucher_no TEXT,
+          amount REAL NOT NULL,
+          account_id INTEGER,
+          payment_method TEXT,
+          note TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 14
+    // Sale item purchase price
+    // ------------------------------------------------------------
+
+    if (oldVersion < 14) {
+      await _addColumnIfMissing(
+        db,
+        'sale_items',
+        'purchase_price',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 15
+    // Product unit
+    // ------------------------------------------------------------
+
+    if (oldVersion < 15) {
+      await _addColumnIfMissing(
+        db,
+        'products',
+        'unit',
+        "TEXT NOT NULL DEFAULT 'PCS'",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 16
+    // Purchase account + payment method
+    // ------------------------------------------------------------
+
+    if (oldVersion < 16) {
+      await _addColumnIfMissing(db, 'purchases', 'account_id', 'INTEGER');
+
+      await _addColumnIfMissing(
+        db,
+        'purchases',
+        'payment_method',
+        "TEXT NOT NULL DEFAULT 'Cash'",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 17
+    // Account opening balance
+    // ------------------------------------------------------------
+
+    if (oldVersion < 17) {
+      await _addColumnIfMissing(
+        db,
+        'accounts',
+        'opening_balance',
+        'REAL NOT NULL DEFAULT 0',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'accounts',
+        'opening_date',
+        "TEXT NOT NULL DEFAULT ''",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 18
+    // Expense account
+    // ------------------------------------------------------------
+
+    if (oldVersion < 18) {
+      await _addColumnIfMissing(db, 'expenses', 'account_id', 'INTEGER');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 20
+    // Sales payment method
+    // ------------------------------------------------------------
+
+    if (oldVersion < 20) {
+      await _addColumnIfMissing(
+        db,
+        'sales',
+        'payment_method',
+        "TEXT NOT NULL DEFAULT 'Cash'",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 21
+    // Customer / Supplier opening balance
+    // ------------------------------------------------------------
+
+    if (oldVersion < 21) {
+      await _addColumnIfMissing(
+        db,
+        'customers',
+        'opening_balance',
+        'REAL NOT NULL DEFAULT 0',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'suppliers',
+        'opening_balance',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 22
+    // Customer opening date
+    // ------------------------------------------------------------
+
+    if (oldVersion < 22) {
+      await _addColumnIfMissing(
+        db,
+        'customers',
+        'opening_date',
+        "TEXT NOT NULL DEFAULT ''",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 23
+    // Supplier opening date
+    // ------------------------------------------------------------
+
+    if (oldVersion < 23) {
+      await _addColumnIfMissing(
+        db,
+        'suppliers',
+        'opening_date',
+        "TEXT NOT NULL DEFAULT ''",
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 24
+    // Remove old default accounts
+    // ------------------------------------------------------------
+
+    if (oldVersion < 24) {
+      await db.delete(
+        'accounts',
+        where: '''
+          name IN (?, ?, ?)
+          AND opening_balance = 0
+          AND balance = 0
+        ''',
+        whereArgs: ['Cash', 'Bank', 'Mobile Banking'],
+      );
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 25
+    // Account transactions / Ledger
+    // ------------------------------------------------------------
+
+    if (oldVersion < 25) {
+      await db.execute('''
+        CREATE TABLE account_transactions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+          account_id INTEGER NOT NULL,
+
+          transaction_type TEXT NOT NULL,
+
+          reference_type TEXT,
+
+          reference_id INTEGER,
+
+          voucher_no TEXT,
+
+          debit REAL NOT NULL DEFAULT 0,
+
+          credit REAL NOT NULL DEFAULT 0,
+
+          transaction_date TEXT NOT NULL,
+
+          note TEXT,
+
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 26
+    // Income voucher number
+    // ------------------------------------------------------------
+
+    if (oldVersion < 26) {
+      await _addColumnIfMissing(db, 'incomes', 'voucher_no', 'TEXT');
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 27
+    // Expense voucher number
+    // ------------------------------------------------------------
+
+    if (oldVersion < 27) {
+      await _addColumnIfMissing(db, 'expenses', 'voucher_no', 'TEXT');
+    }
+
+    // ============================================================
+    // VERSION 28
+    // GAB FINAL DATABASE
+    // ============================================================
+
+    if (oldVersion < 28) {
+      await _addColumnIfMissing(db, 'incomes', 'voucher_no', 'TEXT');
+
+      await _addColumnIfMissing(db, 'expenses', 'voucher_no', 'TEXT');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS business_profile(
+          id INTEGER PRIMARY KEY CHECK(id = 1),
+
+          business_name TEXT NOT NULL,
+
+          address TEXT,
+
+          phone TEXT,
+
+          email TEXT,
+
+          logo_path TEXT,
+
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // ============================================================
+    // VERSION 29
+    // Customer ↔ Supabase License System
+    // ============================================================
+
+    if (oldVersion < 29) {
+      await _addColumnIfMissing(db, 'customers', 'supabase_id', 'TEXT');
+
+      await _addColumnIfMissing(db, 'customers', 'customer_code', 'TEXT');
+    }
+
+    // ============================================================
+    // VERSION 30
+    // Weighted Average Stock Valuation
+    // ============================================================
+
+    if (oldVersion < 30) {
+      await _addColumnIfMissing(
+        db,
+        'products',
+        'stock_value',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ============================================================
+    // VERSION 31
+    // Purchase Invoice / Voucher Number
+    // ============================================================
+
+    if (oldVersion < 31) {
+      final purchases = await db.query(
+        'purchases',
+        columns: ['id', 'invoice_no'],
+        orderBy: 'id ASC',
+      );
+
+      for (final purchase in purchases) {
+        final id = purchase['id'] as int;
+        final invoiceNo = purchase['invoice_no'];
+
+        if (invoiceNo == null || invoiceNo.toString().trim().isEmpty) {
+          final voucherNo = 'PUR-${id.toString().padLeft(6, '0')}';
+
+          await db.update(
+            'purchases',
+            {'invoice_no': voucherNo},
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        }
+      }
+    }
+
+    // ============================================================
+    // VERSION 32
+    // Supplier Payment → Purchase Link
+    // ============================================================
+
+    if (oldVersion < 32) {
+      await _addColumnIfMissing(
+        db,
+        'supplier_payments',
+        'purchase_id',
+        'INTEGER',
+      );
+    }
+
+    // ============================================================
+    // VERSION 33
+    // LOAN MANAGEMENT
+    // ============================================================
+
+    if (oldVersion < 33) {
+      await db.execute('''
+        CREATE TABLE loans(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+          loan_type TEXT NOT NULL,
+
+          person_name TEXT NOT NULL,
+
+          phone TEXT,
+
+          principal_amount REAL NOT NULL,
+
+          interest_rate REAL NOT NULL DEFAULT 0,
+
+          interest_type TEXT NOT NULL DEFAULT 'ANNUAL',
+
+          loan_date TEXT NOT NULL,
+
+          due_date TEXT,
+
+          account_id INTEGER,
+
+          payment_method TEXT,
+
+          paid_amount REAL NOT NULL DEFAULT 0,
+
+          interest_amount REAL NOT NULL DEFAULT 0,
+
+          status TEXT NOT NULL DEFAULT 'ACTIVE',
+
+          note TEXT,
+
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE loan_payments(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+          loan_id INTEGER NOT NULL,
+
+          amount REAL NOT NULL,
+
+          interest_amount REAL NOT NULL DEFAULT 0,
+
+          principal_amount REAL NOT NULL DEFAULT 0,
+
+          account_id INTEGER,
+
+          payment_method TEXT,
+
+          payment_date TEXT NOT NULL,
+
+          voucher_no TEXT,
+
+          note TEXT,
+
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // ============================================================
+    // VERSION 34
+    // LOAN ACCRUED INTEREST
+    // ============================================================
+
+    if (oldVersion < 34) {
+      await _addColumnIfMissing(
+        db,
+        'loans',
+        'accrued_interest',
+        'REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    // ============================================================
+    // VERSION 35
+    // LOAN INTEREST ACCRUAL DATE
+    // ============================================================
+
+    if (oldVersion < 35) {
+      await _addColumnIfMissing(
+        db,
+        'loans',
+        'accrued_interest',
+        'REAL NOT NULL DEFAULT 0',
+      );
+
+      await _addColumnIfMissing(db, 'loans', 'last_interest_date', 'TEXT');
+    }
+
+    // ============================================================
+    // VERSION 36 - PRODUCTION / BOM
+    // ============================================================
+
+    if (oldVersion < 36) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS production_boms(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          note TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT,
+          FOREIGN KEY(product_id) REFERENCES products(id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS production_bom_items(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bom_id INTEGER NOT NULL,
+          material_product_id INTEGER NOT NULL,
+          quantity REAL NOT NULL,
+          note TEXT,
+          FOREIGN KEY(bom_id) REFERENCES production_boms(id)
+            ON DELETE CASCADE,
+          FOREIGN KEY(material_product_id) REFERENCES products(id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS productions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id INTEGER NOT NULL,
+          bom_id INTEGER,
+          production_no TEXT,
+          production_date TEXT NOT NULL,
+          quantity REAL NOT NULL,
+          total_material_cost REAL NOT NULL DEFAULT 0,
+          other_cost REAL NOT NULL DEFAULT 0,
+          total_production_cost REAL NOT NULL DEFAULT 0,
+          unit_cost REAL NOT NULL DEFAULT 0,
+          note TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(product_id) REFERENCES products(id),
+          FOREIGN KEY(bom_id) REFERENCES production_boms(id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS production_items(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          production_id INTEGER NOT NULL,
+          material_product_id INTEGER NOT NULL,
+          material_name TEXT NOT NULL,
+          quantity REAL NOT NULL,
+          unit_cost REAL NOT NULL,
+          total_cost REAL NOT NULL,
+          FOREIGN KEY(production_id) REFERENCES productions(id)
+            ON DELETE CASCADE,
+          FOREIGN KEY(material_product_id) REFERENCES products(id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_boms_product
+        ON production_boms(product_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_bom_items_bom
+        ON production_bom_items(bom_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_bom_items_material
+        ON production_bom_items(material_product_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_productions_product
+        ON productions(product_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_productions_date
+        ON productions(production_date)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_items_production
+        ON production_items(production_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_items_material
+        ON production_items(material_product_id)
+      ''');
+    }
+
+    // ============================================================
+    // VERSION 37 - PRODUCTION COST HISTORY
+    // ============================================================
+
+    if (oldVersion < 37) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS production_costs(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          production_id INTEGER NOT NULL,
+          cost_type TEXT NOT NULL,
+          cost_per_unit REAL NOT NULL DEFAULT 0,
+          total_cost REAL NOT NULL DEFAULT 0,
+          note TEXT,
+          FOREIGN KEY(production_id) REFERENCES productions(id)
+            ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_production_costs_production
+        ON production_costs(production_id)
+      ''');
+    }
+
+    // ============================================================
+    // VERSION 38 - PRODUCT TYPE
+    // ============================================================
+
+    if (oldVersion < 38) {
+      await _addColumnIfMissing(
+        db,
+        'products',
+        'product_type',
+        "TEXT NOT NULL DEFAULT 'BOTH'",
+      );
+    }
+
+    // ============================================================
+    // VERSION 39 - OPENING STOCK HISTORY
+    // ============================================================
+
+    if (oldVersion < 39) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS opening_stock_entries(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          total_value REAL NOT NULL,
+          opening_date TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(product_id) REFERENCES products(id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_opening_stock_entries_product
+        ON opening_stock_entries(product_id)
+      ''');
+    }
+  }
+
+  // ============================================================
+  // CREATE NEW DATABASE
+  // ============================================================
+
+  Future<void> _onCreate(Database db, int version) async {
+    // ------------------------------------------------------------
+    // PRODUCTS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE products(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        purchase_price REAL NOT NULL,
+
+        selling_price REAL NOT NULL,
+
+        stock INTEGER NOT NULL,
+
+        stock_value REAL NOT NULL DEFAULT 0,
+
+        unit TEXT NOT NULL DEFAULT 'PCS',
+        product_type TEXT NOT NULL DEFAULT 'BOTH'
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // OPENING STOCK ENTRIES
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE opening_stock_entries(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        unit_cost REAL NOT NULL,
+        total_value REAL NOT NULL,
+        opening_date TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_opening_stock_entries_product
+      ON opening_stock_entries(product_id)
+    ''');
+
+    // ------------------------------------------------------------
+    // SUPPLIERS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE suppliers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        phone TEXT,
+
+        address TEXT,
+
+        opening_balance REAL NOT NULL DEFAULT 0,
+
+        opening_date TEXT NOT NULL DEFAULT '',
+
+        balance REAL NOT NULL DEFAULT 0
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // CUSTOMERS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE customers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        phone TEXT,
+
+        address TEXT,
+
+        opening_balance REAL NOT NULL DEFAULT 0,
+
+        opening_date TEXT NOT NULL DEFAULT '',
+
+        balance REAL NOT NULL DEFAULT 0,
+
+        supabase_id TEXT,
+
+        customer_code TEXT
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // ACCOUNTS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE accounts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+
+        type TEXT NOT NULL,
+
+        opening_balance REAL NOT NULL DEFAULT 0,
+
+        opening_date TEXT NOT NULL DEFAULT '',
+
+        balance REAL NOT NULL DEFAULT 0,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // FF CENTRAL JOURNAL
+    // ------------------------------------------------------------
+
+    await _createFFJournalTables(db);
+
+    // ------------------------------------------------------------
+    // FF ACCOUNT HIERARCHY
+    // ------------------------------------------------------------
+
+    await _createFFAccountHierarchyTables(db);
+
+    // ------------------------------------------------------------
+    // SALES
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE sales(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        customer_id INTEGER NOT NULL,
+
+        invoice_no TEXT,
+
+        sale_date TEXT NOT NULL,
+
+        grand_total REAL NOT NULL,
+
+        additional_charge REAL NOT NULL DEFAULT 0,
+
+        invoice_discount REAL NOT NULL DEFAULT 0,
+
+        paid REAL NOT NULL DEFAULT 0,
+
+        due REAL NOT NULL DEFAULT 0,
+
+        note TEXT,
+
+        payment_method TEXT NOT NULL DEFAULT 'Cash',
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // SALE ITEMS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE sale_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        sale_id INTEGER NOT NULL,
+
+        product_id INTEGER NOT NULL,
+
+        product_name TEXT NOT NULL,
+
+        qty INTEGER NOT NULL,
+
+        purchase_price REAL NOT NULL DEFAULT 0,
+
+        selling_price REAL NOT NULL,
+
+        subtotal REAL NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // PURCHASES
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE purchases(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        supplier_id INTEGER NOT NULL,
+
+        invoice_no TEXT,
+
+        purchase_date TEXT NOT NULL,
+
+        grand_total REAL NOT NULL,
+
+        additional_charge REAL NOT NULL DEFAULT 0,
+
+        invoice_discount REAL NOT NULL DEFAULT 0,
+
+        paid REAL NOT NULL DEFAULT 0,
+
+        due REAL NOT NULL DEFAULT 0,
+
+        account_id INTEGER,
+
+        payment_method TEXT NOT NULL DEFAULT 'Cash',
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // PURCHASE ITEMS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE purchase_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        purchase_id INTEGER NOT NULL,
+
+        product_id INTEGER NOT NULL,
+
+        qty INTEGER NOT NULL,
+
+        purchase_price REAL NOT NULL,
+
+        subtotal REAL NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // EXPENSES
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE expenses(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        category TEXT NOT NULL,
+
+        amount REAL NOT NULL,
+
+        account_id INTEGER,
+
+        expense_date TEXT NOT NULL,
+
+        note TEXT,
+
+        voucher_no TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // INCOMES
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE incomes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        category TEXT NOT NULL,
+
+        amount REAL NOT NULL,
+
+        account_id INTEGER,
+
+        income_date TEXT NOT NULL,
+
+        note TEXT,
+
+        voucher_no TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // CUSTOMER PAYMENTS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE customer_payments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        customer_id INTEGER NOT NULL,
+
+        voucher_no TEXT,
+
+        amount REAL NOT NULL,
+
+        account_id INTEGER,
+
+        payment_method TEXT,
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // SUPPLIER PAYMENTS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE supplier_payments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        supplier_id INTEGER NOT NULL,
+
+        purchase_id INTEGER,
+
+        voucher_no TEXT,
+
+        amount REAL NOT NULL,
+
+        account_id INTEGER,
+
+        payment_method TEXT,
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // ACCOUNT TRANSACTIONS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE account_transactions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        account_id INTEGER NOT NULL,
+
+        transaction_type TEXT NOT NULL,
+
+        reference_type TEXT,
+
+        reference_id INTEGER,
+
+        voucher_no TEXT,
+
+        debit REAL NOT NULL DEFAULT 0,
+
+        credit REAL NOT NULL DEFAULT 0,
+
+        transaction_date TEXT NOT NULL,
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // BUSINESS PROFILE
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE business_profile(
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+
+        business_name TEXT NOT NULL,
+
+        address TEXT,
+
+        phone TEXT,
+
+        email TEXT,
+
+        logo_path TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // LOANS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE loans(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        loan_type TEXT NOT NULL,
+
+        person_name TEXT NOT NULL,
+
+        phone TEXT,
+
+        principal_amount REAL NOT NULL,
+
+        interest_rate REAL NOT NULL DEFAULT 0,
+
+        interest_type TEXT NOT NULL DEFAULT 'ANNUAL',
+
+        loan_date TEXT NOT NULL,
+
+        due_date TEXT,
+
+        account_id INTEGER,
+
+        payment_method TEXT,
+
+        paid_amount REAL NOT NULL DEFAULT 0,
+
+        interest_amount REAL NOT NULL DEFAULT 0,
+
+        accrued_interest REAL NOT NULL DEFAULT 0,
+
+        last_interest_date TEXT,
+
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // LOAN PAYMENTS
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE loan_payments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        loan_id INTEGER NOT NULL,
+
+        amount REAL NOT NULL,
+
+        interest_amount REAL NOT NULL DEFAULT 0,
+
+        principal_amount REAL NOT NULL DEFAULT 0,
+
+        account_id INTEGER,
+
+        payment_method TEXT,
+
+        payment_date TEXT NOT NULL,
+
+        voucher_no TEXT,
+
+        note TEXT,
+
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ------------------------------------------------------------
+    // PRODUCTION / BOM
+    // ------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE production_boms(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        note TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY(product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE production_bom_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bom_id INTEGER NOT NULL,
+        material_product_id INTEGER NOT NULL,
+        quantity REAL NOT NULL,
+        note TEXT,
+        FOREIGN KEY(bom_id) REFERENCES production_boms(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(material_product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE productions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        bom_id INTEGER,
+        production_no TEXT,
+        production_date TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        total_material_cost REAL NOT NULL DEFAULT 0,
+        other_cost REAL NOT NULL DEFAULT 0,
+        total_production_cost REAL NOT NULL DEFAULT 0,
+        unit_cost REAL NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(product_id) REFERENCES products(id),
+        FOREIGN KEY(bom_id) REFERENCES production_boms(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE production_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_id INTEGER NOT NULL,
+        material_product_id INTEGER NOT NULL,
+        material_name TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        unit_cost REAL NOT NULL,
+        total_cost REAL NOT NULL,
+        FOREIGN KEY(production_id) REFERENCES productions(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(material_product_id) REFERENCES products(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE production_costs(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        production_id INTEGER NOT NULL,
+        cost_type TEXT NOT NULL,
+        cost_per_unit REAL NOT NULL DEFAULT 0,
+        total_cost REAL NOT NULL DEFAULT 0,
+        note TEXT,
+        FOREIGN KEY(production_id) REFERENCES productions(id)
+          ON DELETE CASCADE
+      )
+    ''');
+  }
+}

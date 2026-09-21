@@ -1,7 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
-import 'account_repository.dart';
+import 'ff/ff_cash_flow_service.dart';
+import 'ff/ff_money_flow_service.dart';
 
 class ARBestSellingProduct {
   final int productId;
@@ -18,7 +19,9 @@ class ARBestSellingProduct {
 class ARDataService {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
-  final AccountRepository _accountRepository = AccountRepository();
+  final FFMoneyFlowService _moneyFlowService = FFMoneyFlowService.instance;
+
+  final FFCashFlowService _cashFlowService = FFCashFlowService.instance;
 
   // ============================================================
   // DATABASE
@@ -123,21 +126,9 @@ class ARDataService {
   // ============================================================
 
   Future<double> getTodayMoneyReceived() async {
-    final db = await _db;
-    final range = _todayRange();
+    final report = await _moneyFlowService.getTodayReport(received: true);
 
-    final result = await db.rawQuery('''
-      SELECT COALESCE(SUM(credit), 0) AS total
-      FROM account_transactions
-      WHERE transaction_date >= ?
-        AND transaction_date < ?
-        AND credit > 0
-        AND transaction_type NOT IN (
-          'FUND_TRANSFER_IN'
-        )
-      ''', range);
-
-    return _toDouble(result.first['total']);
+    return report.total;
   }
 
   // ============================================================
@@ -151,21 +142,9 @@ class ARDataService {
   // ============================================================
 
   Future<double> getTodayMoneyGiven() async {
-    final db = await _db;
-    final range = _todayRange();
+    final report = await _moneyFlowService.getTodayReport(received: false);
 
-    final result = await db.rawQuery('''
-      SELECT COALESCE(SUM(debit), 0) AS total
-      FROM account_transactions
-      WHERE transaction_date >= ?
-        AND transaction_date < ?
-        AND debit > 0
-        AND transaction_type NOT IN (
-          'FUND_TRANSFER_OUT'
-        )
-      ''', range);
-
-    return _toDouble(result.first['total']);
+    return report.total;
   }
 
   // ============================================================
@@ -176,7 +155,15 @@ class ARDataService {
   // ============================================================
 
   Future<double> getCashClosing() async {
-    return _accountRepository.getBalanceByType('CASH');
+    final now = DateTime.now();
+
+    final start = DateTime(now.year, now.month, now.day);
+
+    final end = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
+
+    final report = await _cashFlowService.getReport(from: start, to: end);
+
+    return report.closingBalance;
   }
 
   // ============================================================

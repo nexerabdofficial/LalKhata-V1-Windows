@@ -1,0 +1,171 @@
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
+
+import '../../models/purchase.dart';
+import '../../models/purchase/purchase_item_history.dart';
+import '../../pdf/purchase_invoice_pdf.dart';
+
+class PurchaseInvoicePreviewScreen extends StatefulWidget {
+  final Purchase purchase;
+  final List<PurchaseItemHistory> items;
+
+  const PurchaseInvoicePreviewScreen({
+    super.key,
+    required this.purchase,
+    required this.items,
+  });
+
+  @override
+  State<PurchaseInvoicePreviewScreen> createState() =>
+      _PurchaseInvoicePreviewScreenState();
+}
+
+class _PurchaseInvoicePreviewScreenState
+    extends State<PurchaseInvoicePreviewScreen> {
+  bool _saving = false;
+  bool _printing = false;
+
+  Future<Uint8List> _buildPdf() {
+    return PurchaseInvoicePdf.generate(
+      purchase: widget.purchase,
+      items: widget.items,
+    );
+  }
+
+  Future<void> _savePdf() async {
+    if (_saving) return;
+
+    setState(() => _saving = true);
+
+    try {
+      final file = await PurchaseInvoicePdf.savePdf(
+        purchase: widget.purchase,
+        items: widget.items,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Invoice saved:\n${file.path}')));
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save invoice: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _printPdf() async {
+    if (_printing) return;
+
+    setState(() => _printing = true);
+
+    try {
+      final bytes = await _buildPdf();
+
+      await Printing.layoutPdf(
+        name:
+            'Purchase_Invoice_${widget.purchase.invoiceNo ?? widget.purchase.id ?? ''}.pdf',
+        onLayout: (_) async => bytes,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not print invoice: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _printing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invoiceNo = widget.purchase.invoiceNo?.trim().isNotEmpty == true
+        ? widget.purchase.invoiceNo!.trim()
+        : 'PUR-${widget.purchase.id ?? ''}';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Purchase Invoice',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              invoiceNo,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Print',
+            onPressed: _printing ? null : _printPdf,
+            icon: _printing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.print_outlined),
+          ),
+          IconButton(
+            tooltip: 'Save PDF',
+            onPressed: _saving ? null : _savePdf,
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_outlined),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: PdfPreview(
+        build: (_) => _buildPdf(),
+
+        // We provide our own actions in the AppBar.
+        allowPrinting: false,
+        allowSharing: false,
+
+        canChangePageFormat: false,
+        canChangeOrientation: false,
+        canDebug: false,
+
+        pdfFileName: 'Purchase_Invoice_$invoiceNo.pdf',
+
+        loadingWidget: const Center(child: CircularProgressIndicator()),
+
+        onError: (context, error) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Could not load invoice preview.\n\n$error',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

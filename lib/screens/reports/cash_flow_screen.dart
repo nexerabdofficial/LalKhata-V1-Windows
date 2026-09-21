@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../models/account.dart';
-import '../../models/account_transaction.dart';
-import '../../services/account_repository.dart';
-import '../../services/account_transaction_repository.dart';
+import '../../services/ff/ff_cash_flow_service.dart';
 
 class CashFlowScreen extends StatefulWidget {
   const CashFlowScreen({super.key});
@@ -14,10 +11,7 @@ class CashFlowScreen extends StatefulWidget {
 }
 
 class _CashFlowScreenState extends State<CashFlowScreen> {
-  final AccountRepository _accountRepository = AccountRepository();
-
-  final AccountTransactionRepository _transactionRepository =
-      AccountTransactionRepository();
+  final FFCashFlowService _service = FFCashFlowService.instance;
 
   DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
@@ -29,11 +23,7 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
 
   bool _loading = true;
 
-  List<Account> _accounts = [];
-  List<AccountTransaction> _transactions = [];
-
-  double _cashIn = 0;
-  double _cashOut = 0;
+  FFCashFlowReport? _report;
 
   final NumberFormat _moneyFormat = NumberFormat('#,##0.##');
 
@@ -43,10 +33,6 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     _loadReport();
   }
 
-  // ============================================================
-  // LOAD
-  // ============================================================
-
   Future<void> _loadReport() async {
     if (mounted) {
       setState(() {
@@ -55,48 +41,12 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     }
 
     try {
-      final accounts = await _accountRepository.getAccounts();
-
-      final allTransactions = await _transactionRepository.getAllTransactions();
-
-      final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
-
-      final end = DateTime(
-        _endDate.year,
-        _endDate.month,
-        _endDate.day,
-        23,
-        59,
-        59,
-        999,
-      );
-
-      final transactions = allTransactions.where((transaction) {
-        final date = DateTime.tryParse(transaction.transactionDate);
-
-        if (date == null) return false;
-
-        return !date.isBefore(start) &&
-            !date.isAfter(end) &&
-            transaction.transactionType != 'OPENING_BALANCE' &&
-            transaction.transactionType != 'OPENING';
-      }).toList();
-
-      double cashIn = 0;
-      double cashOut = 0;
-
-      for (final transaction in transactions) {
-        cashIn += transaction.credit;
-        cashOut += transaction.debit;
-      }
+      final report = await _service.getReport(from: _startDate, to: _endDate);
 
       if (!mounted) return;
 
       setState(() {
-        _accounts = accounts;
-        _transactions = transactions;
-        _cashIn = cashIn;
-        _cashOut = cashOut;
+        _report = report;
         _loading = false;
       });
     } catch (e) {
@@ -112,39 +62,22 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     }
   }
 
-  // ============================================================
-  // DATE HELPERS
-  // ============================================================
-
   String _displayDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
         '${date.year}';
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year.toString().padLeft(4, '0')}-'
-        '${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
   String _formatMoney(double amount) {
     return _moneyFormat.format(amount);
   }
 
-  String _accountName(int accountId) {
-    for (final account in _accounts) {
-      if (account.id == accountId) {
-        return account.name;
-      }
-    }
+  String _money(double amount) {
+    final negative = amount < 0;
+    final value = amount.abs();
 
-    return 'Unknown Account';
+    return negative ? '-৳ ${_formatMoney(value)}' : '৳ ${_formatMoney(value)}';
   }
-
-  // ============================================================
-  // DATE PICKERS
-  // ============================================================
 
   Future<void> _selectStartDate() async {
     final selected = await showDatePicker(
@@ -184,10 +117,6 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     await _loadReport();
   }
 
-  // ============================================================
-  // SUMMARY CARD
-  // ============================================================
-
   Widget _summaryCard({
     required String title,
     required double amount,
@@ -199,7 +128,7 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Icon(icon, size: 28),
+              Icon(icon, size: 27),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -207,13 +136,16 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '৳ ${_formatMoney(amount)}',
+                      _money(amount),
                       style: const TextStyle(
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -227,18 +159,28 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     );
   }
 
-  // ============================================================
-  // TRANSACTION CARD
-  // ============================================================
+  Widget _transactionCard(FFCashFlowRow row) {
+    final isTransfer = row.isInternalTransfer;
 
-  Widget _transactionCard(AccountTransaction transaction) {
-    final isIn = transaction.credit > 0;
+    final isIn = !isTransfer && row.debit > 0;
 
-    final amount = isIn ? transaction.credit : transaction.debit;
+    final amount = isTransfer
+        ? row.transferAmount
+        : isIn
+        ? row.debit
+        : row.credit;
 
-    final voucher = transaction.voucherNo?.trim().isNotEmpty == true
-        ? transaction.voucherNo!
-        : transaction.transactionType;
+    final parsedDate = DateTime.tryParse(row.transactionDate);
+
+    final voucher = row.voucherNo?.trim().isNotEmpty == true
+        ? row.voucherNo!
+        : row.transactionType;
+
+    final description = row.note?.trim().isNotEmpty == true
+        ? row.note!
+        : row.description?.trim().isNotEmpty == true
+        ? row.description!
+        : row.transactionType;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -246,7 +188,14 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         child: Row(
           children: [
-            Icon(isIn ? Icons.arrow_downward : Icons.arrow_upward, size: 22),
+            Icon(
+              isTransfer
+                  ? Icons.swap_horiz_rounded
+                  : isIn
+                  ? Icons.arrow_downward_rounded
+                  : Icons.arrow_upward_rounded,
+              size: 22,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -260,17 +209,16 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${_accountName(transaction.accountId)} • '
-                    '${_displayDate(DateTime.parse(transaction.transactionDate))}',
+                    '${row.accountName}'
+                    '${parsedDate == null ? '' : ' • ${_displayDate(parsedDate)}'}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  if (transaction.note != null &&
-                      transaction.note!.trim().isNotEmpty)
+                  if (description.trim().isNotEmpty)
                     Text(
-                      transaction.note!,
+                      description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 12),
@@ -280,10 +228,16 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
             ),
             const SizedBox(width: 10),
             Text(
-              '${isIn ? '+' : '-'} ৳ ${_formatMoney(amount)}',
+              isTransfer
+                  ? _money(amount)
+                  : '${isIn ? '+' : '-'} ${_money(amount)}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: isIn ? Colors.green : Colors.red,
+                color: isTransfer
+                    ? Colors.blueGrey
+                    : isIn
+                    ? Colors.green
+                    : Colors.red,
               ),
             ),
           ],
@@ -292,21 +246,86 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
     );
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
+  Widget _controlCard(FFCashFlowReport report) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Cash Reconciliation',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            _controlRow('Opening Cash', report.openingBalance),
+            _controlRow('Net Cash Flow', report.netCashFlow),
+            _controlRow('Expected Closing', report.expectedClosing),
+            _controlRow('Actual Closing', report.closingBalance),
+            const Divider(),
+            _controlRow(
+              'Difference',
+              report.controlDifference,
+              bold: true,
+              color: report.isReconciled ? Colors.green : Colors.red,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _controlRow(
+    String title,
+    double value, {
+    bool bold = false,
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            _money(value),
+            style: TextStyle(fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final netFlow = _cashIn - _cashOut;
+    final report = _report;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Cash Flow')),
+      appBar: AppBar(
+        title: const Text('Cash Flow'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _loadReport,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : report == null
+          ? const Center(child: Text('No Cash Flow data.'))
           : RefreshIndicator(
               onRefresh: _loadReport,
               child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(top: 8, bottom: 24),
                 children: [
                   Padding(
@@ -331,59 +350,45 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
                       children: [
                         _summaryCard(
                           title: 'Cash In',
-                          amount: _cashIn,
-                          icon: Icons.arrow_downward,
+                          amount: report.cashIn,
+                          icon: Icons.arrow_downward_rounded,
                         ),
                         const SizedBox(width: 8),
                         _summaryCard(
                           title: 'Cash Out',
-                          amount: _cashOut,
-                          icon: Icons.arrow_upward,
+                          amount: report.cashOut,
+                          icon: Icons.arrow_upward_rounded,
                         ),
                       ],
                     ),
                   ),
-
-                  Card(
-                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.account_balance_wallet, size: 28),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              'Net Cash Flow',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '৳ ${_formatMoney(netFlow)}',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: netFlow >= 0 ? Colors.green : Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        _summaryCard(
+                          title: 'Net Flow',
+                          amount: report.netCashFlow,
+                          icon: Icons.account_balance_wallet_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _summaryCard(
+                          title: 'Internal Transfer',
+                          amount: report.internalTransfers,
+                          icon: Icons.swap_horiz_rounded,
+                        ),
+                      ],
                     ),
                   ),
-
-                  if (_transactions.isEmpty)
+                  _controlCard(report),
+                  if (report.rows.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(40),
                       child: Center(
@@ -391,7 +396,7 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
                       ),
                     )
                   else
-                    ..._transactions.map(_transactionCard),
+                    ...report.rows.map(_transactionCard),
                 ],
               ),
             ),

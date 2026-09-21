@@ -1,0 +1,184 @@
+import 'package:sqflite/sqflite.dart';
+
+import 'ff_journal_models.dart';
+import 'ff_journal_service.dart';
+import 'ff_party_account_service.dart';
+import 'ff_system_accounts.dart';
+
+class FFPartyPaymentPostingService {
+  FFPartyPaymentPostingService._();
+
+  static final FFPartyPaymentPostingService instance =
+      FFPartyPaymentPostingService._();
+
+  final FFJournalService _journalService = FFJournalService.instance;
+
+  final FFPartyAccountService _partyAccountService =
+      FFPartyAccountService.instance;
+
+  // ============================================================
+  // CUSTOMER COLLECTION
+  //
+  // Dr Cash / Bank / MFS
+  // Cr Customer Receivable
+  // ============================================================
+
+  Future<int> postCustomerCollectionWithExecutor(
+    DatabaseExecutor db, {
+    required int paymentId,
+    required int customerId,
+    required int accountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String note = '',
+  }) async {
+    if (paymentId <= 0) {
+      throw ArgumentError('Invalid customer payment ID.');
+    }
+
+    if (customerId <= 0) {
+      throw ArgumentError('Invalid customer ID.');
+    }
+
+    if (accountId <= 0) {
+      throw ArgumentError('Invalid payment account ID.');
+    }
+
+    if (amount <= 0) {
+      throw ArgumentError(
+        'Customer collection amount must be greater than zero.',
+      );
+    }
+
+    final receivableAccountId = await _partyAccountService
+        .ensureCustomerAccountWithExecutor(db, customerId);
+
+    return _journalService.createJournalWithExecutor(
+      db,
+      FFJournalEntry(
+        transactionType: 'CUSTOMER_PAYMENT',
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: 'CUSTOMER_PAYMENT',
+        referenceId: paymentId,
+        description: note.trim().isNotEmpty
+            ? note.trim()
+            : 'Customer Collection',
+        createdAt: DateTime.now().toIso8601String(),
+        lines: [
+          FFJournalLine(
+            accountId: accountId,
+            debit: amount,
+            credit: 0,
+            note: 'Customer collection',
+          ),
+          FFJournalLine(
+            accountId: receivableAccountId,
+            entityType: 'CUSTOMER',
+            entityId: customerId,
+            debit: 0,
+            credit: amount,
+            note: 'Customer receivable adjustment',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // SUPPLIER PAYMENT
+  //
+  // Dr Supplier Payable
+  // Cr Cash / Bank / MFS
+  // ============================================================
+
+  Future<int> postSupplierPaymentWithExecutor(
+    DatabaseExecutor db, {
+    required int paymentId,
+    required int supplierId,
+    required int accountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String note = '',
+  }) async {
+    if (paymentId <= 0) {
+      throw ArgumentError('Invalid supplier payment ID.');
+    }
+
+    if (supplierId <= 0) {
+      throw ArgumentError('Invalid supplier ID.');
+    }
+
+    if (accountId <= 0) {
+      throw ArgumentError('Invalid payment account ID.');
+    }
+
+    if (amount <= 0) {
+      throw ArgumentError('Supplier payment amount must be greater than zero.');
+    }
+
+    final payableAccountId = await _partyAccountService
+        .ensureSupplierAccountWithExecutor(db, supplierId);
+
+    return _journalService.createJournalWithExecutor(
+      db,
+      FFJournalEntry(
+        transactionType: 'SUPPLIER_PAYMENT',
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: 'SUPPLIER_PAYMENT',
+        referenceId: paymentId,
+        description: note.trim().isNotEmpty ? note.trim() : 'Supplier Payment',
+        createdAt: DateTime.now().toIso8601String(),
+        lines: [
+          FFJournalLine(
+            accountId: payableAccountId,
+            entityType: 'SUPPLIER',
+            entityId: supplierId,
+            debit: amount,
+            credit: 0,
+            note: 'Supplier payable adjustment',
+          ),
+          FFJournalLine(
+            accountId: accountId,
+            debit: 0,
+            credit: amount,
+            note: 'Supplier payment',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // TRANSACTION-SAFE SYSTEM ACCOUNT RESOLVER
+  // ============================================================
+
+  Future<int> _resolveSystemAccountId(
+    DatabaseExecutor db,
+    String accountType,
+  ) async {
+    final rows = await db.query(
+      'accounts',
+      columns: ['id'],
+      where: 'type = ?',
+      whereArgs: [accountType],
+      orderBy: 'id ASC',
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      throw StateError('FF system account not found: $accountType');
+    }
+
+    final id = rows.first['id'];
+
+    if (id is! num) {
+      throw StateError('Invalid FF system account ID: $accountType');
+    }
+
+    return id.toInt();
+  }
+}

@@ -1,39 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../gab/gab_branding.dart';
-import '../../services/account_repository.dart';
-import '../../services/customer_repository.dart';
-import '../../services/product_repository.dart';
-import '../../services/supplier_repository.dart';
+import '../../services/ff/ff_balance_sheet_service.dart';
 
 class BalanceSheetScreen extends StatefulWidget {
   const BalanceSheetScreen({super.key});
 
   @override
-  State<BalanceSheetScreen> createState() =>
-      _BalanceSheetScreenState();
+  State<BalanceSheetScreen> createState() => _BalanceSheetScreenState();
 }
 
-class _BalanceSheetScreenState
-    extends State<BalanceSheetScreen> {
-  final ProductRepository _productRepository =
-      ProductRepository();
+class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
+  final FFBalanceSheetService _service = FFBalanceSheetService.instance;
 
-  final AccountRepository _accountRepository =
-      AccountRepository();
-
-  final CustomerRepository _customerRepository =
-      CustomerRepository();
-
-  final SupplierRepository _supplierRepository =
-      SupplierRepository();
-
+  FFBalanceSheetReport? _report;
   bool _loading = true;
-
-  double _cash = 0;
-  double _stock = 0;
-  double _customerDue = 0;
-  double _supplierDue = 0;
 
   @override
   void initState() {
@@ -42,21 +23,17 @@ class _BalanceSheetScreenState
   }
 
   Future<void> _loadBalanceSheet() async {
+    setState(() {
+      _loading = true;
+    });
+
     try {
-      final results = await Future.wait<double>([
-        _accountRepository.getTotalBalance(),
-        _productRepository.getTotalStockValue(),
-        _customerRepository.getTotalDue(),
-        _supplierRepository.getTotalDue(),
-      ]);
+      final report = await _service.getReport();
 
       if (!mounted) return;
 
       setState(() {
-        _cash = results[0];
-        _stock = results[1];
-        _customerDue = results[2];
-        _supplierDue = results[3];
+        _report = report;
         _loading = false;
       });
     } catch (e) {
@@ -67,67 +44,46 @@ class _BalanceSheetScreenState
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load balance sheet: $e',
-          ),
-        ),
+        SnackBar(content: Text('Failed to load Balance Sheet: $e')),
       );
     }
   }
 
   String _money(double value) {
-    return '৳ ${value.toStringAsFixed(2)}';
+    final negative = value < 0;
+    final amount = value.abs();
+
+    return negative
+        ? '-৳ ${amount.toStringAsFixed(2)}'
+        : '৳ ${amount.toStringAsFixed(2)}';
   }
 
   Widget _amountRow(
     String title,
     double amount, {
-    IconData? icon,
-    Color? color,
     bool bold = false,
+    Color? color,
   }) {
-    final rowColor = color ?? Colors.black87;
-
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 11,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          if (icon != null) ...[
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: rowColor.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: rowColor,
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
           Expanded(
             child: Text(
               title,
               style: TextStyle(
-                fontSize: bold ? 17 : 15,
-                fontWeight: bold
-                    ? FontWeight.bold
-                    : FontWeight.w500,
+                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                fontSize: bold ? 16 : 14,
               ),
             ),
           ),
+          const SizedBox(width: 12),
           Text(
             _money(amount),
             style: TextStyle(
-              fontSize: bold ? 17 : 15,
               fontWeight: FontWeight.bold,
-              color: rowColor,
+              fontSize: bold ? 16 : 14,
+              color: color,
             ),
           ),
         ],
@@ -135,76 +91,19 @@ class _BalanceSheetScreenState
     );
   }
 
-  Widget _sectionCard({
-    required String title,
-    required String subtitle,
-    required List<Widget> children,
-    required Color color,
-  }) {
+  Widget _section({required String title, required List<Widget> children}) {
     return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          18,
-          18,
-          18,
-          14,
-        ),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color:
-                        color.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    title == 'ASSETS'
-                        ? Icons.account_balance_wallet_rounded
-                        : Icons.account_balance_rounded,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Text(
+              title,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
             ),
-
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             const Divider(),
-
             ...children,
           ],
         ),
@@ -212,112 +111,139 @@ class _BalanceSheetScreenState
     );
   }
 
-  Widget _totalCard({
-    required String title,
-    required double amount,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 27,
-              ),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    _money(amount),
-                    style: TextStyle(
-                      fontSize: 23,
-                      fontWeight: FontWeight.bold,
-                      color: color,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+  Widget _assets(FFBalanceSheetReport report) {
+    final children = <Widget>[];
+
+    for (final row in report.assets) {
+      if (row.accountType == 'INVENTORY') {
+        continue;
+      }
+
+      if (row.balance.abs() < 0.000001) {
+        continue;
+      }
+
+      children.add(_amountRow(row.accountName, row.balance));
+    }
+
+    children.add(_amountRow('Inventory / Stock', report.inventoryValue));
+
+    children.add(const Divider());
+
+    children.add(
+      _amountRow(
+        'TOTAL ASSETS',
+        report.totalAssets,
+        bold: true,
+        color: Colors.green.shade700,
       ),
     );
+
+    return _section(title: 'ASSETS', children: children);
   }
 
-  Widget _header() {
-    return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Balance Sheet',
-                    style: TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    'Current financial position',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+  Widget _liabilities(FFBalanceSheetReport report) {
+    final children = <Widget>[];
 
-            Opacity(
-              opacity: 0.12,
-              child: Text(
-                GABBranding.businessName,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  color: Colors.green.shade800,
-                ),
+    for (final row in report.liabilities) {
+      if (row.balance.abs() < 0.000001) {
+        continue;
+      }
+
+      children.add(_amountRow(row.accountName, row.balance));
+    }
+
+    children.add(const Divider());
+
+    children.add(
+      _amountRow(
+        'TOTAL LIABILITIES',
+        report.totalLiabilities,
+        bold: true,
+        color: Colors.red.shade700,
+      ),
+    );
+
+    return _section(title: 'LIABILITIES', children: children);
+  }
+
+  Widget _equity(FFBalanceSheetReport report) {
+    final children = <Widget>[];
+
+    for (final row in report.equity) {
+      if (row.balance.abs() < 0.000001) {
+        continue;
+      }
+
+      final displayed = row.accountNature == 'DEBIT'
+          ? -row.balance
+          : row.balance;
+
+      children.add(_amountRow(row.accountName, displayed));
+    }
+
+    children.add(
+      _amountRow(
+        report.currentProfit >= 0 ? 'Current Profit' : 'Current Loss',
+        report.currentProfit,
+        color: report.currentProfit >= 0
+            ? Colors.green.shade700
+            : Colors.red.shade700,
+      ),
+    );
+
+    children.add(const Divider());
+
+    children.add(_amountRow('TOTAL EQUITY', report.totalEquity, bold: true));
+
+    return _section(title: 'EQUITY', children: children);
+  }
+
+  Widget _control(FFBalanceSheetReport report) {
+    final difference = report.accountingDifference;
+
+    final balanced = difference.abs() < 0.005;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Accounting Control',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            _amountRow('Total Assets', report.totalAssets),
+            _amountRow('Liabilities + Equity', report.liabilitiesAndEquity),
+            const Divider(),
+            _amountRow(
+              'Balance Sheet Difference',
+              difference,
+              bold: true,
+              color: balanced ? Colors.green : Colors.orange.shade800,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              balanced
+                  ? 'Balance Sheet is balanced.'
+                  : 'Difference is shown as a control only. No artificial capital or balancing journal has been created.',
+              style: TextStyle(
+                fontSize: 12,
+                color: balanced
+                    ? Colors.green.shade700
+                    : Colors.orange.shade800,
               ),
             ),
+            if (report.openingDifference.abs() > 0.005) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Brought-forward opening difference: '
+                '${_money(report.openingDifference)}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
           ],
         ),
       ),
@@ -326,219 +252,59 @@ class _BalanceSheetScreenState
 
   @override
   Widget build(BuildContext context) {
-    final totalAssets =
-        _cash + _stock + _customerDue;
-
-    final totalLiabilities = _supplierDue;
-
-    final netPosition =
-        totalAssets - totalLiabilities;
+    final report = _report;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Balance Sheet',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _loading
-                ? null
-                : _loadBalanceSheet,
-            icon: const Icon(
-              Icons.refresh_rounded,
-            ),
+            onPressed: _loading ? null : _loadBalanceSheet,
+            icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
+          : report == null
+          ? const Center(child: Text('No Balance Sheet data.'))
           : RefreshIndicator(
               onRefresh: _loadBalanceSheet,
               child: ListView(
-                physics:
-                    const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(
-                  12,
-                  8,
-                  12,
-                  30,
-                ),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 30),
                 children: [
-                  _header(),
-
-                  const SizedBox(height: 15),
-
-                  // ==========================
-                  // ASSETS
-                  // ==========================
-
-                  _sectionCard(
-                    title: 'ASSETS',
-                    subtitle:
-                        'What the business owns',
-                    color: Colors.green.shade700,
-                    children: [
-                      _amountRow(
-                        'Cash & Bank',
-                        _cash,
-                        icon:
-                            Icons.account_balance_wallet_rounded,
-                        color:
-                            Colors.green.shade700,
-                      ),
-                      _amountRow(
-                        'Inventory / Stock',
-                        _stock,
-                        icon:
-                            Icons.inventory_2_rounded,
-                        color:
-                            Colors.deepPurple.shade600,
-                      ),
-                      _amountRow(
-                        'Customer Receivables',
-                        _customerDue,
-                        icon:
-                            Icons.people_alt_rounded,
-                        color:
-                            Colors.orange.shade700,
-                      ),
-
-                      const Divider(),
-
-                      _amountRow(
-                        'Total Assets',
-                        totalAssets,
-                        bold: true,
-                        color:
-                            Colors.green.shade800,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  // ==========================
-                  // LIABILITIES
-                  // ==========================
-
-                  _sectionCard(
-                    title: 'LIABILITIES',
-                    subtitle:
-                        'What the business owes',
-                    color: Colors.red.shade700,
-                    children: [
-                      _amountRow(
-                        'Supplier Payables',
-                        _supplierDue,
-                        icon:
-                            Icons.local_shipping_rounded,
-                        color:
-                            Colors.red.shade700,
-                      ),
-
-                      const Divider(),
-
-                      _amountRow(
-                        'Total Liabilities',
-                        totalLiabilities,
-                        bold: true,
-                        color:
-                            Colors.red.shade800,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  // ==========================
-                  // NET POSITION
-                  // ==========================
-
-                  _totalCard(
-                    title:
-                        'NET BUSINESS POSITION',
-                    amount: netPosition,
-                    color: netPosition >= 0
-                        ? Colors.blue.shade700
-                        : Colors.red.shade700,
-                    icon:
-                        netPosition >= 0
-                            ? Icons.trending_up_rounded
-                            : Icons.trending_down_rounded,
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  // ==========================
-                  // ACCOUNTING EQUATION
-                  // ==========================
-
                   Card(
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(20),
-                    ),
                     child: Padding(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Accounting Position',
+                            'Statement of Financial Position',
                             style: TextStyle(
-                              fontSize: 19,
-                              fontWeight:
-                                  FontWeight.bold,
+                              fontSize: 21,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-
-                          const SizedBox(height: 6),
-
+                          const SizedBox(height: 4),
                           Text(
-                            'Assets − Liabilities = Net Business Position',
-                            style: TextStyle(
-                              color:
-                                  Colors.grey.shade600,
-                              fontSize: 12,
-                            ),
-                          ),
-
-                          const SizedBox(height: 15),
-
-                          _amountRow(
-                            'Total Assets',
-                            totalAssets,
-                          ),
-
-                          _amountRow(
-                            'Less: Liabilities',
-                            totalLiabilities,
-                            color:
-                                Colors.red.shade700,
-                          ),
-
-                          const Divider(),
-
-                          _amountRow(
-                            'Net Position',
-                            netPosition,
-                            bold: true,
-                            color: netPosition >= 0
-                                ? Colors.blue.shade700
-                                : Colors.red.shade700,
+                            GABBranding.businessName,
+                            style: TextStyle(color: Colors.grey.shade600),
                           ),
                         ],
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  _assets(report),
+                  _liabilities(report),
+                  _equity(report),
+                  _control(report),
                 ],
               ),
             ),

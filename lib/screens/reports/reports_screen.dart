@@ -8,6 +8,7 @@ import 'profit_report_screen.dart';
 import 'balance_sheet_screen.dart';
 import 'income_expense_report_screen.dart';
 import 'internal_audit_screen.dart';
+import 'trial_balance_screen.dart';
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
@@ -63,6 +64,17 @@ class ReportsScreen extends StatelessWidget {
               Icons.trending_up,
               Colors.purple,
               const ProfitReportScreen(),
+            ),
+
+            // =========================
+            // TRIAL BALANCE
+            // =========================
+            _reportCard(
+              context,
+              "Trial Balance",
+              Icons.balance,
+              Colors.indigo,
+              const TrialBalanceScreen(),
             ),
 
             // =========================

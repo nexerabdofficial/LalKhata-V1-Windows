@@ -3,10 +3,16 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import '../models/loan.dart';
 import '../models/loan_payment.dart';
+import '../services/ff/ff_journal_service.dart';
+import '../services/ff/ff_loan_posting_service.dart';
 
 class LoanRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFLoanPostingService _ffLoanPostingService =
+      FFLoanPostingService.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // CONSTANTS
@@ -20,19 +26,14 @@ class LoanRepository {
   // ============================================================
 
   DateTime _dateOnly(String value) {
-    return DateTime.parse(
-      _normalizeDate(value),
-    );
+    return DateTime.parse(_normalizeDate(value));
   }
 
   String _normalizeDate(String value) {
     return value.split('T').first;
   }
 
-  int _daysBetween(
-    String fromDate,
-    String toDate,
-  ) {
+  int _daysBetween(String fromDate, String toDate) {
     final from = _dateOnly(fromDate);
     final to = _dateOnly(toDate);
 
@@ -48,158 +49,103 @@ class LoanRepository {
       return 0.0;
     }
 
-    return double.parse(
-      value.toStringAsFixed(2),
-    );
+    return double.parse(value.toStringAsFixed(2));
   }
 
   // ============================================================
   // CREATE LOAN
   // ============================================================
 
-  Future<int> insertLoan(
-    Loan loan,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> insertLoan(Loan loan) async {
+    final Database db = await _databaseHelper.database;
 
-    final loanType =
-        loan.loanType.toUpperCase();
+    final loanType = loan.loanType.toUpperCase();
 
-    if (loanType != 'GIVEN' &&
-        loanType != 'TAKEN') {
-      throw ArgumentError(
-        'Invalid loan type.',
-      );
+    if (loanType != 'GIVEN' && loanType != 'TAKEN') {
+      throw ArgumentError('Invalid loan type.');
     }
 
     if (loan.principalAmount <= 0) {
-      throw ArgumentError(
-        'Loan amount must be greater than zero.',
-      );
+      throw ArgumentError('Loan amount must be greater than zero.');
     }
 
     if (loan.interestRate < 0) {
-      throw ArgumentError(
-        'Interest rate cannot be negative.',
-      );
+      throw ArgumentError('Interest rate cannot be negative.');
     }
 
     if (loan.accountId == null) {
-      throw ArgumentError(
-        'Loan account is required.',
-      );
+      throw ArgumentError('Loan account is required.');
     }
 
-    return await db.transaction(
-      (txn) async {
-        final loanMap =
-            loan.toMap();
+    return await db.transaction((txn) async {
+      final loanMap = loan.toMap();
 
-        loanMap['loan_type'] =
-            loanType;
+      loanMap['loan_type'] = loanType;
 
-        loanMap['accrued_interest'] =
-            0.0;
+      loanMap['accrued_interest'] = 0.0;
 
-        loanMap['last_interest_date'] =
-            _normalizeDate(
-          loan.loanDate,
-        );
+      loanMap['last_interest_date'] = _normalizeDate(loan.loanDate);
 
-        loanMap['paid_amount'] =
-            0.0;
+      loanMap['paid_amount'] = 0.0;
 
-        loanMap['interest_amount'] =
-            0.0;
+      loanMap['interest_amount'] = 0.0;
 
-        loanMap['status'] =
-            'ACTIVE';
+      loanMap['status'] = 'ACTIVE';
 
-        final loanId =
-            await txn.insert(
-          'loans',
-          loanMap,
-          conflictAlgorithm:
-              ConflictAlgorithm.abort,
-        );
+      final loanId = await txn.insert(
+        'loans',
+        loanMap,
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
 
-        // --------------------------------------------------------
-        // ACCOUNT TRANSACTION
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // ACCOUNT TRANSACTION
+      // --------------------------------------------------------
 
-        final createdAt =
-            DateTime.now()
-                .toIso8601String();
+      final createdAt = DateTime.now().toIso8601String();
 
-        final voucherNo =
-            'LOAN-${loanId.toString().padLeft(6, '0')}';
+      final voucherNo = 'LOAN-${loanId.toString().padLeft(6, '0')}';
 
-        if (loanType == 'GIVEN') {
-          await txn.insert(
-            'account_transactions',
-            {
-              'account_id':
-                  loan.accountId,
-              'transaction_type':
-                  'LOAN_GIVEN',
-              'reference_type':
-                  'LOAN',
-              'reference_id':
-                  loanId,
-              'voucher_no':
-                  voucherNo,
-              'debit':
-                  _cleanMoney(
-                loan.principalAmount,
-              ),
-              'credit':
-                  0.0,
-              'transaction_date':
-                  _normalizeDate(
-                loan.loanDate,
-              ),
-              'note':
-                  loan.note,
-              'created_at':
-                  createdAt,
-            },
-          );
-        } else {
-          await txn.insert(
-            'account_transactions',
-            {
-              'account_id':
-                  loan.accountId,
-              'transaction_type':
-                  'LOAN_TAKEN',
-              'reference_type':
-                  'LOAN',
-              'reference_id':
-                  loanId,
-              'voucher_no':
-                  voucherNo,
-              'debit':
-                  0.0,
-              'credit':
-                  _cleanMoney(
-                loan.principalAmount,
-              ),
-              'transaction_date':
-                  _normalizeDate(
-                loan.loanDate,
-              ),
-              'note':
-                  loan.note,
-              'created_at':
-                  createdAt,
-            },
-          );
-        }
+      if (loanType == 'GIVEN') {
+        await txn.insert('account_transactions', {
+          'account_id': loan.accountId,
+          'transaction_type': 'LOAN_GIVEN',
+          'reference_type': 'LOAN',
+          'reference_id': loanId,
+          'voucher_no': voucherNo,
+          'debit': _cleanMoney(loan.principalAmount),
+          'credit': 0.0,
+          'transaction_date': _normalizeDate(loan.loanDate),
+          'note': loan.note,
+          'created_at': createdAt,
+        });
+      } else {
+        await txn.insert('account_transactions', {
+          'account_id': loan.accountId,
+          'transaction_type': 'LOAN_TAKEN',
+          'reference_type': 'LOAN',
+          'reference_id': loanId,
+          'voucher_no': voucherNo,
+          'debit': 0.0,
+          'credit': _cleanMoney(loan.principalAmount),
+          'transaction_date': _normalizeDate(loan.loanDate),
+          'note': loan.note,
+          'created_at': createdAt,
+        });
+      }
 
-        return loanId;
-      },
-    );
+      await _ffLoanPostingService.postLoanWithExecutor(
+        txn,
+        loanId: loanId,
+        loanType: loanType,
+        accountId: loan.accountId!,
+        principalAmount: _cleanMoney(loan.principalAmount),
+        transactionDate: _normalizeDate(loan.loanDate),
+        note: loan.note,
+      );
+
+      return loanId;
+    });
   }
 
   // ============================================================
@@ -207,29 +153,19 @@ class LoanRepository {
   // ============================================================
 
   Future<List<Loan>> getLoans() async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
-    final maps = await db.query(
-      'loans',
-      orderBy: 'id DESC',
-    );
+    final maps = await db.query('loans', orderBy: 'id DESC');
 
-    return maps
-        .map(
-          (map) => Loan.fromMap(map),
-        )
-        .toList();
+    return maps.map((map) => Loan.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET ACTIVE LOANS
   // ============================================================
 
-  Future<List<Loan>>
-      getActiveLoans() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<List<Loan>> getActiveLoans() async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loans',
@@ -238,21 +174,15 @@ class LoanRepository {
       orderBy: 'id DESC',
     );
 
-    return maps
-        .map(
-          (map) => Loan.fromMap(map),
-        )
-        .toList();
+    return maps.map((map) => Loan.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET GIVEN LOANS
   // ============================================================
 
-  Future<List<Loan>>
-      getGivenLoans() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<List<Loan>> getGivenLoans() async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loans',
@@ -261,21 +191,15 @@ class LoanRepository {
       orderBy: 'id DESC',
     );
 
-    return maps
-        .map(
-          (map) => Loan.fromMap(map),
-        )
-        .toList();
+    return maps.map((map) => Loan.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET TAKEN LOANS
   // ============================================================
 
-  Future<List<Loan>>
-      getTakenLoans() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<List<Loan>> getTakenLoans() async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loans',
@@ -284,22 +208,15 @@ class LoanRepository {
       orderBy: 'id DESC',
     );
 
-    return maps
-        .map(
-          (map) => Loan.fromMap(map),
-        )
-        .toList();
+    return maps.map((map) => Loan.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET SINGLE LOAN
   // ============================================================
 
-  Future<Loan?> getLoanById(
-    int id,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<Loan?> getLoanById(int id) async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loans',
@@ -312,9 +229,7 @@ class LoanRepository {
       return null;
     }
 
-    return Loan.fromMap(
-      maps.first,
-    );
+    return Loan.fromMap(maps.first);
   }
 
   // ============================================================
@@ -328,13 +243,11 @@ class LoanRepository {
   // Accrued interest is NOT added to principal.
   // ============================================================
 
-  Future<double>
-      calculateAccruedInterest(
+  Future<double> calculateAccruedInterest(
     int loanId, {
     String? calculationDate,
   }) async {
-    final Database db =
-        await _databaseHelper.database;
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loans',
@@ -344,34 +257,18 @@ class LoanRepository {
     );
 
     if (maps.isEmpty) {
-      throw StateError(
-        'Loan does not exist.',
-      );
+      throw StateError('Loan does not exist.');
     }
 
-    final loan =
-        Loan.fromMap(
-      maps.first,
+    final loan = Loan.fromMap(maps.first);
+
+    final targetDate = _normalizeDate(
+      calculationDate ?? DateTime.now().toIso8601String(),
     );
 
-    final targetDate =
-        _normalizeDate(
-      calculationDate ??
-          DateTime.now()
-              .toIso8601String(),
-    );
+    final lastDate = _normalizeDate(loan.lastInterestDate ?? loan.loanDate);
 
-    final lastDate =
-        _normalizeDate(
-      loan.lastInterestDate ??
-          loan.loanDate,
-    );
-
-    final days =
-        _daysBetween(
-      lastDate,
-      targetDate,
-    );
+    final days = _daysBetween(lastDate, targetDate);
 
     if (days < 0) {
       throw ArgumentError(
@@ -379,90 +276,49 @@ class LoanRepository {
       );
     }
 
-    if (loan.remainingPrincipal <=
-        _epsilon) {
-      return _cleanMoney(
-        loan.accruedInterest,
-      );
+    if (loan.remainingPrincipal <= _epsilon) {
+      return _cleanMoney(loan.accruedInterest);
     }
 
-    if (days == 0 ||
-        loan.interestRate <= 0) {
-      return _cleanMoney(
-        loan.accruedInterest,
-      );
+    if (days == 0 || loan.interestRate <= 0) {
+      return _cleanMoney(loan.accruedInterest);
     }
 
-    final dailyRate =
-        loan.interestRate /
-            100 /
-            365;
+    final dailyRate = loan.interestRate / 100 / 365;
 
-    final newInterest =
-        loan.remainingPrincipal *
-            dailyRate *
-            days;
+    final newInterest = loan.remainingPrincipal * dailyRate * days;
 
-    return _cleanMoney(
-      loan.accruedInterest +
-          newInterest,
-    );
+    return _cleanMoney(loan.accruedInterest + newInterest);
   }
 
   // ============================================================
   // ACCRUE INTEREST INSIDE TRANSACTION
   // ============================================================
 
-  double _accrueInterestInsideTransaction(
-    Loan loan,
-    String calculationDate,
-  ) {
-    final targetDate =
-        _normalizeDate(
-      calculationDate,
-    );
+  double _accrueInterestInsideTransaction(Loan loan, String calculationDate) {
+    final targetDate = _normalizeDate(calculationDate);
 
-    final lastDate =
-        _normalizeDate(
-      loan.lastInterestDate ??
-          loan.loanDate,
-    );
+    final lastDate = _normalizeDate(loan.lastInterestDate ?? loan.loanDate);
 
-    final days =
-        _daysBetween(
-      lastDate,
-      targetDate,
-    );
+    final days = _daysBetween(lastDate, targetDate);
 
     if (days < 0) {
-      throw ArgumentError(
-        'Payment date cannot be before last interest date.',
-      );
+      throw ArgumentError('Payment date cannot be before last interest date.');
     }
 
-    double accrued =
-        loan.accruedInterest;
+    double accrued = loan.accruedInterest;
 
     if (days > 0 &&
-        loan.remainingPrincipal >
-            _epsilon &&
+        loan.remainingPrincipal > _epsilon &&
         loan.interestRate > 0) {
-      final dailyRate =
-          loan.interestRate /
-              100 /
-              365;
+      final dailyRate = loan.interestRate / 100 / 365;
 
-      final newInterest =
-          loan.remainingPrincipal *
-              dailyRate *
-              days;
+      final newInterest = loan.remainingPrincipal * dailyRate * days;
 
       accrued += newInterest;
     }
 
-    return _cleanMoney(
-      accrued,
-    );
+    return _cleanMoney(accrued);
   }
 
   // ============================================================
@@ -484,64 +340,39 @@ class LoanRepository {
     Loan loan,
     String targetDate,
   ) async {
-    final normalizedTarget =
-        _normalizeDate(targetDate);
+    final normalizedTarget = _normalizeDate(targetDate);
 
-    final loanDate =
-        _normalizeDate(
-      loan.loanDate,
-    );
+    final loanDate = _normalizeDate(loan.loanDate);
 
-    if (_daysBetween(
-          loanDate,
-          normalizedTarget,
-        ) <
-        0) {
-      throw ArgumentError(
-        'Calculation date cannot be before loan date.',
-      );
+    if (_daysBetween(loanDate, normalizedTarget) < 0) {
+      throw ArgumentError('Calculation date cannot be before loan date.');
     }
 
-    final payments =
-        await txn.query(
+    final payments = await txn.query(
       'loan_payments',
       where: 'loan_id = ?',
       whereArgs: [loan.id],
-      orderBy:
-          'payment_date ASC, id ASC',
+      orderBy: 'payment_date ASC, id ASC',
     );
 
-    double outstandingPrincipal =
-        loan.principalAmount;
+    double outstandingPrincipal = loan.principalAmount;
 
     double accruedInterest = 0.0;
 
     String currentDate = loanDate;
 
     for (final map in payments) {
-      final payment =
-          LoanPayment.fromMap(map);
+      final payment = LoanPayment.fromMap(map);
 
-      final paymentDate =
-          _normalizeDate(
-        payment.paymentDate,
-      );
+      final paymentDate = _normalizeDate(payment.paymentDate);
 
       // Ignore payments after target date.
-      if (_daysBetween(
-            paymentDate,
-            normalizedTarget,
-          ) <
-          0) {
+      if (_daysBetween(paymentDate, normalizedTarget) < 0) {
         break;
       }
 
       // Safety: invalid payment date.
-      if (_daysBetween(
-            loanDate,
-            paymentDate,
-          ) <
-          0) {
+      if (_daysBetween(loanDate, paymentDate) < 0) {
         continue;
       }
 
@@ -549,49 +380,29 @@ class LoanRepository {
       // ACCRUE INTEREST BEFORE THIS PAYMENT
       // --------------------------------------------------------
 
-      final days =
-          _daysBetween(
-        currentDate,
-        paymentDate,
-      );
+      final days = _daysBetween(currentDate, paymentDate);
 
       if (days > 0 &&
-          outstandingPrincipal >
-              _epsilon &&
+          outstandingPrincipal > _epsilon &&
           loan.interestRate > 0) {
-        final dailyRate =
-            loan.interestRate /
-                100 /
-                365;
+        final dailyRate = loan.interestRate / 100 / 365;
 
-        final newInterest =
-            outstandingPrincipal *
-                dailyRate *
-                days;
+        final newInterest = outstandingPrincipal * dailyRate * days;
 
-        accruedInterest +=
-            newInterest;
+        accruedInterest += newInterest;
       }
 
-      accruedInterest =
-          _cleanMoney(
-        accruedInterest,
-      );
+      accruedInterest = _cleanMoney(accruedInterest);
 
       // --------------------------------------------------------
       // PAYMENT FIRST CLEARS INTEREST
       // --------------------------------------------------------
 
-      accruedInterest -=
-          payment.interestAmount;
+      accruedInterest -= payment.interestAmount;
 
-      accruedInterest =
-          _cleanMoney(
-        accruedInterest,
-      );
+      accruedInterest = _cleanMoney(accruedInterest);
 
-      if (accruedInterest <
-          _epsilon) {
+      if (accruedInterest < _epsilon) {
         accruedInterest = 0.0;
       }
 
@@ -599,24 +410,17 @@ class LoanRepository {
       // REMAINING PAYMENT REDUCES PRINCIPAL
       // --------------------------------------------------------
 
-      outstandingPrincipal -=
-          payment.principalAmount;
+      outstandingPrincipal -= payment.principalAmount;
 
-      outstandingPrincipal =
-          _cleanMoney(
-        outstandingPrincipal,
-      );
+      outstandingPrincipal = _cleanMoney(outstandingPrincipal);
 
-      if (outstandingPrincipal <
-          _epsilon) {
+      if (outstandingPrincipal < _epsilon) {
         outstandingPrincipal = 0.0;
       }
 
-      currentDate =
-          paymentDate;
+      currentDate = paymentDate;
 
-      if (outstandingPrincipal <=
-          _epsilon) {
+      if (outstandingPrincipal <= _epsilon) {
         break;
       }
     }
@@ -625,69 +429,42 @@ class LoanRepository {
     // ACCRUE FROM LAST PAYMENT UNTIL TARGET DATE
     // ----------------------------------------------------------
 
-    final remainingDays =
-        _daysBetween(
-      currentDate,
-      normalizedTarget,
-    );
+    final remainingDays = _daysBetween(currentDate, normalizedTarget);
 
     if (remainingDays > 0 &&
-        outstandingPrincipal >
-            _epsilon &&
+        outstandingPrincipal > _epsilon &&
         loan.interestRate > 0) {
-      final dailyRate =
-          loan.interestRate /
-              100 /
-              365;
+      final dailyRate = loan.interestRate / 100 / 365;
 
-      accruedInterest +=
-          outstandingPrincipal *
-              dailyRate *
-              remainingDays;
+      accruedInterest += outstandingPrincipal * dailyRate * remainingDays;
     }
 
-    return _cleanMoney(
-      accruedInterest,
-    );
+    return _cleanMoney(accruedInterest);
   }
 
   // ============================================================
   // GET PAYMENTS
   // ============================================================
 
-  Future<List<LoanPayment>>
-      getLoanPayments(
-    int loanId,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<List<LoanPayment>> getLoanPayments(int loanId) async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loan_payments',
       where: 'loan_id = ?',
       whereArgs: [loanId],
-      orderBy:
-          'payment_date ASC, id ASC',
+      orderBy: 'payment_date ASC, id ASC',
     );
 
-    return maps
-        .map(
-          (map) =>
-              LoanPayment.fromMap(map),
-        )
-        .toList();
+    return maps.map((map) => LoanPayment.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET SINGLE PAYMENT
   // ============================================================
 
-  Future<LoanPayment?>
-      getLoanPaymentById(
-    int id,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<LoanPayment?> getLoanPaymentById(int id) async {
+    final Database db = await _databaseHelper.database;
 
     final maps = await db.query(
       'loan_payments',
@@ -700,9 +477,7 @@ class LoanRepository {
       return null;
     }
 
-    return LoanPayment.fromMap(
-      maps.first,
-    );
+    return LoanPayment.fromMap(maps.first);
   }
 
   // ============================================================
@@ -716,716 +491,492 @@ class LoanRepository {
   // 2. Remaining amount → Principal
   // ============================================================
 
-  Future<int> insertLoanPayment(
-    LoanPayment payment,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> insertLoanPayment(LoanPayment payment) async {
+    final Database db = await _databaseHelper.database;
 
-    return await db.transaction(
-      (txn) async {
-        // ------------------------------------------------------
-        // LOAD LOAN
-        // ------------------------------------------------------
+    return await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // LOAD LOAN
+      // ------------------------------------------------------
 
-        final loanMaps =
-            await txn.query(
-          'loans',
-          where: 'id = ?',
-          whereArgs: [
-            payment.loanId,
-          ],
-          limit: 1,
+      final loanMaps = await txn.query(
+        'loans',
+        where: 'id = ?',
+        whereArgs: [payment.loanId],
+        limit: 1,
+      );
+
+      if (loanMaps.isEmpty) {
+        throw StateError('Loan does not exist.');
+      }
+
+      final loan = Loan.fromMap(loanMaps.first);
+
+      // ------------------------------------------------------
+      // LOAN STATUS
+      // ------------------------------------------------------
+
+      if (loan.status == 'PAID') {
+        throw StateError('This loan is already fully settled.');
+      }
+
+      // ------------------------------------------------------
+      // PAYMENT DATE
+      // ------------------------------------------------------
+
+      final paymentDate = _normalizeDate(payment.paymentDate);
+
+      if (_daysBetween(loan.loanDate, paymentDate) < 0) {
+        throw ArgumentError('Payment date cannot be before loan date.');
+      }
+
+      final lastInterestDate = _normalizeDate(
+        loan.lastInterestDate ?? loan.loanDate,
+      );
+
+      if (_daysBetween(lastInterestDate, paymentDate) < 0) {
+        throw ArgumentError(
+          'Payment date cannot be before last interest date.',
         );
+      }
 
-        if (loanMaps.isEmpty) {
-          throw StateError(
-            'Loan does not exist.',
-          );
-        }
+      // ------------------------------------------------------
+      // VALIDATE PAYMENT
+      // ------------------------------------------------------
 
-        final loan =
-            Loan.fromMap(
-          loanMaps.first,
-        );
+      if (payment.amount <= 0) {
+        throw ArgumentError('Payment amount must be greater than zero.');
+      }
 
-        // ------------------------------------------------------
-        // LOAN STATUS
-        // ------------------------------------------------------
+      if (payment.accountId == null) {
+        throw ArgumentError('Payment account is required.');
+      }
 
-        if (loan.status == 'PAID') {
-          throw StateError(
-            'This loan is already fully settled.',
-          );
-        }
+      // ------------------------------------------------------
+      // CURRENT ACCRUED INTEREST
+      // ------------------------------------------------------
 
-        // ------------------------------------------------------
-        // PAYMENT DATE
-        // ------------------------------------------------------
+      final currentAccrued = await _calculateAccruedInterestFromHistory(
+        txn,
+        loan,
+        paymentDate,
+      );
 
-        final paymentDate =
-            _normalizeDate(
-          payment.paymentDate,
-        );
+      final remainingPrincipal = loan.remainingPrincipal;
 
-        if (_daysBetween(
-              loan.loanDate,
-              paymentDate,
-            ) <
-            0) {
-          throw ArgumentError(
-            'Payment date cannot be before loan date.',
-          );
-        }
+      final totalOutstanding = remainingPrincipal + currentAccrued;
 
-        final lastInterestDate =
-            _normalizeDate(
-          loan.lastInterestDate ??
-              loan.loanDate,
-        );
+      // ------------------------------------------------------
+      // PAYMENT CANNOT EXCEED OUTSTANDING
+      // ------------------------------------------------------
 
-        if (_daysBetween(
-              lastInterestDate,
-              paymentDate,
-            ) <
-            0) {
-          throw ArgumentError(
-            'Payment date cannot be before last interest date.',
-          );
-        }
+      if (payment.amount > totalOutstanding + _moneyTolerance) {
+        throw ArgumentError('Payment exceeds total outstanding amount.');
+      }
 
-        // ------------------------------------------------------
-        // VALIDATE PAYMENT
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // AUTOMATIC PAYMENT ALLOCATION
+      //
+      // INTEREST FIRST
+      // ------------------------------------------------------
 
-        if (payment.amount <= 0) {
-          throw ArgumentError(
-            'Payment amount must be greater than zero.',
-          );
-        }
+      final interestPaid = _cleanMoney(
+        payment.amount <= currentAccrued ? payment.amount : currentAccrued,
+      );
 
-        if (payment.accountId == null) {
-          throw ArgumentError(
-            'Payment account is required.',
-          );
-        }
+      final principalPaid = _cleanMoney(payment.amount - interestPaid);
 
-        // ------------------------------------------------------
-        // CURRENT ACCRUED INTEREST
-        // ------------------------------------------------------
+      if (principalPaid > remainingPrincipal + _moneyTolerance) {
+        throw ArgumentError('Principal payment exceeds remaining principal.');
+      }
 
-        final currentAccrued =
-            await _calculateAccruedInterestFromHistory(
-          txn,
-          loan,
-          paymentDate,
-        );
+      // ------------------------------------------------------
+      // NEW LOAN STATE
+      // ------------------------------------------------------
 
-        final remainingPrincipal =
-            loan.remainingPrincipal;
+      final newPaidAmount = _cleanMoney(loan.paidAmount + principalPaid);
 
-        final totalOutstanding =
-            remainingPrincipal +
-                currentAccrued;
+      double newRemainingPrincipal = loan.principalAmount - newPaidAmount;
 
-        // ------------------------------------------------------
-        // PAYMENT CANNOT EXCEED OUTSTANDING
-        // ------------------------------------------------------
+      if (newRemainingPrincipal.abs() < _moneyTolerance) {
+        newRemainingPrincipal = 0.0;
+      }
 
-        if (payment.amount >
-            totalOutstanding +
-                _moneyTolerance) {
-          throw ArgumentError(
-            'Payment exceeds total outstanding amount.',
-          );
-        }
+      double newAccruedInterest = _cleanMoney(currentAccrued - interestPaid);
 
-        // ------------------------------------------------------
-        // AUTOMATIC PAYMENT ALLOCATION
-        //
-        // INTEREST FIRST
-        // ------------------------------------------------------
+      if (newAccruedInterest.abs() < _moneyTolerance) {
+        newAccruedInterest = 0.0;
+      }
 
-        final interestPaid =
-            _cleanMoney(
-          payment.amount <=
-                  currentAccrued
-              ? payment.amount
-              : currentAccrued,
-        );
+      final newInterestAmount = _cleanMoney(loan.interestAmount + interestPaid);
 
-        final principalPaid =
-            _cleanMoney(
-          payment.amount -
-              interestPaid,
-        );
+      // ------------------------------------------------------
+      // STATUS
+      // ------------------------------------------------------
 
-        if (principalPaid >
-            remainingPrincipal +
-                _moneyTolerance) {
-          throw ArgumentError(
-            'Principal payment exceeds remaining principal.',
-          );
-        }
+      String newStatus;
 
-        // ------------------------------------------------------
-        // NEW LOAN STATE
-        // ------------------------------------------------------
+      if (newRemainingPrincipal <= _epsilon && newAccruedInterest <= _epsilon) {
+        newStatus = 'PAID';
+      } else if (newPaidAmount > _epsilon) {
+        newStatus = 'PARTIAL';
+      } else {
+        newStatus = 'ACTIVE';
+      }
 
-        final newPaidAmount =
-            _cleanMoney(
-          loan.paidAmount +
-              principalPaid,
-        );
+      // ------------------------------------------------------
+      // CREATE PAYMENT MAP
+      // ------------------------------------------------------
 
-        double newRemainingPrincipal =
-            loan.principalAmount -
-                newPaidAmount;
+      final paymentMap = payment.toMap();
 
-        if (newRemainingPrincipal
-            .abs() <
-            _moneyTolerance) {
-          newRemainingPrincipal = 0.0;
-        }
+      paymentMap['payment_date'] = paymentDate;
 
-        double newAccruedInterest =
-            _cleanMoney(
-          currentAccrued -
-              interestPaid,
-        );
+      paymentMap['amount'] = _cleanMoney(payment.amount);
 
-        if (newAccruedInterest.abs() <
-            _moneyTolerance) {
-          newAccruedInterest = 0.0;
-        }
+      paymentMap['interest_amount'] = interestPaid;
 
-        final newInterestAmount =
-            _cleanMoney(
-          loan.interestAmount +
-              interestPaid,
-        );
+      paymentMap['principal_amount'] = principalPaid;
 
-        // ------------------------------------------------------
-        // STATUS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // INSERT PAYMENT
+      // ------------------------------------------------------
 
-        String newStatus;
+      final paymentId = await txn.insert(
+        'loan_payments',
+        paymentMap,
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
 
-        if (newRemainingPrincipal <=
-                _epsilon &&
-            newAccruedInterest <=
-                _epsilon) {
-          newStatus = 'PAID';
-        } else if (newPaidAmount >
-            _epsilon) {
-          newStatus = 'PARTIAL';
-        } else {
-          newStatus = 'ACTIVE';
-        }
+      // ------------------------------------------------------
+      // UPDATE LOAN
+      // ------------------------------------------------------
 
-        // ------------------------------------------------------
-        // CREATE PAYMENT MAP
-        // ------------------------------------------------------
+      await txn.update(
+        'loans',
+        {
+          'paid_amount': newPaidAmount,
+          'interest_amount': newInterestAmount,
+          'accrued_interest': newAccruedInterest,
+          'last_interest_date': paymentDate,
+          'status': newStatus,
+        },
+        where: 'id = ?',
+        whereArgs: [loan.id],
+      );
 
-        final paymentMap =
-            payment.toMap();
+      // ------------------------------------------------------
+      // ACCOUNT TRANSACTION
+      // ------------------------------------------------------
 
-        paymentMap['payment_date'] =
-            paymentDate;
+      final createdAt = DateTime.now().toIso8601String();
 
-        paymentMap['amount'] =
-            _cleanMoney(
-          payment.amount,
-        );
+      final voucherNo =
+          payment.voucherNo ?? 'LP-${paymentId.toString().padLeft(6, '0')}';
 
-        paymentMap['interest_amount'] =
-            interestPaid;
+      if (loan.isGiven) {
+        await txn.insert('account_transactions', {
+          'account_id': payment.accountId,
+          'transaction_type': 'LOAN_PAYMENT_RECEIVED',
+          'reference_type': 'LOAN_PAYMENT',
+          'reference_id': paymentId,
+          'voucher_no': voucherNo,
+          'debit': 0.0,
+          'credit': _cleanMoney(payment.amount),
+          'transaction_date': paymentDate,
+          'note': payment.note,
+          'created_at': createdAt,
+        });
+      } else {
+        await txn.insert('account_transactions', {
+          'account_id': payment.accountId,
+          'transaction_type': 'LOAN_PAYMENT',
+          'reference_type': 'LOAN_PAYMENT',
+          'reference_id': paymentId,
+          'voucher_no': voucherNo,
+          'debit': _cleanMoney(payment.amount),
+          'credit': 0.0,
+          'transaction_date': paymentDate,
+          'note': payment.note,
+          'created_at': createdAt,
+        });
+      }
 
-        paymentMap['principal_amount'] =
-            principalPaid;
+      // ------------------------------------------------------
+      // INTEREST → INCOME / EXPENSE
+      // ------------------------------------------------------
 
-        // ------------------------------------------------------
-        // INSERT PAYMENT
-        // ------------------------------------------------------
-
-        final paymentId =
-            await txn.insert(
-          'loan_payments',
-          paymentMap,
-          conflictAlgorithm:
-              ConflictAlgorithm.abort,
-        );
-
-        // ------------------------------------------------------
-        // UPDATE LOAN
-        // ------------------------------------------------------
-
-        await txn.update(
-          'loans',
-          {
-            'paid_amount':
-                newPaidAmount,
-            'interest_amount':
-                newInterestAmount,
-            'accrued_interest':
-                newAccruedInterest,
-            'last_interest_date':
-                paymentDate,
-            'status':
-                newStatus,
-          },
-          where: 'id = ?',
-          whereArgs: [
-            loan.id,
-          ],
-        );
-
-        // ------------------------------------------------------
-        // ACCOUNT TRANSACTION
-        // ------------------------------------------------------
-
-        final createdAt =
-            DateTime.now()
-                .toIso8601String();
-
-        final voucherNo =
-            payment.voucherNo ??
-                'LP-${paymentId.toString().padLeft(6, '0')}';
+      if (interestPaid > _epsilon) {
+        final interestVoucher =
+            'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
 
         if (loan.isGiven) {
-          await txn.insert(
-            'account_transactions',
-            {
-              'account_id':
-                  payment.accountId,
-              'transaction_type':
-                  'LOAN_PAYMENT_RECEIVED',
-              'reference_type':
-                  'LOAN_PAYMENT',
-              'reference_id':
-                  paymentId,
-              'voucher_no':
-                  voucherNo,
-              'debit':
-                  0.0,
-              'credit':
-                  _cleanMoney(
-                payment.amount,
-              ),
-              'transaction_date':
-                  paymentDate,
-              'note':
-                  payment.note,
-              'created_at':
-                  createdAt,
-            },
-          );
+          await txn.insert('incomes', {
+            'category': 'Loan Interest',
+            'amount': interestPaid,
+            'account_id': null,
+            'income_date': paymentDate,
+            'note': payment.note ?? 'Loan interest received',
+            'created_at': createdAt,
+            'voucher_no': interestVoucher,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
         } else {
-          await txn.insert(
-            'account_transactions',
-            {
-              'account_id':
-                  payment.accountId,
-              'transaction_type':
-                  'LOAN_PAYMENT',
-              'reference_type':
-                  'LOAN_PAYMENT',
-              'reference_id':
-                  paymentId,
-              'voucher_no':
-                  voucherNo,
-              'debit':
-                  _cleanMoney(
-                payment.amount,
-              ),
-              'credit':
-                  0.0,
-              'transaction_date':
-                  paymentDate,
-              'note':
-                  payment.note,
-              'created_at':
-                  createdAt,
-            },
-          );
+          await txn.insert('expenses', {
+            'category': 'Loan Interest',
+            'amount': interestPaid,
+            'account_id': null,
+            'expense_date': paymentDate,
+            'note': payment.note ?? 'Loan interest paid',
+            'created_at': createdAt,
+            'voucher_no': interestVoucher,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
         }
+      }
 
-        // ------------------------------------------------------
-        // INTEREST → INCOME / EXPENSE
-        // ------------------------------------------------------
+      await _ffLoanPostingService.postLoanPaymentWithExecutor(
+        txn,
+        paymentId: paymentId,
+        loanId: loan.id!,
+        isGiven: loan.isGiven,
+        accountId: payment.accountId!,
+        totalAmount: _cleanMoney(payment.amount),
+        principalAmount: principalPaid,
+        interestAmount: interestPaid,
+        voucherNo: voucherNo,
+        transactionDate: paymentDate,
+        note: payment.note,
+      );
 
-        if (interestPaid >
-            _epsilon) {
-          final interestVoucher =
-              'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
-
-          if (loan.isGiven) {
-            await txn.insert(
-              'incomes',
-              {
-                'category':
-                    'Loan Interest',
-                'amount':
-                    interestPaid,
-                'account_id':
-                    null,
-                'income_date':
-                    paymentDate,
-                'note':
-                    payment.note ??
-                        'Loan interest received',
-                'created_at':
-                    createdAt,
-                'voucher_no':
-                    interestVoucher,
-              },
-              conflictAlgorithm:
-                  ConflictAlgorithm.abort,
-            );
-          } else {
-            await txn.insert(
-              'expenses',
-              {
-                'category':
-                    'Loan Interest',
-                'amount':
-                    interestPaid,
-                'account_id':
-                    null,
-                'expense_date':
-                    paymentDate,
-                'note':
-                    payment.note ??
-                        'Loan interest paid',
-                'created_at':
-                    createdAt,
-                'voucher_no':
-                    interestVoucher,
-              },
-              conflictAlgorithm:
-                  ConflictAlgorithm.abort,
-            );
-          }
-        }
-
-        return paymentId;
-      },
-    );
+      return paymentId;
+    });
   }
 
   // ============================================================
   // DELETE LOAN PAYMENT
   // ============================================================
 
-  Future<void> deleteLoanPayment(
-    int paymentId,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<void> deleteLoanPayment(int paymentId) async {
+    final Database db = await _databaseHelper.database;
 
-    await db.transaction(
-      (txn) async {
-        // ------------------------------------------------------
-        // LOAD PAYMENT
-        // ------------------------------------------------------
+    await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // LOAD PAYMENT
+      // ------------------------------------------------------
 
-        final paymentMaps =
-            await txn.query(
-          'loan_payments',
-          where: 'id = ?',
-          whereArgs: [paymentId],
-          limit: 1,
-        );
+      final paymentMaps = await txn.query(
+        'loan_payments',
+        where: 'id = ?',
+        whereArgs: [paymentId],
+        limit: 1,
+      );
 
-        if (paymentMaps.isEmpty) {
-          throw StateError(
-            'Loan payment not found.',
-          );
-        }
+      if (paymentMaps.isEmpty) {
+        throw StateError('Loan payment not found.');
+      }
 
-        final deletedPayment =
-            LoanPayment.fromMap(
-          paymentMaps.first,
-        );
+      final deletedPayment = LoanPayment.fromMap(paymentMaps.first);
 
-        // ------------------------------------------------------
-        // LOAD LOAN
-        // ------------------------------------------------------
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'LOAN_PAYMENT',
+        referenceId: paymentId,
+      );
 
-        final loanMaps =
-            await txn.query(
-          'loans',
-          where: 'id = ?',
-          whereArgs: [
-            deletedPayment.loanId,
-          ],
-          limit: 1,
-        );
+      // ------------------------------------------------------
+      // LOAD LOAN
+      // ------------------------------------------------------
 
-        if (loanMaps.isEmpty) {
-          throw StateError(
-            'Loan does not exist.',
-          );
-        }
+      final loanMaps = await txn.query(
+        'loans',
+        where: 'id = ?',
+        whereArgs: [deletedPayment.loanId],
+        limit: 1,
+      );
 
-        final loan =
-            Loan.fromMap(
-          loanMaps.first,
-        );
+      if (loanMaps.isEmpty) {
+        throw StateError('Loan does not exist.');
+      }
 
-        // ------------------------------------------------------
-        // DELETE ACCOUNT TRANSACTION
-        // ------------------------------------------------------
+      final loan = Loan.fromMap(loanMaps.first);
 
-        await txn.delete(
-          'account_transactions',
-          where: '''
+      // ------------------------------------------------------
+      // DELETE ACCOUNT TRANSACTION
+      // ------------------------------------------------------
+
+      await txn.delete(
+        'account_transactions',
+        where: '''
             reference_type = ?
             AND reference_id = ?
             AND transaction_type IN (?, ?)
           ''',
-          whereArgs: [
-            'LOAN_PAYMENT',
-            paymentId,
-            'LOAN_PAYMENT_RECEIVED',
-            'LOAN_PAYMENT',
-          ],
-        );
+        whereArgs: [
+          'LOAN_PAYMENT',
+          paymentId,
+          'LOAN_PAYMENT_RECEIVED',
+          'LOAN_PAYMENT',
+        ],
+      );
 
-        // ------------------------------------------------------
-        // DELETE INTEREST INCOME
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE INTEREST INCOME
+      // ------------------------------------------------------
 
-        final interestVoucher =
-            'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
+      final interestVoucher =
+          'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
 
-        await txn.delete(
-          'incomes',
-          where: 'voucher_no = ?',
-          whereArgs: [
-            interestVoucher,
-          ],
-        );
+      await txn.delete(
+        'incomes',
+        where: 'voucher_no = ?',
+        whereArgs: [interestVoucher],
+      );
 
-        // ------------------------------------------------------
-        // DELETE INTEREST EXPENSE
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE INTEREST EXPENSE
+      // ------------------------------------------------------
 
-        await txn.delete(
-          'expenses',
-          where: 'voucher_no = ?',
-          whereArgs: [
-            interestVoucher,
-          ],
-        );
+      await txn.delete(
+        'expenses',
+        where: 'voucher_no = ?',
+        whereArgs: [interestVoucher],
+      );
 
-        // ------------------------------------------------------
-        // DELETE PAYMENT
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE PAYMENT
+      // ------------------------------------------------------
 
-        await txn.delete(
-          'loan_payments',
-          where: 'id = ?',
-          whereArgs: [
-            paymentId,
-          ],
-        );
+      await txn.delete(
+        'loan_payments',
+        where: 'id = ?',
+        whereArgs: [paymentId],
+      );
 
-        // ------------------------------------------------------
-        // LOAD REMAINING PAYMENTS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // LOAD REMAINING PAYMENTS
+      // ------------------------------------------------------
 
-        final remainingPayments =
-            await txn.query(
-          'loan_payments',
-          where: 'loan_id = ?',
-          whereArgs: [
-            deletedPayment.loanId,
-          ],
-          orderBy:
-              'payment_date ASC, id ASC',
-        );
+      final remainingPayments = await txn.query(
+        'loan_payments',
+        where: 'loan_id = ?',
+        whereArgs: [deletedPayment.loanId],
+        orderBy: 'payment_date ASC, id ASC',
+      );
 
-        // ------------------------------------------------------
-        // REBUILD LOAN STATE
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // REBUILD LOAN STATE
+      // ------------------------------------------------------
 
-        double paidPrincipal = 0.0;
-        double actualInterest = 0.0;
-        double accruedInterest = 0.0;
+      double paidPrincipal = 0.0;
+      double actualInterest = 0.0;
+      double accruedInterest = 0.0;
 
-        String lastInterestDate =
-            _normalizeDate(
-          loan.loanDate,
-        );
+      String lastInterestDate = _normalizeDate(loan.loanDate);
 
-        for (final map
-            in remainingPayments) {
-          final p =
-              LoanPayment.fromMap(map);
+      for (final map in remainingPayments) {
+        final p = LoanPayment.fromMap(map);
 
-          final paymentDate =
-              _normalizeDate(
-            p.paymentDate,
-          );
+        final paymentDate = _normalizeDate(p.paymentDate);
 
-          final remainingPrincipalBefore =
-              loan.principalAmount -
-                  paidPrincipal;
+        final remainingPrincipalBefore = loan.principalAmount - paidPrincipal;
 
-          final days =
-              _daysBetween(
-            lastInterestDate,
-            paymentDate,
-          );
+        final days = _daysBetween(lastInterestDate, paymentDate);
 
-          if (days < 0) {
-            throw StateError(
-              'Invalid payment history.',
-            );
-          }
-
-          // ----------------------------------------------------
-          // ACCRUE INTEREST
-          // ----------------------------------------------------
-
-          if (days > 0 &&
-              remainingPrincipalBefore >
-                  _epsilon &&
-              loan.interestRate > 0) {
-            final dailyRate =
-                loan.interestRate /
-                    100 /
-                    365;
-
-            final newInterest =
-                remainingPrincipalBefore *
-                    dailyRate *
-                    days;
-
-            accruedInterest +=
-                newInterest;
-          }
-
-          accruedInterest =
-              _cleanMoney(
-            accruedInterest,
-          );
-
-          // ----------------------------------------------------
-          // PRINCIPAL PAYMENT
-          // ----------------------------------------------------
-
-          paidPrincipal +=
-              p.principalAmount;
-
-          paidPrincipal =
-              _cleanMoney(
-            paidPrincipal,
-          );
-
-          // ----------------------------------------------------
-          // INTEREST PAYMENT
-          // ----------------------------------------------------
-
-          accruedInterest -=
-              p.interestAmount;
-
-          accruedInterest =
-              _cleanMoney(
-            accruedInterest,
-          );
-
-          if (accruedInterest <
-              _epsilon) {
-            accruedInterest = 0.0;
-          }
-
-          actualInterest +=
-              p.interestAmount;
-
-          actualInterest =
-              _cleanMoney(
-            actualInterest,
-          );
-
-          lastInterestDate =
-              paymentDate;
+        if (days < 0) {
+          throw StateError('Invalid payment history.');
         }
 
-        // ------------------------------------------------------
-        // NEW STATUS
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // ACCRUE INTEREST
+        // ----------------------------------------------------
 
-        double remainingPrincipal =
-            loan.principalAmount -
-                paidPrincipal;
+        if (days > 0 &&
+            remainingPrincipalBefore > _epsilon &&
+            loan.interestRate > 0) {
+          final dailyRate = loan.interestRate / 100 / 365;
 
-        remainingPrincipal =
-            _cleanMoney(
-          remainingPrincipal,
-        );
+          final newInterest = remainingPrincipalBefore * dailyRate * days;
 
-        String newStatus;
-
-        if (remainingPrincipal <=
-                _epsilon &&
-            accruedInterest <=
-                _epsilon) {
-          newStatus = 'PAID';
-        } else if (paidPrincipal >
-            _epsilon) {
-          newStatus = 'PARTIAL';
-        } else {
-          newStatus = 'ACTIVE';
+          accruedInterest += newInterest;
         }
 
-        // ------------------------------------------------------
-        // UPDATE LOAN
-        // ------------------------------------------------------
+        accruedInterest = _cleanMoney(accruedInterest);
 
-        await txn.update(
-          'loans',
-          {
-            'paid_amount':
-                paidPrincipal,
-            'interest_amount':
-                actualInterest,
-            'accrued_interest':
-                accruedInterest,
-            'last_interest_date':
-                lastInterestDate,
-            'status':
-                newStatus,
-          },
-          where: 'id = ?',
-          whereArgs: [
-            loan.id,
-          ],
-        );
-      },
-    );
+        // ----------------------------------------------------
+        // PRINCIPAL PAYMENT
+        // ----------------------------------------------------
+
+        paidPrincipal += p.principalAmount;
+
+        paidPrincipal = _cleanMoney(paidPrincipal);
+
+        // ----------------------------------------------------
+        // INTEREST PAYMENT
+        // ----------------------------------------------------
+
+        accruedInterest -= p.interestAmount;
+
+        accruedInterest = _cleanMoney(accruedInterest);
+
+        if (accruedInterest < _epsilon) {
+          accruedInterest = 0.0;
+        }
+
+        actualInterest += p.interestAmount;
+
+        actualInterest = _cleanMoney(actualInterest);
+
+        lastInterestDate = paymentDate;
+      }
+
+      // ------------------------------------------------------
+      // NEW STATUS
+      // ------------------------------------------------------
+
+      double remainingPrincipal = loan.principalAmount - paidPrincipal;
+
+      remainingPrincipal = _cleanMoney(remainingPrincipal);
+
+      String newStatus;
+
+      if (remainingPrincipal <= _epsilon && accruedInterest <= _epsilon) {
+        newStatus = 'PAID';
+      } else if (paidPrincipal > _epsilon) {
+        newStatus = 'PARTIAL';
+      } else {
+        newStatus = 'ACTIVE';
+      }
+
+      // ------------------------------------------------------
+      // UPDATE LOAN
+      // ------------------------------------------------------
+
+      await txn.update(
+        'loans',
+        {
+          'paid_amount': paidPrincipal,
+          'interest_amount': actualInterest,
+          'accrued_interest': accruedInterest,
+          'last_interest_date': lastInterestDate,
+          'status': newStatus,
+        },
+        where: 'id = ?',
+        whereArgs: [loan.id],
+      );
+    });
   }
 
   // ============================================================
   // UPDATE LOAN
   // ============================================================
 
-  Future<int> updateLoan(
-    Loan loan,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<int> updateLoan(Loan loan) async {
+    final Database db = await _databaseHelper.database;
 
-    if (loan.id == null ||
-        loan.id! <= 0) {
-      throw ArgumentError(
-        'Invalid loan ID.',
-      );
+    if (loan.id == null || loan.id! <= 0) {
+      throw ArgumentError('Invalid loan ID.');
     }
 
-    final existingMaps =
-        await db.query(
+    final existingMaps = await db.query(
       'loans',
       where: 'id = ?',
       whereArgs: [loan.id],
@@ -1433,33 +984,24 @@ class LoanRepository {
     );
 
     if (existingMaps.isEmpty) {
-      throw StateError(
-        'Loan does not exist.',
-      );
+      throw StateError('Loan does not exist.');
     }
 
-    final existing =
-        Loan.fromMap(
-      existingMaps.first,
-    );
+    final existing = Loan.fromMap(existingMaps.first);
 
     // ----------------------------------------------------------
     // DO NOT ALLOW ACCOUNT CHANGE
     // ----------------------------------------------------------
 
-    if (existing.accountId !=
-        loan.accountId) {
-      throw ArgumentError(
-        'Loan account cannot be changed after creation.',
-      );
+    if (existing.accountId != loan.accountId) {
+      throw ArgumentError('Loan account cannot be changed after creation.');
     }
 
     // ----------------------------------------------------------
     // DO NOT ALLOW PRINCIPAL CHANGE IF PAYMENTS EXIST
     // ----------------------------------------------------------
 
-    final paymentCountResult =
-        await db.rawQuery(
+    final paymentCountResult = await db.rawQuery(
       '''
       SELECT COUNT(*) AS total
       FROM loan_payments
@@ -1469,15 +1011,10 @@ class LoanRepository {
     );
 
     final paymentCount =
-        (paymentCountResult.first['total']
-                    as num?)
-                ?.toInt() ??
-            0;
+        (paymentCountResult.first['total'] as num?)?.toInt() ?? 0;
 
     if (paymentCount > 0 &&
-        (existing.principalAmount -
-                    loan.principalAmount)
-                .abs() >
+        (existing.principalAmount - loan.principalAmount).abs() >
             _moneyTolerance) {
       throw ArgumentError(
         'Loan principal cannot be changed after payments have been recorded.',
@@ -1488,169 +1025,157 @@ class LoanRepository {
     // BASIC VALIDATION
     // ----------------------------------------------------------
 
-    final loanType =
-        loan.loanType.toUpperCase();
+    final loanType = loan.loanType.toUpperCase();
 
-    if (loanType != 'GIVEN' &&
-        loanType != 'TAKEN') {
-      throw ArgumentError(
-        'Invalid loan type.',
-      );
+    if (loanType != 'GIVEN' && loanType != 'TAKEN') {
+      throw ArgumentError('Invalid loan type.');
     }
 
     if (loan.principalAmount <= 0) {
-      throw ArgumentError(
-        'Loan amount must be greater than zero.',
-      );
+      throw ArgumentError('Loan amount must be greater than zero.');
     }
 
     if (loan.interestRate < 0) {
-      throw ArgumentError(
-        'Interest rate cannot be negative.',
-      );
+      throw ArgumentError('Interest rate cannot be negative.');
     }
 
     if (loan.accountId == null) {
-      throw ArgumentError(
-        'Loan account is required.',
-      );
+      throw ArgumentError('Loan account is required.');
     }
 
-    return await db.update(
-      'loans',
-      {
-        'loan_type':
-            loanType,
-        'person_name':
-            loan.personName,
-        'phone':
-            loan.phone,
-        'principal_amount':
-            loan.principalAmount,
-        'interest_rate':
-            loan.interestRate,
-        'interest_type':
-            loan.interestType,
-        'loan_date':
-            _normalizeDate(
-          loan.loanDate,
-        ),
-        'due_date':
-            loan.dueDate,
-        'account_id':
-            existing.accountId,
-        'payment_method':
-            loan.paymentMethod,
-        'note':
-            loan.note,
-      },
-      where: 'id = ?',
-      whereArgs: [
-        loan.id,
-      ],
-    );
+    return await db.transaction((txn) async {
+      final updated = await txn.update(
+        'loans',
+        {
+          'loan_type': loanType,
+          'person_name': loan.personName,
+          'phone': loan.phone,
+          'principal_amount': loan.principalAmount,
+          'interest_rate': loan.interestRate,
+          'interest_type': loan.interestType,
+          'loan_date': _normalizeDate(loan.loanDate),
+          'due_date': loan.dueDate,
+          'account_id': existing.accountId,
+          'payment_method': loan.paymentMethod,
+          'note': loan.note,
+        },
+        where: 'id = ?',
+        whereArgs: [loan.id],
+      );
+
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'LOAN',
+        referenceId: loan.id!,
+      );
+
+      await _ffLoanPostingService.postLoanWithExecutor(
+        txn,
+        loanId: loan.id!,
+        loanType: loanType,
+        accountId: existing.accountId!,
+        principalAmount: _cleanMoney(loan.principalAmount),
+        transactionDate: _normalizeDate(loan.loanDate),
+        note: loan.note,
+      );
+
+      return updated;
+    });
   }
 
   // ============================================================
   // DELETE LOAN
   // ============================================================
 
-  Future<void> deleteLoan(
-    int loanId,
-  ) async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<void> deleteLoan(int loanId) async {
+    final Database db = await _databaseHelper.database;
 
-    await db.transaction(
-      (txn) async {
-        // ------------------------------------------------------
-        // VERIFY LOAN
-        // ------------------------------------------------------
+    await db.transaction((txn) async {
+      // ------------------------------------------------------
+      // VERIFY LOAN
+      // ------------------------------------------------------
 
-        final loanMaps =
-            await txn.query(
-          'loans',
-          where: 'id = ?',
-          whereArgs: [loanId],
-          limit: 1,
+      final loanMaps = await txn.query(
+        'loans',
+        where: 'id = ?',
+        whereArgs: [loanId],
+        limit: 1,
+      );
+
+      if (loanMaps.isEmpty) {
+        throw StateError('Loan does not exist.');
+      }
+
+      // ------------------------------------------------------
+      // LOAD PAYMENT IDS
+      // ------------------------------------------------------
+
+      final paymentMaps = await txn.query(
+        'loan_payments',
+        columns: ['id'],
+        where: 'loan_id = ?',
+        whereArgs: [loanId],
+      );
+
+      final paymentIds = paymentMaps
+          .map((map) => (map['id'] as num).toInt())
+          .toList();
+
+      for (final paymentId in paymentIds) {
+        await _ffJournalService.deleteJournalByReferenceWithExecutor(
+          txn,
+          referenceType: 'LOAN_PAYMENT',
+          referenceId: paymentId,
         );
+      }
 
-        if (loanMaps.isEmpty) {
-          throw StateError(
-            'Loan does not exist.',
-          );
-        }
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'LOAN',
+        referenceId: loanId,
+      );
 
-        // ------------------------------------------------------
-        // LOAD PAYMENT IDS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE INTEREST INCOME / EXPENSE
+      // ------------------------------------------------------
 
-        final paymentMaps =
-            await txn.query(
-          'loan_payments',
-          columns: ['id'],
-          where: 'loan_id = ?',
-          whereArgs: [loanId],
-        );
-
-        final paymentIds =
-            paymentMaps
-                .map(
-                  (map) =>
-                      (map['id'] as num)
-                          .toInt(),
-                )
-                .toList();
-
-        // ------------------------------------------------------
-        // DELETE INTEREST INCOME / EXPENSE
-        // ------------------------------------------------------
-
-        for (final paymentId
-            in paymentIds) {
-          final interestVoucher =
-              'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
-
-          await txn.delete(
-            'incomes',
-            where: 'voucher_no = ?',
-            whereArgs: [
-              interestVoucher,
-            ],
-          );
-
-          await txn.delete(
-            'expenses',
-            where: 'voucher_no = ?',
-            whereArgs: [
-              interestVoucher,
-            ],
-          );
-        }
-
-        // ------------------------------------------------------
-        // DELETE ORIGINAL LOAN ACCOUNT TRANSACTION
-        // ------------------------------------------------------
+      for (final paymentId in paymentIds) {
+        final interestVoucher =
+            'LOAN-INT-${paymentId.toString().padLeft(6, '0')}';
 
         await txn.delete(
-          'account_transactions',
-          where: '''
+          'incomes',
+          where: 'voucher_no = ?',
+          whereArgs: [interestVoucher],
+        );
+
+        await txn.delete(
+          'expenses',
+          where: 'voucher_no = ?',
+          whereArgs: [interestVoucher],
+        );
+      }
+
+      // ------------------------------------------------------
+      // DELETE ORIGINAL LOAN ACCOUNT TRANSACTION
+      // ------------------------------------------------------
+
+      await txn.delete(
+        'account_transactions',
+        where: '''
             reference_type = ?
             AND reference_id = ?
           ''',
-          whereArgs: [
-            'LOAN',
-            loanId,
-          ],
-        );
+        whereArgs: ['LOAN', loanId],
+      );
 
-        // ------------------------------------------------------
-        // DELETE PAYMENT ACCOUNT TRANSACTIONS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE PAYMENT ACCOUNT TRANSACTIONS
+      // ------------------------------------------------------
 
-        await txn.delete(
-          'account_transactions',
-          where: '''
+      await txn.delete(
+        'account_transactions',
+        where: '''
             reference_type = ?
             AND reference_id IN (
               SELECT id
@@ -1658,245 +1183,170 @@ class LoanRepository {
               WHERE loan_id = ?
             )
           ''',
-          whereArgs: [
-            'LOAN_PAYMENT',
-            loanId,
-          ],
-        );
+        whereArgs: ['LOAN_PAYMENT', loanId],
+      );
 
-        // ------------------------------------------------------
-        // DELETE PAYMENTS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE PAYMENTS
+      // ------------------------------------------------------
 
-        await txn.delete(
-          'loan_payments',
-          where: 'loan_id = ?',
-          whereArgs: [
-            loanId,
-          ],
-        );
+      await txn.delete(
+        'loan_payments',
+        where: 'loan_id = ?',
+        whereArgs: [loanId],
+      );
 
-        // ------------------------------------------------------
-        // DELETE LOAN
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // DELETE LOAN
+      // ------------------------------------------------------
 
-        await txn.delete(
-          'loans',
-          where: 'id = ?',
-          whereArgs: [
-            loanId,
-          ],
-        );
-      },
-    );
+      await txn.delete('loans', where: 'id = ?', whereArgs: [loanId]);
+    });
   }
 
   // ============================================================
   // TOTAL GIVEN PRINCIPAL
   // ============================================================
 
-  Future<double>
-      getTotalGivenPrincipal() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<double> getTotalGivenPrincipal() async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT COALESCE(
         SUM(principal_amount),
         0
       ) AS total
       FROM loans
       WHERE loan_type = 'GIVEN'
-      ''',
-    );
+      ''');
 
-    return (result.first['total']
-                as num?)
-            ?.toDouble() ??
-        0.0;
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   // ============================================================
   // TOTAL TAKEN PRINCIPAL
   // ============================================================
 
-  Future<double>
-      getTotalTakenPrincipal() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<double> getTotalTakenPrincipal() async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT COALESCE(
         SUM(principal_amount),
         0
       ) AS total
       FROM loans
       WHERE loan_type = 'TAKEN'
-      ''',
-    );
+      ''');
 
-    return (result.first['total']
-                as num?)
-            ?.toDouble() ??
-        0.0;
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   // ============================================================
   // OUTSTANDING GIVEN
   // ============================================================
 
-  Future<double>
-      getOutstandingGiven() async {
-    final loans =
-        await getGivenLoans();
+  Future<double> getOutstandingGiven() async {
+    final loans = await getGivenLoans();
 
     double total = 0.0;
 
-    final today =
-        DateTime.now()
-            .toIso8601String()
-            .split('T')
-            .first;
+    final today = DateTime.now().toIso8601String().split('T').first;
 
     for (final loan in loans) {
       if (loan.isPaid) {
         continue;
       }
 
-      final accrued =
-          await calculateAccruedInterest(
+      final accrued = await calculateAccruedInterest(
         loan.id!,
         calculationDate: today,
       );
 
-      total +=
-          loan.remainingPrincipal +
-              accrued;
+      total += loan.remainingPrincipal + accrued;
     }
 
-    return _cleanMoney(
-      total,
-    );
+    return _cleanMoney(total);
   }
 
   // ============================================================
   // OUTSTANDING TAKEN
   // ============================================================
 
-  Future<double>
-      getOutstandingTaken() async {
-    final loans =
-        await getTakenLoans();
+  Future<double> getOutstandingTaken() async {
+    final loans = await getTakenLoans();
 
     double total = 0.0;
 
-    final today =
-        DateTime.now()
-            .toIso8601String()
-            .split('T')
-            .first;
+    final today = DateTime.now().toIso8601String().split('T').first;
 
     for (final loan in loans) {
       if (loan.isPaid) {
         continue;
       }
 
-      final accrued =
-          await calculateAccruedInterest(
+      final accrued = await calculateAccruedInterest(
         loan.id!,
         calculationDate: today,
       );
 
-      total +=
-          loan.remainingPrincipal +
-              accrued;
+      total += loan.remainingPrincipal + accrued;
     }
 
-    return _cleanMoney(
-      total,
-    );
+    return _cleanMoney(total);
   }
 
   // ============================================================
   // TOTAL ACTUAL GIVEN INTEREST
   // ============================================================
 
-  Future<double>
-      getTotalGivenInterest() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<double> getTotalGivenInterest() async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT COALESCE(
         SUM(interest_amount),
         0
       ) AS total
       FROM loans
       WHERE loan_type = 'GIVEN'
-      ''',
-    );
+      ''');
 
-    return (result.first['total']
-                as num?)
-            ?.toDouble() ??
-        0.0;
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   // ============================================================
   // TOTAL ACTUAL TAKEN INTEREST
   // ============================================================
 
-  Future<double>
-      getTotalTakenInterest() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<double> getTotalTakenInterest() async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT COALESCE(
         SUM(interest_amount),
         0
       ) AS total
       FROM loans
       WHERE loan_type = 'TAKEN'
-      ''',
-    );
+      ''');
 
-    return (result.first['total']
-                as num?)
-            ?.toDouble() ??
-        0.0;
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   // ============================================================
   // GENERATE PAYMENT VOUCHER
   // ============================================================
 
-  Future<String>
-      generatePaymentVoucher() async {
-    final Database db =
-        await _databaseHelper.database;
+  Future<String> generatePaymentVoucher() async {
+    final Database db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
-      '''
+    final result = await db.rawQuery('''
       SELECT COUNT(*) AS total
       FROM loan_payments
-      ''',
-    );
+      ''');
 
-    final total =
-        (result.first['total']
-                    as num?)
-                ?.toInt() ??
-            0;
+    final total = (result.first['total'] as num?)?.toInt() ?? 0;
 
     return 'LP-${(total + 1).toString().padLeft(6, '0')}';
   }

@@ -176,9 +176,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
         Product? product;
 
         try {
-          product = _products.firstWhere(
-            (p) => p.id == item.materialProductId,
-          );
+          product = _products.firstWhere((p) => p.id == item.materialProductId);
         } catch (_) {
           product = null;
         }
@@ -190,12 +188,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
         }
 
         if (product != null) {
-          rows.add(
-            _MaterialRow(
-              bomItem: item,
-              product: product,
-            ),
-          );
+          rows.add(_MaterialRow(bomItem: item, product: product));
         }
       }
 
@@ -222,10 +215,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
   }
 
   double get _quantity {
-    final value = double.tryParse(
-          _quantityController.text.trim(),
-        ) ??
-        0;
+    final value = double.tryParse(_quantityController.text.trim()) ?? 0;
 
     return value;
   }
@@ -246,8 +236,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
     for (final type in ProductionCostType.defaults) {
       final controller = _costControllers[type.key];
 
-      final costPerUnit =
-          double.tryParse(controller?.text.trim() ?? '0') ?? 0;
+      final costPerUnit = double.tryParse(controller?.text.trim() ?? '0') ?? 0;
 
       if (costPerUnit > 0) {
         total += costPerUnit * _quantity;
@@ -458,19 +447,13 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -486,25 +469,18 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
         centerTitle: false,
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : LayoutBuilder(
               builder: (context, constraints) {
                 final isDesktop = constraints.maxWidth >= 900;
 
                 return Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: 1100,
-                    ),
+                    constraints: const BoxConstraints(maxWidth: 1100),
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.all(
-                        isDesktop ? 28 : 16,
-                      ),
+                      padding: EdgeInsets.all(isDesktop ? 28 : 16),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildHeader(),
                           const SizedBox(height: 20),
@@ -538,34 +514,24 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            color: Theme.of(context)
-                .colorScheme
-                .primaryContainer,
+            color: Theme.of(context).colorScheme.primaryContainer,
           ),
           child: Icon(
             Icons.precision_manufacturing,
-            color: Theme.of(context)
-                .colorScheme
-                .onPrimaryContainer,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
         ),
         const SizedBox(width: 14),
         const Expanded(
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Create Production',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 3),
-              Text(
-                'Convert raw materials into finished goods',
-              ),
+              Text('Convert raw materials into finished goods'),
             ],
           ),
         ),
@@ -596,26 +562,19 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           // ------------------------------------------------------
           // FINISHED PRODUCT
           // ------------------------------------------------------
-
           DropdownButtonFormField<Product>(
             value: _selectedProduct,
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Finished Product',
-              prefixIcon: Icon(
-                Icons.inventory_2_outlined,
-              ),
-              helperText:
-                  'Select the finished product to load its BOM.',
+              prefixIcon: Icon(Icons.inventory_2_outlined),
+              helperText: 'Select the finished product to load its BOM.',
             ),
             items: finishedProducts
                 .map(
                   (product) => DropdownMenuItem<Product>(
                     value: product,
-                    child: Text(
-                      product.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text(product.name, overflow: TextOverflow.ellipsis),
                   ),
                 )
                 .toList(),
@@ -644,20 +603,17 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           // ------------------------------------------------------
           // BOM
           // ------------------------------------------------------
-
           DropdownButtonFormField<ProductionBom>(
             value: _selectedBom,
             isExpanded: true,
             decoration: InputDecoration(
               labelText: 'BOM',
-              prefixIcon: const Icon(
-                Icons.account_tree_outlined,
-              ),
+              prefixIcon: const Icon(Icons.account_tree_outlined),
               helperText: !hasSelectedProduct
                   ? 'Select a finished product first.'
                   : hasBoms
-                      ? 'Select the BOM for this production.'
-                      : 'No BOM found for this finished product.',
+                  ? 'Select the BOM for this production.'
+                  : 'No BOM found for this finished product.',
             ),
             items: _boms
                 .where(
@@ -668,16 +624,11 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                 .map(
                   (bom) => DropdownMenuItem<ProductionBom>(
                     value: bom,
-                    child: Text(
-                      bom.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text(bom.name, overflow: TextOverflow.ellipsis),
                   ),
                 )
                 .toList(),
-            onChanged: _saving ||
-                    !hasSelectedProduct ||
-                    !hasBoms
+            onChanged: _saving || !hasSelectedProduct || !hasBoms
                 ? null
                 : (bom) async {
                     if (bom == null) {
@@ -698,7 +649,6 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           // ------------------------------------------------------
           // QUANTITY / NO / DATE
           // ------------------------------------------------------
-
           LayoutBuilder(
             builder: (context, constraints) {
               if (constraints.maxWidth < 650) {
@@ -715,17 +665,11 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
 
               return Row(
                 children: [
-                  Expanded(
-                    child: _quantityField(),
-                  ),
+                  Expanded(child: _quantityField()),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _productionNoField(),
-                  ),
+                  Expanded(child: _productionNoField()),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _dateField(),
-                  ),
+                  Expanded(child: _dateField()),
                 ],
               );
             },
@@ -753,14 +697,10 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
   Widget _quantityField() {
     return TextField(
       controller: _quantityController,
-      keyboardType: const TextInputType.numberWithOptions(
-        decimal: true,
-      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
       decoration: const InputDecoration(
         labelText: 'Production Quantity',
-        prefixIcon: Icon(
-          Icons.production_quantity_limits,
-        ),
+        prefixIcon: Icon(Icons.production_quantity_limits),
         suffixText: 'pcs',
       ),
     );
@@ -775,9 +715,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
       controller: _productionNoController,
       decoration: const InputDecoration(
         labelText: 'Production No.',
-        prefixIcon: Icon(
-          Icons.tag_outlined,
-        ),
+        prefixIcon: Icon(Icons.tag_outlined),
       ),
     );
   }
@@ -793,9 +731,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
       child: InputDecorator(
         decoration: const InputDecoration(
           labelText: 'Production Date',
-          prefixIcon: Icon(
-            Icons.calendar_today_outlined,
-          ),
+          prefixIcon: Icon(Icons.calendar_today_outlined),
         ),
         child: Text(
           '${_productionDate.day.toString().padLeft(2, '0')}/'
@@ -819,9 +755,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           : Text(
               '${_materials.length} items',
               style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary,
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -831,20 +765,13 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
               ),
               child: const Column(
                 children: [
-                  Icon(
-                    Icons.inventory_2_outlined,
-                    size: 38,
-                  ),
+                  Icon(Icons.inventory_2_outlined, size: 38),
                   SizedBox(height: 8),
-                  Text(
-                    'Select a BOM to load raw materials.',
-                  ),
+                  Text('Select a BOM to load raw materials.'),
                 ],
               ),
             )
@@ -867,26 +794,20 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
   // ============================================================
 
   Widget _buildMaterialRow(_MaterialRow material) {
-    final requiredQty =
-        material.requiredQuantity(_quantity);
+    final requiredQty = material.requiredQuantity(_quantity);
 
-    final total =
-        material.totalCost(_quantity);
+    final total = material.totalCost(_quantity);
 
-    final stock =
-        material.product.stock;
+    final stock = material.product.stock;
 
-    final enoughStock =
-        stock >= requiredQty;
+    final enoughStock = stock >= requiredQty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-        ),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Column(
         children: [
@@ -895,16 +816,12 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
               Expanded(
                 child: Text(
                   material.product.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
               Text(
                 '৳${_money(total)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -913,23 +830,10 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
             spacing: 20,
             runSpacing: 8,
             children: [
-              _infoText(
-                'Per Unit',
-                '${material.bomItem.quantity}',
-              ),
-              _infoText(
-                'Required',
-                requiredQty.toStringAsFixed(0),
-              ),
-              _infoText(
-                'Avg Cost',
-                '৳${_money(material.averageCost)}',
-              ),
-              _infoText(
-                'Stock',
-                stock.toString(),
-                warning: !enoughStock,
-              ),
+              _infoText('Per Unit', '${material.bomItem.quantity}'),
+              _infoText('Required', requiredQty.toStringAsFixed(0)),
+              _infoText('Avg Cost', '৳${_money(material.averageCost)}'),
+              _infoText('Stock', stock.toString(), warning: !enoughStock),
             ],
           ),
           if (!enoughStock)
@@ -940,9 +844,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                   Icon(
                     Icons.warning_amber_rounded,
                     size: 18,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .error,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -951,9 +853,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                       'Need ${requiredQty.toStringAsFixed(0)}, '
                       'available $stock.',
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .error,
+                        color: Theme.of(context).colorScheme.error,
                         fontSize: 12,
                       ),
                     ),
@@ -981,16 +881,11 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
             ),
             child: const Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 18,
-                ),
+                Icon(Icons.info_outline, size: 18),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1003,31 +898,20 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          ...ProductionCostType.defaults.map(
-            _buildCostRow,
-          ),
+          ...ProductionCostType.defaults.map(_buildCostRow),
           const Divider(height: 28),
-          _summaryLine(
-            'Total Factory Cost',
-            _totalFactoryCost,
-            bold: true,
-          ),
+          _summaryLine('Total Factory Cost', _totalFactoryCost, bold: true),
         ],
       ),
     );
   }
 
-  Widget _buildCostRow(
-    ProductionCostType type,
-  ) {
-    final controller =
-        _costControllers[type.key]!;
+  Widget _buildCostRow(ProductionCostType type) {
+    final controller = _costControllers[type.key]!;
 
-    final perUnit =
-        double.tryParse(controller.text.trim()) ?? 0;
+    final perUnit = double.tryParse(controller.text.trim()) ?? 0;
 
-    final total =
-        perUnit * _quantity;
+    final total = perUnit * _quantity;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1038,15 +922,12 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
               children: [
                 TextField(
                   controller: controller,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(
+                  keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
                     labelText: type.name,
-                    prefixIcon: const Icon(
-                      Icons.payments_outlined,
-                    ),
+                    prefixIcon: const Icon(Icons.payments_outlined),
                     suffixText: '৳/unit',
                   ),
                 ),
@@ -1055,9 +936,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                   alignment: Alignment.centerRight,
                   child: Text(
                     'Total: ৳${_money(total)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -1070,17 +949,12 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                 flex: 4,
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.circle,
-                      size: 7,
-                    ),
+                    const Icon(Icons.circle, size: 7),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         type.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
                   ],
@@ -1091,8 +965,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                 width: 180,
                 child: TextField(
                   controller: controller,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(
+                  keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   textAlign: TextAlign.right,
@@ -1108,9 +981,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                 child: Text(
                   '৳${_money(total)}',
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -1132,23 +1003,11 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            _summaryLine(
-              'Production Quantity',
-              _quantity,
-              suffix: ' pcs',
-            ),
+            _summaryLine('Production Quantity', _quantity, suffix: ' pcs'),
             const SizedBox(height: 10),
-            _summaryLine(
-              'Material Cost',
-              _totalMaterialCost,
-              currency: true,
-            ),
+            _summaryLine('Material Cost', _totalMaterialCost, currency: true),
             const SizedBox(height: 10),
-            _summaryLine(
-              'Factory Cost',
-              _totalFactoryCost,
-              currency: true,
-            ),
+            _summaryLine('Factory Cost', _totalFactoryCost, currency: true),
             const Divider(height: 28),
             _summaryLine(
               'Total Production Cost',
@@ -1162,22 +1021,17 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                color: Theme.of(context)
-                    .colorScheme
-                    .primaryContainer,
+                color: Theme.of(context).colorScheme.primaryContainer,
               ),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'Unit Production Cost',
-                          style: TextStyle(
-                            fontSize: 13,
-                          ),
+                          style: TextStyle(fontSize: 13),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -1190,10 +1044,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
                       ],
                     ),
                   ),
-                  const Icon(
-                    Icons.calculate_outlined,
-                    size: 34,
-                  ),
+                  const Icon(Icons.calculate_outlined, size: 34),
                 ],
               ),
             ),
@@ -1217,18 +1068,10 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
             ? const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(
-                Icons.precision_manufacturing,
-              ),
-        label: Text(
-          _saving
-              ? 'Producing...'
-              : 'Complete Production',
-        ),
+            : const Icon(Icons.precision_manufacturing),
+        label: Text(_saving ? 'Producing...' : 'Complete Production'),
       ),
     );
   }
@@ -1249,8 +1092,7 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
@@ -1293,20 +1135,14 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
           child: Text(
             label,
             style: TextStyle(
-              fontWeight: bold
-                  ? FontWeight.bold
-                  : FontWeight.normal,
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ),
         Text(
-          currency
-              ? '৳${_money(value)}'
-              : '${_money(value)}$suffix',
+          currency ? '৳${_money(value)}' : '${_money(value)}$suffix',
           style: TextStyle(
-            fontWeight: bold
-                ? FontWeight.bold
-                : FontWeight.w600,
+            fontWeight: bold ? FontWeight.bold : FontWeight.w600,
           ),
         ),
       ],
@@ -1317,29 +1153,19 @@ class _ActualProductionScreenState extends State<ActualProductionScreen> {
   // INFO TEXT
   // ============================================================
 
-  Widget _infoText(
-    String label,
-    String value, {
-    bool warning = false,
-  }) {
+  Widget _infoText(String label, String value, {bool warning = false}) {
     return RichText(
       text: TextSpan(
         style: TextStyle(
           color: warning
-              ? Theme.of(context)
-                  .colorScheme
-                  .error
-              : Theme.of(context)
-                  .colorScheme
-                  .onSurface,
+              ? Theme.of(context).colorScheme.error
+              : Theme.of(context).colorScheme.onSurface,
           fontSize: 12,
         ),
         children: [
           TextSpan(
             text: '$label: ',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w500),
           ),
           TextSpan(text: value),
         ],
@@ -1356,25 +1182,25 @@ class _MaterialRow {
   final ProductionBomItem bomItem;
   final Product product;
 
-  _MaterialRow({
-    required this.bomItem,
-    required this.product,
-  });
+  _MaterialRow({required this.bomItem, required this.product});
 
   double get averageCost {
-    return product.purchasePrice;
+    if (product.stock <= 0) {
+      return 0;
+    }
+
+    if (product.stockValue <= 0) {
+      return 0;
+    }
+
+    return product.stockValue / product.stock;
   }
 
-  double requiredQuantity(
-    double productionQuantity,
-  ) {
+  double requiredQuantity(double productionQuantity) {
     return bomItem.quantity * productionQuantity;
   }
 
-  double totalCost(
-    double productionQuantity,
-  ) {
-    return requiredQuantity(productionQuantity) *
-        averageCost;
+  double totalCost(double productionQuantity) {
+    return requiredQuantity(productionQuantity) * averageCost;
   }
 }

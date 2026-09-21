@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../main.dart';
 import '../../models/account.dart';
 import '../../services/account_repository.dart';
+import '../../services/account_service.dart';
 import 'add_account_screen.dart';
 import 'account_ledger_screen.dart';
 import 'fund_transfer_screen.dart';
@@ -22,6 +23,7 @@ class AccountsScreen extends StatefulWidget {
 
 class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   final AccountRepository _repository = AccountRepository();
+  final AccountService _accountService = AccountService();
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -34,7 +36,24 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   final Map<String, String> _typeLabels = {
     "CASH": "Cash",
     "BANK": "Bank",
-    "MOBILE_BANKING": "Mobile Banking",
+    "MOBILE_BANKING": "MFS / Mobile Banking",
+    "MFS": "MFS / Mobile Banking",
+    "OTHER_CURRENT_ASSET": "Other Current Asset",
+    "FIXED_ASSET": "Fixed Asset",
+    "OTHER_LIABILITY": "Other Liability",
+    "OWNER_CAPITAL": "Owner Capital",
+    "OTHER_INCOME": "Income",
+    "OPERATING_EXPENSE": "Expense",
+
+    // System-controlled FF ledgers
+    "CUSTOMER_RECEIVABLE": "Customer Receivable",
+    "SUPPLIER_PAYABLE": "Supplier Payable",
+    "INVENTORY": "Inventory",
+    "SALES_INCOME": "Sales Income",
+    "OWNER_WITHDRAWAL": "Owner Withdrawal",
+    "RETAINED_EARNINGS": "Retained Earnings",
+    "LOAN_RECEIVABLE": "Loan Receivable",
+    "LOAN_PAYABLE": "Loan Payable",
   };
 
   @override
@@ -127,13 +146,67 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     return NumberFormat('#,##0.##').format(amount);
   }
 
+  bool _isSystemControlled(Account account) {
+    const systemTypes = <String>{
+      'CUSTOMER_RECEIVABLE',
+      'SUPPLIER_PAYABLE',
+      'INVENTORY',
+      'SALES_INCOME',
+      'OWNER_WITHDRAWAL',
+      'RETAINED_EARNINGS',
+      'LOAN_RECEIVABLE',
+      'LOAN_PAYABLE',
+    };
+
+    return systemTypes.contains(account.type.toUpperCase());
+  }
+
   IconData getIcon(String type) {
-    switch (type) {
+    switch (type.toUpperCase()) {
       case "BANK":
         return Icons.account_balance;
 
       case "MOBILE_BANKING":
+      case "MFS":
         return Icons.phone_android;
+
+      case "OTHER_CURRENT_ASSET":
+        return Icons.wallet_outlined;
+
+      case "FIXED_ASSET":
+        return Icons.apartment_outlined;
+
+      case "OTHER_LIABILITY":
+        return Icons.request_quote_outlined;
+
+      case "OWNER_CAPITAL":
+        return Icons.savings_outlined;
+
+      case "OTHER_INCOME":
+      case "SALES_INCOME":
+        return Icons.trending_up;
+
+      case "OPERATING_EXPENSE":
+        return Icons.trending_down;
+
+      case "CUSTOMER_RECEIVABLE":
+        return Icons.people_outline;
+
+      case "SUPPLIER_PAYABLE":
+        return Icons.local_shipping_outlined;
+
+      case "INVENTORY":
+        return Icons.inventory_2_outlined;
+
+      case "LOAN_RECEIVABLE":
+      case "LOAN_PAYABLE":
+        return Icons.handshake_outlined;
+
+      case "OWNER_WITHDRAWAL":
+        return Icons.money_off_csred_outlined;
+
+      case "RETAINED_EARNINGS":
+        return Icons.account_balance_wallet_outlined;
 
       case "CARD":
         return Icons.credit_card;
@@ -145,6 +218,19 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   }
 
   Future<void> _editAccount(Account account) async {
+    if (_isSystemControlled(account)) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "This is a system-controlled account and cannot be edited manually.",
+          ),
+        ),
+      );
+      return;
+    }
+
     final refresh = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => AddAccountScreen(account: account)),
@@ -163,6 +249,19 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   }
 
   Future<void> _deleteAccount(Account account) async {
+    if (_isSystemControlled(account)) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "This is a system-controlled account and cannot be deleted manually.",
+          ),
+        ),
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) {
@@ -190,7 +289,7 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     if (confirm != true) return;
 
     try {
-      await _repository.deleteAccount(account.id!);
+      await _accountService.deleteAccount(account.id!);
 
       await _loadAccounts();
 

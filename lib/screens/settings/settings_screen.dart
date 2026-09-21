@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../gab/gab_branding.dart';
@@ -10,26 +12,28 @@ import 'currency_screen.dart';
 import 'license_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({
-    super.key,
-  });
+  const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() =>
-      _SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState
-    extends State<SettingsScreen> {
-  final StorageService _storageService =
-      StorageService.instance;
+class _SettingsScreenState extends State<SettingsScreen> {
+  final StorageService _storageService = StorageService.instance;
 
-  final BackupService _backupService =
-      BackupService.instance;
+  final BackupService _backupService = BackupService.instance;
 
   String? _backupFolder;
 
   String _businessName = '';
+
+  String? _invoiceLogoPath;
+  String? _invoiceQrPath;
+  String? _weatherLocation;
+
+  bool _selectingInvoiceLogo = false;
+  bool _selectingInvoiceQr = false;
+  bool _savingWeatherLocation = false;
 
   bool _loading = true;
   bool _selectingBackupFolder = false;
@@ -46,17 +50,24 @@ class _SettingsScreenState
   // ============================================================
 
   Future<void> _loadSettings() async {
-    final backupFolder =
-        await _storageService.getBackupFolder();
+    final backupFolder = await _storageService.getBackupFolder();
 
-    final businessName =
-        await GABBranding.getBusinessName();
+    final businessName = await GABBranding.getBusinessName();
+
+    final invoiceLogoPath = await _storageService.getInvoiceLogoPath();
+
+    final invoiceQrPath = await _storageService.getInvoiceQrPath();
+
+    final weatherLocation = await _storageService.getWeatherLocation();
 
     if (!mounted) return;
 
     setState(() {
       _backupFolder = backupFolder;
       _businessName = businessName;
+      _invoiceLogoPath = invoiceLogoPath;
+      _invoiceQrPath = invoiceQrPath;
+      _weatherLocation = weatherLocation;
       _loading = false;
     });
   }
@@ -66,8 +77,7 @@ class _SettingsScreenState
   // ============================================================
 
   Future<void> _selectBackupFolder() async {
-    if (_selectingBackupFolder ||
-        _creatingBackup) {
+    if (_selectingBackupFolder || _creatingBackup) {
       return;
     }
 
@@ -76,37 +86,24 @@ class _SettingsScreenState
     });
 
     try {
-      final selectedPath =
-          await _storageService
-              .selectBackupFolder();
+      final selectedPath = await _storageService.selectBackupFolder();
 
       if (!mounted) return;
 
-      if (selectedPath != null &&
-          selectedPath.trim().isNotEmpty) {
+      if (selectedPath != null && selectedPath.trim().isNotEmpty) {
         setState(() {
           _backupFolder = selectedPath;
         });
 
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Backup folder saved successfully.',
-            ),
-          ),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup folder saved successfully.')),
         );
       }
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to select backup folder: $e',
-          ),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to select backup folder: $e')),
       );
     } finally {
       if (mounted) {
@@ -122,26 +119,17 @@ class _SettingsScreenState
   // ============================================================
 
   Future<void> _createBackup() async {
-    if (_creatingBackup ||
-        _selectingBackupFolder) {
+    if (_creatingBackup || _selectingBackupFolder) {
       return;
     }
 
-    final backupFolder =
-        await _storageService
-            .getBackupFolder();
+    final backupFolder = await _storageService.getBackupFolder();
 
     if (!mounted) return;
 
-    if (backupFolder == null ||
-        backupFolder.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please select a backup folder first.',
-          ),
-        ),
+    if (backupFolder == null || backupFolder.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a backup folder first.')),
       );
 
       return;
@@ -152,42 +140,25 @@ class _SettingsScreenState
     });
 
     try {
-      final success =
-          await _backupService
-              .backupDatabase();
+      final success = await _backupService.backupDatabase();
 
       if (!mounted) return;
 
       if (success) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Backup created successfully.',
-            ),
-          ),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup created successfully.')),
         );
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Backup failed.',
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Backup failed.')));
       }
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            'Backup failed: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -202,44 +173,30 @@ class _SettingsScreenState
   // ============================================================
 
   Future<void> _clearBackupFolder() async {
-    if (_creatingBackup ||
-        _selectingBackupFolder) {
+    if (_creatingBackup || _selectingBackupFolder) {
       return;
     }
 
-    final shouldClear =
-        await showDialog<bool>(
+    final shouldClear = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text(
-            'Clear Backup Folder?',
-          ),
+          title: const Text('Clear Backup Folder?'),
           content: const Text(
             'The selected backup folder will be removed from the app settings.',
           ),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
+                Navigator.pop(context, false);
               },
-              child: const Text(
-                'Cancel',
-              ),
+              child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
-                Navigator.pop(
-                  context,
-                  true,
-                );
+                Navigator.pop(context, true);
               },
-              child: const Text(
-                'Clear',
-              ),
+              child: const Text('Clear'),
             ),
           ],
         );
@@ -250,8 +207,7 @@ class _SettingsScreenState
       return;
     }
 
-    await _storageService
-        .clearBackupFolder();
+    await _storageService.clearBackupFolder();
 
     if (!mounted) return;
 
@@ -259,14 +215,9 @@ class _SettingsScreenState
       _backupFolder = null;
     });
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Backup folder cleared.',
-        ),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Backup folder cleared.')));
   }
 
   // ============================================================
@@ -276,10 +227,207 @@ class _SettingsScreenState
   Future<void> _openRestore() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) =>
-            const BackupRestoreScreen(),
+      MaterialPageRoute(builder: (_) => const BackupRestoreScreen()),
+    );
+  }
+
+  // ============================================================
+  // INVOICE LOGO
+  // ============================================================
+
+  Future<void> _selectInvoiceLogo() async {
+    if (_selectingInvoiceLogo) return;
+
+    setState(() {
+      _selectingInvoiceLogo = true;
+    });
+
+    try {
+      final path = await _storageService.selectInvoiceLogo();
+
+      if (!mounted) return;
+
+      if (path != null) {
+        setState(() {
+          _invoiceLogoPath = path;
+        });
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Business logo saved.')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to select business logo: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectingInvoiceLogo = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _removeInvoiceLogo() async {
+    await _storageService.clearInvoiceLogo();
+
+    if (!mounted) return;
+
+    setState(() {
+      _invoiceLogoPath = null;
+    });
+  }
+
+  // ============================================================
+  // INVOICE QR
+  // ============================================================
+
+  Future<void> _selectInvoiceQr() async {
+    if (_selectingInvoiceQr) return;
+
+    setState(() {
+      _selectingInvoiceQr = true;
+    });
+
+    try {
+      final path = await _storageService.selectInvoiceQr();
+
+      if (!mounted) return;
+
+      if (path != null) {
+        setState(() {
+          _invoiceQrPath = path;
+        });
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Invoice QR code saved.')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to select QR code: $e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectingInvoiceQr = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _removeInvoiceQr() async {
+    await _storageService.clearInvoiceQr();
+
+    if (!mounted) return;
+
+    setState(() {
+      _invoiceQrPath = null;
+    });
+  }
+
+  // ============================================================
+  // WEATHER LOCATION
+  // ============================================================
+
+  Future<void> _editWeatherLocation() async {
+    final controller = TextEditingController(text: _weatherLocation ?? '');
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Weather Location'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'City / Location',
+              hintText: 'Example: Dhaka',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) {
+              Navigator.pop(dialogContext, value.trim());
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, controller.text.trim());
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _savingWeatherLocation = true;
+    });
+
+    try {
+      await _storageService.setWeatherLocation(result);
+
+      if (!mounted) return;
+
+      setState(() {
+        _weatherLocation = result.trim().isEmpty ? null : result.trim();
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Weather location saved.')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingWeatherLocation = false;
+        });
+      }
+    }
+  }
+
+  // ============================================================
+  // BRANDING PREVIEW
+  // ============================================================
+
+  Widget _brandingPreview({required String? path, required IconData icon}) {
+    final hasImage =
+        path != null && path.trim().isNotEmpty && File(path).existsSync();
+
+    return Container(
+      width: 58,
+      height: 58,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(9),
       ),
+      child: hasImage
+          ? Image.file(
+              File(path),
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                return Icon(icon, size: 30);
+              },
+            )
+          : Icon(icon, size: 30),
     );
   }
 
@@ -289,139 +437,82 @@ class _SettingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final aboutName = _businessName.isEmpty
-        ? 'About'
-        : 'About $_businessName';
+    final aboutName = _businessName.isEmpty ? 'About' : 'About $_businessName';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Settings',
-        ),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
 
       body: _loading
-          ? const Center(
-              child:
-                  CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding:
-                  const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               children: [
-
                 // ==================================================
                 // BACKUP
                 // ==================================================
-
                 const Text(
                   'Backup',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
 
-                const SizedBox(
-                  height: 8,
-                ),
+                const SizedBox(height: 8),
 
                 Card(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-
                         // ------------------------------------------
                         // BACKUP FOLDER
                         // ------------------------------------------
-
                         Row(
                           children: [
-                            const Icon(
-                              Icons.backup,
-                              size: 28,
-                            ),
-                            const SizedBox(
-                              width: 12,
-                            ),
+                            const Icon(Icons.backup, size: 28),
+                            const SizedBox(width: 12),
                             const Expanded(
                               child: Text(
                                 'Backup Folder',
-                                style:
-                                    TextStyle(
+                                style: TextStyle(
                                   fontSize: 17,
-                                  fontWeight:
-                                      FontWeight
-                                          .w600,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
                           ],
                         ),
 
-                        const SizedBox(
-                          height: 12,
-                        ),
+                        const SizedBox(height: 12),
 
                         const Text(
                           'Choose where LalKhata will store backup files.',
                         ),
 
-                        const SizedBox(
-                          height: 16,
-                        ),
+                        const SizedBox(height: 16),
 
                         Container(
-                          width:
-                              double.infinity,
-                          padding:
-                              const EdgeInsets
-                                  .all(12),
-                          decoration:
-                              BoxDecoration(
-                            border:
-                                Border.all(
-                              color: Theme.of(
-                                      context)
-                                  .dividerColor,
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: Theme.of(context).dividerColor,
                             ),
-                            borderRadius:
-                                BorderRadius
-                                    .circular(
-                              8,
-                            ),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
-                            crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(
-                                Icons.folder,
-                              ),
-                              const SizedBox(
-                                width: 10,
-                              ),
+                              const Icon(Icons.folder),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  _backupFolder ??
-                                      'No backup folder selected',
-                                  style:
-                                      TextStyle(
-                                    color:
-                                        _backupFolder ==
-                                                null
-                                            ? Theme.of(
-                                                    context)
-                                                .colorScheme
-                                                .onSurfaceVariant
-                                            : null,
+                                  _backupFolder ?? 'No backup folder selected',
+                                  style: TextStyle(
+                                    color: _backupFolder == null
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant
+                                        : null,
                                   ),
                                 ),
                               ),
@@ -429,116 +520,73 @@ class _SettingsScreenState
                           ),
                         ),
 
-                        const SizedBox(
-                          height: 16,
-                        ),
+                        const SizedBox(height: 16),
 
                         Row(
                           children: [
                             Expanded(
-                              child:
-                                  FilledButton
-                                      .icon(
+                              child: FilledButton.icon(
                                 onPressed:
-                                    (_selectingBackupFolder ||
-                                            _creatingBackup)
-                                        ? null
-                                        : _selectBackupFolder,
-                                icon:
-                                    _selectingBackupFolder
-                                        ? const SizedBox(
-                                            width:
-                                                18,
-                                            height:
-                                                18,
-                                            child:
-                                                CircularProgressIndicator(
-                                              strokeWidth:
-                                                  2,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons
-                                                .folder_open,
-                                          ),
-                                label:
-                                    Text(
-                                  _backupFolder ==
-                                          null
+                                    (_selectingBackupFolder || _creatingBackup)
+                                    ? null
+                                    : _selectBackupFolder,
+                                icon: _selectingBackupFolder
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.folder_open),
+                                label: Text(
+                                  _backupFolder == null
                                       ? 'Select Folder'
                                       : 'Change Folder',
                                 ),
                               ),
                             ),
 
-                            if (_backupFolder !=
-                                null) ...[
-                              const SizedBox(
-                                width: 10,
-                              ),
+                            if (_backupFolder != null) ...[
+                              const SizedBox(width: 10),
                               IconButton(
-                                tooltip:
-                                    'Clear backup folder',
+                                tooltip: 'Clear backup folder',
                                 onPressed:
-                                    (_creatingBackup ||
-                                            _selectingBackupFolder)
-                                        ? null
-                                        : _clearBackupFolder,
-                                icon:
-                                    const Icon(
-                                  Icons
-                                      .delete_outline,
-                                ),
+                                    (_creatingBackup || _selectingBackupFolder)
+                                    ? null
+                                    : _clearBackupFolder,
+                                icon: const Icon(Icons.delete_outline),
                               ),
                             ],
                           ],
                         ),
 
-                        const SizedBox(
-                          height: 16,
-                        ),
+                        const SizedBox(height: 16),
 
                         SizedBox(
-                          width:
-                              double.infinity,
+                          width: double.infinity,
                           height: 50,
-                          child:
-                              FilledButton
-                                  .icon(
+                          child: FilledButton.icon(
                             onPressed:
-                                (_creatingBackup ||
-                                        _selectingBackupFolder)
-                                    ? null
-                                    : _createBackup,
-                            icon:
-                                _creatingBackup
-                                    ? const SizedBox(
-                                        width:
-                                            20,
-                                        height:
-                                            20,
-                                        child:
-                                            CircularProgressIndicator(
-                                          strokeWidth:
-                                              2,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons
-                                            .cloud_upload,
-                                      ),
-                            label:
-                                Text(
+                                (_creatingBackup || _selectingBackupFolder)
+                                ? null
+                                : _createBackup,
+                            icon: _creatingBackup
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.cloud_upload),
+                            label: Text(
                               _creatingBackup
                                   ? 'Creating Backup...'
                                   : 'Create Backup',
-                              style:
-                                  const TextStyle(
-                                fontSize:
-                                    16,
-                                fontWeight:
-                                    FontWeight
-                                        .w600,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -548,174 +596,242 @@ class _SettingsScreenState
                   ),
                 ),
 
-                const SizedBox(
-                  height: 8,
-                ),
+                const SizedBox(height: 8),
 
                 // ==================================================
                 // RESTORE
                 // ==================================================
-
                 Card(
                   child: ListTile(
-                    leading: const Icon(
-                      Icons.restore,
-                    ),
+                    leading: const Icon(Icons.restore),
                     title: const Text(
                       'Restore Backup',
-                      style: TextStyle(
-                        fontWeight:
-                            FontWeight.w600,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: const Text(
                       'Restore your database from a backup file',
                     ),
-                    trailing: const Icon(
-                      Icons.arrow_forward_ios,
-                      size: 18,
-                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                     onTap: _openRestore,
                   ),
                 ),
 
-                const SizedBox(
-                  height: 20,
-                ),
+                const SizedBox(height: 20),
 
                 // ==================================================
                 // LICENSE & DEVICES
                 // ==================================================
-
                 const Text(
                   'License',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
 
-                const SizedBox(
-                  height: 8,
-                ),
+                const SizedBox(height: 8),
 
                 Card(
                   child: ListTile(
-                    leading: const Icon(
-                      Icons
-                          .verified_user_outlined,
-                    ),
-                    title: const Text(
-                      'License & Devices',
-                    ),
-                    subtitle: const Text(
-                      'View license and device information',
-                    ),
-                    trailing: const Icon(
-                      Icons.arrow_forward_ios,
-                      size: 18,
-                    ),
+                    leading: const Icon(Icons.verified_user_outlined),
+                    title: const Text('License & Devices'),
+                    subtitle: const Text('View license and device information'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                     onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              const LicenseScreen(),
+                          builder: (_) => const LicenseScreen(),
                         ),
                       );
                     },
                   ),
                 ),
 
-                const SizedBox(
-                  height: 20,
-                ),
+                const SizedBox(height: 20),
 
                 // ==================================================
-                // GENERAL
+                // CUSTOMIZATION
                 // ==================================================
-
                 const Text(
-                  'General',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
+                  'Customization',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
 
-                const SizedBox(
-                  height: 8,
-                ),
+                const SizedBox(height: 8),
 
                 Card(
                   child: Column(
                     children: [
+                      // --------------------------------------------
+                      // INVOICE LOGO
+                      // --------------------------------------------
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            _brandingPreview(
+                              path: _invoiceLogoPath,
+                              icon: Icons.image_outlined,
+                            ),
+                            const SizedBox(width: 14),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Business Logo',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Used on dashboard, sales and purchase invoices',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: _selectingInvoiceLogo
+                                  ? null
+                                  : _selectInvoiceLogo,
+                              child: Text(
+                                _invoiceLogoPath == null ? 'Choose' : 'Change',
+                              ),
+                            ),
+                            if (_invoiceLogoPath != null)
+                              IconButton(
+                                tooltip: 'Remove Business Logo',
+                                onPressed: _removeInvoiceLogo,
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                          ],
+                        ),
+                      ),
 
+                      const Divider(height: 1),
+
+                      // --------------------------------------------
+                      // INVOICE QR
+                      // --------------------------------------------
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            _brandingPreview(
+                              path: _invoiceQrPath,
+                              icon: Icons.qr_code_2,
+                            ),
+                            const SizedBox(width: 14),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Invoice QR Code',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text('Optional QR image shown on invoices'),
+                                ],
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: _selectingInvoiceQr
+                                  ? null
+                                  : _selectInvoiceQr,
+                              child: Text(
+                                _invoiceQrPath == null ? 'Choose' : 'Change',
+                              ),
+                            ),
+                            if (_invoiceQrPath != null)
+                              IconButton(
+                                tooltip: 'Remove QR Code',
+                                onPressed: _removeInvoiceQr,
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      const Divider(height: 1),
+
+                      // --------------------------------------------
+                      // WEATHER
+                      // --------------------------------------------
+                      ListTile(
+                        leading: const Icon(Icons.cloud_outlined),
+                        title: const Text('Weather Location'),
+                        subtitle: Text(
+                          _weatherLocation == null
+                              ? 'Not set — dashboard fallback will be used'
+                              : _weatherLocation!,
+                        ),
+                        trailing: _savingWeatherLocation
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.edit_outlined),
+                        onTap: _savingWeatherLocation
+                            ? null
+                            : _editWeatherLocation,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ==================================================
+                // GENERAL
+                // ==================================================
+                const Text(
+                  'General',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 8),
+
+                Card(
+                  child: Column(
+                    children: [
                       // --------------------------------------------
                       // CURRENCY
                       // --------------------------------------------
-
                       ListTile(
-                        leading: const Icon(
-                          Icons
-                              .currency_exchange,
-                        ),
-                        title: const Text(
-                          'Currency',
-                        ),
-                        subtitle: const Text(
-                          'BDT (৳)',
-                        ),
-                        trailing:
-                            const Icon(
-                          Icons
-                              .arrow_forward_ios,
-                          size: 18,
-                        ),
+                        leading: const Icon(Icons.currency_exchange),
+                        title: const Text('Currency'),
+                        subtitle: const Text('BDT (৳)'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  const CurrencyScreen(),
+                              builder: (_) => const CurrencyScreen(),
                             ),
                           );
                         },
                       ),
 
-                      const Divider(
-                        height: 1,
-                      ),
+                      const Divider(height: 1),
 
                       // --------------------------------------------
                       // ABOUT
                       // --------------------------------------------
-
                       ListTile(
-                        leading: const Icon(
-                          Icons.info_outline,
-                        ),
-                        title: Text(
-                          aboutName,
-                        ),
-                        subtitle: Text(
-                          GABBranding
-                              .appVersion,
-                        ),
-                        trailing:
-                            const Icon(
-                          Icons
-                              .arrow_forward_ios,
-                          size: 18,
-                        ),
+                        leading: const Icon(Icons.info_outline),
+                        title: Text(aboutName),
+                        subtitle: Text(GABBranding.appVersion),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  const AboutScreen(),
+                              builder: (_) => const AboutScreen(),
                             ),
                           );
                         },
@@ -724,9 +840,7 @@ class _SettingsScreenState
                   ),
                 ),
 
-                const SizedBox(
-                  height: 20,
-                ),
+                const SizedBox(height: 20),
               ],
             ),
     );

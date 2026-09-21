@@ -5,13 +5,15 @@ import '../models/production.dart';
 import '../models/production_bom_item.dart';
 import '../models/production_cost.dart';
 import '../repositories/production_bom_repository.dart';
+import 'ff/ff_production_posting_service.dart';
 
 class ProductionService {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
-  final ProductionBomRepository _bomRepository =
-      ProductionBomRepository();
+  final ProductionBomRepository _bomRepository = ProductionBomRepository();
+
+  final FFProductionPostingService _ffProductionPostingService =
+      FFProductionPostingService.instance;
 
   // ============================================================
   // CREATE PRODUCTION
@@ -49,59 +51,41 @@ class ProductionService {
     // ----------------------------------------------------------
 
     if (quantity <= 0) {
-      throw Exception(
-        'Production quantity must be greater than 0.',
-      );
+      throw Exception('Production quantity must be greater than 0.');
     }
 
     if (!_isWholeNumber(quantity)) {
-      throw Exception(
-        'Production quantity must be a whole number.',
-      );
+      throw Exception('Production quantity must be a whole number.');
     }
 
     // ----------------------------------------------------------
     // LOAD BOM
     // ----------------------------------------------------------
 
-    final bomData =
-        await _bomRepository.getBomWithItems(
-      bomId,
-    );
+    final bomData = await _bomRepository.getBomWithItems(bomId);
 
     if (bomData == null) {
-      throw Exception(
-        'Production BOM not found.',
-      );
+      throw Exception('Production BOM not found.');
     }
 
-    final bom =
-        bomData['bom'];
+    final bom = bomData['bom'];
 
-    final bomItems =
-        bomData['items']
-            as List<ProductionBomItem>;
+    final bomItems = bomData['items'] as List<ProductionBomItem>;
 
     // ----------------------------------------------------------
     // MAKE SURE BOM BELONGS TO PRODUCT
     // ----------------------------------------------------------
 
     if (bom.productId != productId) {
-      throw Exception(
-        'Selected BOM does not belong to this product.',
-      );
+      throw Exception('Selected BOM does not belong to this product.');
     }
 
     if (!bom.isActive) {
-      throw Exception(
-        'Selected BOM is inactive.',
-      );
+      throw Exception('Selected BOM is inactive.');
     }
 
     if (bomItems.isEmpty) {
-      throw Exception(
-        'Production BOM has no materials.',
-      );
+      throw Exception('Production BOM has no materials.');
     }
 
     // ----------------------------------------------------------
@@ -110,395 +94,277 @@ class ProductionService {
 
     for (final cost in factoryCosts) {
       if (cost.costPerUnit < 0) {
-        throw Exception(
-          'Factory cost cannot be negative.',
-        );
+        throw Exception('Factory cost cannot be negative.');
       }
     }
 
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
-    return await db.transaction<Production>(
-      (txn) async {
-        // ======================================================
-        // 1. LOAD FINISHED PRODUCT
-        // ======================================================
+    return await db.transaction<Production>((txn) async {
+      // ======================================================
+      // 1. LOAD FINISHED PRODUCT
+      // ======================================================
 
-        final finishedProductResult =
-            await txn.query(
+      final finishedProductResult = await txn.query(
+        'products',
+        columns: ['id', 'name', 'stock', 'stock_value'],
+        where: 'id = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+
+      if (finishedProductResult.isEmpty) {
+        throw Exception('Finished product not found.');
+      }
+
+      final finishedProduct = finishedProductResult.first;
+
+      final finishedProductName = finishedProduct['name']?.toString() ?? '';
+
+      final existingFinishedStock = ((finishedProduct['stock'] ?? 0) as num)
+          .toInt();
+
+      final existingFinishedStockValue =
+          ((finishedProduct['stock_value'] ?? 0) as num).toDouble();
+
+      // ======================================================
+      // 2. CALCULATE MATERIAL REQUIREMENTS
+      // ======================================================
+
+      double totalMaterialCost = 0;
+
+      final materialSnapshots = <_MaterialCostSnapshot>[];
+
+      final usedMaterialIds = <int>{};
+
+      for (final bomItem in bomItems) {
+        final materialProductId = bomItem.materialProductId;
+
+        // ----------------------------------------------------
+        // PREVENT DUPLICATE MATERIAL ROWS
+        // ----------------------------------------------------
+
+        if (usedMaterialIds.contains(materialProductId)) {
+          throw Exception('Duplicate material found in BOM.');
+        }
+
+        usedMaterialIds.add(materialProductId);
+
+        // ----------------------------------------------------
+        // PREVENT FINISHED PRODUCT FROM BEING ITS OWN MATERIAL
+        // ----------------------------------------------------
+
+        if (materialProductId == productId) {
+          throw Exception(
+            'Finished product cannot be used as its own material.',
+          );
+        }
+
+        final bomQuantity = bomItem.quantity;
+
+        if (bomQuantity <= 0) {
+          throw Exception('BOM material quantity must be greater than 0.');
+        }
+
+        final requiredQuantity = bomQuantity * quantity;
+
+        if (!_isWholeNumber(requiredQuantity)) {
+          throw Exception(
+            'Material "$materialProductId" requires a fractional '
+            'stock quantity. Current inventory stock supports '
+            'whole numbers only.',
+          );
+        }
+
+        // ----------------------------------------------------
+        // LOAD MATERIAL
+        // ----------------------------------------------------
+
+        final materialResult = await txn.query(
           'products',
-          columns: [
-            'id',
-            'name',
-            'stock',
-            'stock_value',
-          ],
+          columns: ['id', 'name', 'stock', 'stock_value'],
           where: 'id = ?',
-          whereArgs: [productId],
+          whereArgs: [materialProductId],
           limit: 1,
         );
 
-        if (finishedProductResult.isEmpty) {
+        if (materialResult.isEmpty) {
           throw Exception(
-            'Finished product not found.',
+            'Material product not found: '
+            '$materialProductId',
           );
         }
 
-        final finishedProduct =
-            finishedProductResult.first;
+        final material = materialResult.first;
 
-        final finishedProductName =
-            finishedProduct['name']
-                    ?.toString() ??
-                '';
+        final materialName = material['name']?.toString() ?? '';
 
-        final existingFinishedStock =
-            ((finishedProduct['stock'] ?? 0) as num)
-                .toInt();
+        final currentStock = ((material['stock'] ?? 0) as num).toInt();
 
-        final existingFinishedStockValue =
-            ((finishedProduct['stock_value'] ?? 0)
-                    as num)
-                .toDouble();
+        final currentStockValue = ((material['stock_value'] ?? 0) as num)
+            .toDouble();
 
-        // ======================================================
-        // 2. CALCULATE MATERIAL REQUIREMENTS
-        // ======================================================
+        final requiredStock = requiredQuantity.toInt();
 
-        double totalMaterialCost = 0;
+        // ----------------------------------------------------
+        // STOCK CHECK
+        // ----------------------------------------------------
 
-        final materialSnapshots =
-            <_MaterialCostSnapshot>[];
-
-        final usedMaterialIds =
-            <int>{};
-
-        for (final bomItem in bomItems) {
-          final materialProductId =
-              bomItem.materialProductId;
-
-          // ----------------------------------------------------
-          // PREVENT DUPLICATE MATERIAL ROWS
-          // ----------------------------------------------------
-
-          if (usedMaterialIds.contains(
-            materialProductId,
-          )) {
-            throw Exception(
-              'Duplicate material found in BOM.',
-            );
-          }
-
-          usedMaterialIds.add(
-            materialProductId,
-          );
-
-          // ----------------------------------------------------
-          // PREVENT FINISHED PRODUCT FROM BEING ITS OWN MATERIAL
-          // ----------------------------------------------------
-
-          if (materialProductId ==
-              productId) {
-            throw Exception(
-              'Finished product cannot be used as its own material.',
-            );
-          }
-
-          final bomQuantity =
-              bomItem.quantity;
-
-          if (bomQuantity <= 0) {
-            throw Exception(
-              'BOM material quantity must be greater than 0.',
-            );
-          }
-
-          final requiredQuantity =
-              bomQuantity * quantity;
-
-          if (!_isWholeNumber(
-            requiredQuantity,
-          )) {
-            throw Exception(
-              'Material "$materialProductId" requires a fractional '
-              'stock quantity. Current inventory stock supports '
-              'whole numbers only.',
-            );
-          }
-
-          // ----------------------------------------------------
-          // LOAD MATERIAL
-          // ----------------------------------------------------
-
-          final materialResult =
-              await txn.query(
-            'products',
-            columns: [
-              'id',
-              'name',
-              'stock',
-              'stock_value',
-            ],
-            where: 'id = ?',
-            whereArgs: [
-              materialProductId,
-            ],
-            limit: 1,
-          );
-
-          if (materialResult.isEmpty) {
-            throw Exception(
-              'Material product not found: '
-              '$materialProductId',
-            );
-          }
-
-          final material =
-              materialResult.first;
-
-          final materialName =
-              material['name']
-                      ?.toString() ??
-                  '';
-
-          final currentStock =
-              ((material['stock'] ?? 0) as num)
-                  .toInt();
-
-          final currentStockValue =
-              ((material['stock_value'] ?? 0)
-                      as num)
-                  .toDouble();
-
-          final requiredStock =
-              requiredQuantity.toInt();
-
-          // ----------------------------------------------------
-          // STOCK CHECK
-          // ----------------------------------------------------
-
-          if (currentStock <
-              requiredStock) {
-            throw Exception(
-              'Insufficient stock for "$materialName". '
-              'Required: $requiredStock, '
-              'Available: $currentStock.',
-            );
-          }
-
-          // ----------------------------------------------------
-          // CURRENT INVENTORY UNIT COST
-          //
-          // Current Stock Value
-          // -------------------
-          // Current Stock
-          //
-          // This uses the same current inventory value boundary
-          // that SaleRepository uses.
-          // ----------------------------------------------------
-
-          if (currentStock <= 0) {
-            throw Exception(
-              'No stock available for "$materialName".',
-            );
-          }
-
-          if (currentStockValue < 0) {
-            throw Exception(
-              'Invalid stock value for "$materialName".',
-            );
-          }
-
-          final currentUnitCost =
-              currentStockValue /
-                  currentStock;
-
-          // ----------------------------------------------------
-          // MATERIAL TOTAL COST
-          // ----------------------------------------------------
-
-          final materialTotalCost =
-              requiredQuantity *
-                  currentUnitCost;
-
-          totalMaterialCost +=
-              materialTotalCost;
-
-          // ----------------------------------------------------
-          // SAVE HISTORICAL SNAPSHOT
-          // ----------------------------------------------------
-
-          materialSnapshots.add(
-            _MaterialCostSnapshot(
-              productId:
-                  materialProductId,
-              productName:
-                  materialName,
-              quantity:
-                  requiredQuantity,
-              unitCost:
-                  currentUnitCost,
-              totalCost:
-                  materialTotalCost,
-            ),
+        if (currentStock < requiredStock) {
+          throw Exception(
+            'Insufficient stock for "$materialName". '
+            'Required: $requiredStock, '
+            'Available: $currentStock.',
           );
         }
 
-        // ======================================================
-        // 3. FACTORY / OTHER COST
-        // ======================================================
+        // ----------------------------------------------------
+        // CURRENT INVENTORY UNIT COST
+        //
+        // Current Stock Value
+        // -------------------
+        // Current Stock
+        //
+        // This uses the same current inventory value boundary
+        // that SaleRepository uses.
+        // ----------------------------------------------------
 
-        double totalFactoryCost = 0;
-
-        final factoryCostSnapshots =
-            <ProductionCost>[];
-
-        for (final cost in factoryCosts) {
-          if (cost.costPerUnit <= 0) {
-            continue;
-          }
-
-          final totalCost =
-              cost.costPerUnit *
-                  quantity;
-
-          totalFactoryCost +=
-              totalCost;
-
-          factoryCostSnapshots.add(
-            ProductionCost(
-              productionId: 0,
-              costType:
-                  cost.costType,
-              costPerUnit:
-                  cost.costPerUnit,
-              totalCost:
-                  totalCost,
-              note:
-                  cost.note,
-            ),
-          );
+        if (currentStock <= 0) {
+          throw Exception('No stock available for "$materialName".');
         }
 
-        // ======================================================
-        // 4. TOTAL PRODUCTION COST
-        // ======================================================
+        if (currentStockValue < 0) {
+          throw Exception('Invalid stock value for "$materialName".');
+        }
 
-        final totalProductionCost =
-            totalMaterialCost +
-                totalFactoryCost;
+        final currentUnitCost = currentStockValue / currentStock;
 
-        final unitCost =
-            totalProductionCost /
-                quantity;
+        // ----------------------------------------------------
+        // MATERIAL TOTAL COST
+        // ----------------------------------------------------
 
-        // ======================================================
-        // 5. INSERT PRODUCTION
-        // ======================================================
+        final materialTotalCost = requiredQuantity * currentUnitCost;
 
-        final createdAt =
-            DateTime.now()
-                .toIso8601String();
+        totalMaterialCost += materialTotalCost;
 
-        final productionId =
-            await txn.insert(
-          'productions',
-          {
-            'product_id':
-                productId,
-            'bom_id':
-                bomId,
-            'production_no':
-                productionNo,
-            'production_date':
-                productionDate,
-            'quantity':
-                quantity,
-            'total_material_cost':
-                totalMaterialCost,
-            'other_cost':
-                totalFactoryCost,
-            'total_production_cost':
-                totalProductionCost,
-            'unit_cost':
-                unitCost,
-            'note':
-                note,
-            'created_at':
-                createdAt,
-          },
+        // ----------------------------------------------------
+        // SAVE HISTORICAL SNAPSHOT
+        // ----------------------------------------------------
+
+        materialSnapshots.add(
+          _MaterialCostSnapshot(
+            productId: materialProductId,
+            productName: materialName,
+            quantity: requiredQuantity,
+            unitCost: currentUnitCost,
+            totalCost: materialTotalCost,
+          ),
         );
+      }
 
-        // ======================================================
-        // 6. INSERT MATERIAL COST SNAPSHOTS
-        // ======================================================
+      // ======================================================
+      // 3. FACTORY / OTHER COST
+      // ======================================================
 
-        for (final snapshot
-            in materialSnapshots) {
-          await txn.insert(
-            'production_items',
-            {
-              'production_id':
-                  productionId,
-              'material_product_id':
-                  snapshot.productId,
-              'material_name':
-                  snapshot.productName,
-              'quantity':
-                  snapshot.quantity,
-              'unit_cost':
-                  snapshot.unitCost,
-              'total_cost':
-                  snapshot.totalCost,
-            },
-          );
+      double totalFactoryCost = 0;
+
+      final factoryCostSnapshots = <ProductionCost>[];
+
+      for (final cost in factoryCosts) {
+        if (cost.costPerUnit <= 0) {
+          continue;
         }
 
-        // ======================================================
-        // 7. INSERT FACTORY COST SNAPSHOTS
-        // ======================================================
+        final totalCost = cost.costPerUnit * quantity;
 
-        for (final cost
-            in factoryCostSnapshots) {
-          await txn.insert(
-            'production_costs',
-            {
-              'production_id':
-                  productionId,
-              'cost_type':
-                  cost.costType,
-              'cost_per_unit':
-                  cost.costPerUnit,
-              'total_cost':
-                  cost.totalCost,
-              'note':
-                  cost.note,
-            },
-          );
-        }
+        totalFactoryCost += totalCost;
 
-        // ======================================================
-        // 8. DEDUCT RAW MATERIAL STOCK + VALUE
-        //
-        // IMPORTANT:
-        //
-        // Raw material value is reduced using the EXACT unit
-        // cost snapshot captured for this production.
-        //
-        // Average cost itself is NOT changed.
-        // ======================================================
+        factoryCostSnapshots.add(
+          ProductionCost(
+            productionId: 0,
+            costType: cost.costType,
+            costPerUnit: cost.costPerUnit,
+            totalCost: totalCost,
+            note: cost.note,
+          ),
+        );
+      }
 
-        for (final snapshot
-            in materialSnapshots) {
-          final materialQty =
-              snapshot.quantity.toInt();
+      // ======================================================
+      // 4. TOTAL PRODUCTION COST
+      // ======================================================
 
-          final materialCost =
-              snapshot.totalCost;
+      final totalProductionCost = totalMaterialCost + totalFactoryCost;
 
-          await txn.rawUpdate(
-            '''
+      final unitCost = totalProductionCost / quantity;
+
+      // ======================================================
+      // 5. INSERT PRODUCTION
+      // ======================================================
+
+      final createdAt = DateTime.now().toIso8601String();
+
+      final productionId = await txn.insert('productions', {
+        'product_id': productId,
+        'bom_id': bomId,
+        'production_no': productionNo,
+        'production_date': productionDate,
+        'quantity': quantity,
+        'total_material_cost': totalMaterialCost,
+        'other_cost': totalFactoryCost,
+        'total_production_cost': totalProductionCost,
+        'unit_cost': unitCost,
+        'note': note,
+        'created_at': createdAt,
+      });
+
+      // ======================================================
+      // 6. INSERT MATERIAL COST SNAPSHOTS
+      // ======================================================
+
+      for (final snapshot in materialSnapshots) {
+        await txn.insert('production_items', {
+          'production_id': productionId,
+          'material_product_id': snapshot.productId,
+          'material_name': snapshot.productName,
+          'quantity': snapshot.quantity,
+          'unit_cost': snapshot.unitCost,
+          'total_cost': snapshot.totalCost,
+        });
+      }
+
+      // ======================================================
+      // 7. INSERT FACTORY COST SNAPSHOTS
+      // ======================================================
+
+      for (final cost in factoryCostSnapshots) {
+        await txn.insert('production_costs', {
+          'production_id': productionId,
+          'cost_type': cost.costType,
+          'cost_per_unit': cost.costPerUnit,
+          'total_cost': cost.totalCost,
+          'note': cost.note,
+        });
+      }
+
+      // ======================================================
+      // 8. DEDUCT RAW MATERIAL STOCK + VALUE
+      //
+      // IMPORTANT:
+      //
+      // Raw material value is reduced using the EXACT unit
+      // cost snapshot captured for this production.
+      //
+      // Average cost itself is NOT changed.
+      // ======================================================
+
+      for (final snapshot in materialSnapshots) {
+        final materialQty = snapshot.quantity.toInt();
+
+        final materialCost = snapshot.totalCost;
+
+        await txn.rawUpdate(
+          '''
             UPDATE products
             SET
               stock = stock - ?,
@@ -510,99 +376,89 @@ class ProductionService {
                 END
             WHERE id = ?
             ''',
-            [
-              materialQty,
-              materialCost,
-              materialCost,
-              snapshot.productId,
-            ],
-          );
-        }
+          [materialQty, materialCost, materialCost, snapshot.productId],
+        );
+      }
 
-        // ======================================================
-        // 9. INCREASE FINISHED PRODUCT STOCK + VALUE
-        //
-        // Existing inventory value
-        //            +
-        // New production cost
-        //
-        // This creates the correct weighted current inventory
-        // cost for the finished product.
-        // ======================================================
+      // ======================================================
+      // 9. INCREASE FINISHED PRODUCT STOCK + VALUE
+      //
+      // Existing inventory value
+      //            +
+      // New production cost
+      //
+      // This creates the correct weighted current inventory
+      // cost for the finished product.
+      // ======================================================
 
-        final newFinishedStock =
-            existingFinishedStock +
-                quantity.toInt();
+      final newFinishedStock = existingFinishedStock + quantity.toInt();
 
-        final newFinishedStockValue =
-            existingFinishedStockValue +
-                totalProductionCost;
+      final newFinishedStockValue =
+          existingFinishedStockValue + totalProductionCost;
 
-        await txn.rawUpdate(
-          '''
+      await txn.rawUpdate(
+        '''
           UPDATE products
           SET
             stock = ?,
             stock_value = ?
           WHERE id = ?
           ''',
-          [
-            newFinishedStock,
-            newFinishedStockValue,
-            productId,
-          ],
-        );
+        [newFinishedStock, newFinishedStockValue, productId],
+      );
 
-        // ======================================================
-        // 10. RETURN PRODUCTION
-        // ======================================================
+      // ======================================================
+      // 10. FF CENTRAL JOURNAL
+      //
+      // Material conversion only:
+      // Dr Finished Inventory
+      // Cr Raw Material Inventory
+      //
+      // Factory/other cost remains in operational production
+      // costing until its accounting source is mapped.
+      // ======================================================
 
-        return Production(
-          id: productionId,
-          productId:
-              productId,
-          bomId:
-              bomId,
-          productionNo:
-              productionNo,
-          productionDate:
-              productionDate,
-          quantity:
-              quantity,
-          totalMaterialCost:
-              totalMaterialCost,
-          otherCost:
-              totalFactoryCost,
-          totalProductionCost:
-              totalProductionCost,
-          unitCost:
-              unitCost,
-          note:
-              note,
-          createdAt:
-              createdAt,
-        );
-      },
-    );
+      await _ffProductionPostingService.postProductionWithExecutor(
+        txn,
+        productionId: productionId,
+        materialCost: totalMaterialCost,
+        transactionDate: productionDate,
+        productionNo: productionNo,
+        note: note,
+      );
+
+      // ======================================================
+      // 11. RETURN PRODUCTION
+      // ======================================================
+
+      return Production(
+        id: productionId,
+        productId: productId,
+        bomId: bomId,
+        productionNo: productionNo,
+        productionDate: productionDate,
+        quantity: quantity,
+        totalMaterialCost: totalMaterialCost,
+        otherCost: totalFactoryCost,
+        totalProductionCost: totalProductionCost,
+        unitCost: unitCost,
+        note: note,
+        createdAt: createdAt,
+      );
+    });
   }
 
   // ============================================================
   // GET PRODUCTION BY ID
   // ============================================================
 
-  Future<Production?> getProductionById(
-    int productionId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<Production?> getProductionById(int productionId) async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.query(
+    final result = await db.query(
       'productions',
       where: 'id = ?',
-      whereArgs: [
-        productionId,
-      ],
+      whereArgs: [productionId],
       limit: 1,
     );
 
@@ -610,28 +466,22 @@ class ProductionService {
       return null;
     }
 
-    return Production.fromMap(
-      result.first,
-    );
+    return Production.fromMap(result.first);
   }
 
   // ============================================================
   // GET PRODUCTION ITEMS
   // ============================================================
 
-  Future<List<Map<String, dynamic>>>
-      getProductionItems(
+  Future<List<Map<String, dynamic>>> getProductionItems(
     int productionId,
   ) async {
-    final db =
-        await _databaseHelper.database;
+    final db = await _databaseHelper.database;
 
     return await db.query(
       'production_items',
       where: 'production_id = ?',
-      whereArgs: [
-        productionId,
-      ],
+      whereArgs: [productionId],
       orderBy: 'id ASC',
     );
   }
@@ -640,85 +490,49 @@ class ProductionService {
   // GET FACTORY COSTS
   // ============================================================
 
-  Future<List<ProductionCost>>
-      getProductionCosts(
-    int productionId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<List<ProductionCost>> getProductionCosts(int productionId) async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.query(
+    final result = await db.query(
       'production_costs',
       where: 'production_id = ?',
-      whereArgs: [
-        productionId,
-      ],
+      whereArgs: [productionId],
       orderBy: 'id ASC',
     );
 
-    return result
-        .map(
-          (map) =>
-              ProductionCost.fromMap(
-            map,
-          ),
-        )
-        .toList();
+    return result.map((map) => ProductionCost.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET ALL PRODUCTIONS
   // ============================================================
 
-  Future<List<Production>>
-      getProductions() async {
-    final db =
-        await _databaseHelper.database;
+  Future<List<Production>> getProductions() async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.query(
+    final result = await db.query(
       'productions',
-      orderBy:
-          'production_date DESC, id DESC',
+      orderBy: 'production_date DESC, id DESC',
     );
 
-    return result
-        .map(
-          (map) =>
-              Production.fromMap(map),
-        )
-        .toList();
+    return result.map((map) => Production.fromMap(map)).toList();
   }
 
   // ============================================================
   // GET PRODUCT PRODUCTION HISTORY
   // ============================================================
 
-  Future<List<Production>>
-      getProductionsForProduct(
-    int productId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<List<Production>> getProductionsForProduct(int productId) async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.query(
+    final result = await db.query(
       'productions',
       where: 'product_id = ?',
-      whereArgs: [
-        productId,
-      ],
-      orderBy:
-          'production_date DESC, id DESC',
+      whereArgs: [productId],
+      orderBy: 'production_date DESC, id DESC',
     );
 
-    return result
-        .map(
-          (map) =>
-              Production.fromMap(map),
-        )
-        .toList();
+    return result.map((map) => Production.fromMap(map)).toList();
   }
 
   // ============================================================
@@ -736,14 +550,10 @@ class ProductionService {
   // It is NOT used for current inventory costing.
   // ============================================================
 
-  Future<double> getProductionAverageCost(
-    int productId,
-  ) async {
-    final db =
-        await _databaseHelper.database;
+  Future<double> getProductionAverageCost(int productId) async {
+    final db = await _databaseHelper.database;
 
-    final result =
-        await db.rawQuery(
+    final result = await db.rawQuery(
       '''
       SELECT
         COALESCE(
@@ -765,31 +575,24 @@ class ProductionService {
       [productId],
     );
 
-final totalCost =
-    ((result.first['total_cost'] ?? 0) as num)
-        .toDouble();
+    final totalCost = ((result.first['total_cost'] ?? 0) as num).toDouble();
 
-final totalQuantity =
-    ((result.first['total_quantity'] ?? 0) as num)
+    final totalQuantity = ((result.first['total_quantity'] ?? 0) as num)
         .toDouble();
 
     if (totalQuantity <= 0) {
       return 0;
     }
 
-    return totalCost /
-        totalQuantity;
+    return totalCost / totalQuantity;
   }
 
   // ============================================================
   // WHOLE NUMBER CHECK
   // ============================================================
 
-  bool _isWholeNumber(
-    double value,
-  ) {
-    return value ==
-        value.roundToDouble();
+  bool _isWholeNumber(double value) {
+    return value == value.roundToDouble();
   }
 }
 

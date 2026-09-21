@@ -4,9 +4,20 @@ import '../database/database_helper.dart';
 import '../models/account_transaction.dart';
 import '../models/supplier.dart';
 import '../models/supplier_ledger.dart';
+import 'ff/ff_journal_service.dart';
+import 'ff/ff_party_payment_posting_service.dart';
+import 'ff/ff_party_account_service.dart';
 
 class SupplierRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFPartyPaymentPostingService _ffPartyPaymentPostingService =
+      FFPartyPaymentPostingService.instance;
+
+  final FFPartyAccountService _ffPartyAccountService =
+      FFPartyAccountService.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // INSERT SUPPLIER
@@ -15,20 +26,29 @@ class SupplierRepository {
   Future<int> insertSupplier(Supplier supplier) async {
     final db = await _databaseHelper.database;
 
-    final data = {
-      'name': supplier.name,
-      'phone': supplier.phone,
-      'address': supplier.address,
-      'opening_balance': supplier.openingBalance,
-      'opening_date': supplier.openingDate?.toIso8601String() ?? '',
-      'balance': supplier.balance,
-    };
+    return db.transaction((txn) async {
+      final data = {
+        'name': supplier.name,
+        'phone': supplier.phone,
+        'address': supplier.address,
+        'opening_balance': supplier.openingBalance,
+        'opening_date': supplier.openingDate?.toIso8601String() ?? '',
+        'balance': supplier.balance,
+      };
 
-    return await db.insert(
-      'suppliers',
-      data,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+      final supplierId = await txn.insert(
+        'suppliers',
+        data,
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+
+      await _ffPartyAccountService.ensureSupplierAccountWithExecutor(
+        txn,
+        supplierId,
+      );
+
+      return supplierId;
+    });
   }
 
   // ============================================================
@@ -101,20 +121,35 @@ class SupplierRepository {
   // ============================================================
 
   Future<int> updateSupplier(Supplier supplier) async {
+    if (supplier.id == null) {
+      throw ArgumentError('Supplier ID is required for update.');
+    }
+
     final db = await _databaseHelper.database;
 
-    return await db.update(
-      'suppliers',
-      {
-        'name': supplier.name,
-        'phone': supplier.phone,
-        'address': supplier.address,
-        'opening_balance': supplier.openingBalance,
-        'opening_date': supplier.openingDate?.toIso8601String() ?? '',
-      },
-      where: 'id = ?',
-      whereArgs: [supplier.id],
-    );
+    return db.transaction((txn) async {
+      final updated = await txn.update(
+        'suppliers',
+        {
+          'name': supplier.name,
+          'phone': supplier.phone,
+          'address': supplier.address,
+          'opening_balance': supplier.openingBalance,
+          'opening_date': supplier.openingDate?.toIso8601String() ?? '',
+        },
+        where: 'id = ?',
+        whereArgs: [supplier.id],
+      );
+
+      if (updated > 0) {
+        await _ffPartyAccountService.syncSupplierAccountWithExecutor(
+          txn,
+          supplier.id!,
+        );
+      }
+
+      return updated;
+    });
   }
 
   // ============================================================
@@ -432,6 +467,24 @@ class SupplierRepository {
         );
       }
 
+      // ------------------------------------------------------
+      // 8. FF CENTRAL JOURNAL
+      //
+      // Dr Supplier Payable
+      // Cr Cash / Bank / MFS
+      // ------------------------------------------------------
+
+      await _ffPartyPaymentPostingService.postSupplierPaymentWithExecutor(
+        txn,
+        paymentId: paymentId,
+        supplierId: supplierId,
+        accountId: accountId,
+        amount: amount,
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        note: note,
+      );
+
       return voucherNo;
     });
   }
@@ -619,7 +672,17 @@ class SupplierRepository {
       final voucherNo = paymentRows.first['voucher_no']?.toString();
 
       // ------------------------------------------------------
-      // 2. DELETE LINKED ACCOUNT TRANSACTION
+      // 2. DELETE LINKED FF JOURNAL
+      // ------------------------------------------------------
+
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'SUPPLIER_PAYMENT',
+        referenceId: paymentId,
+      );
+
+      // ------------------------------------------------------
+      // 3. DELETE LINKED ACCOUNT TRANSACTION
       // ------------------------------------------------------
 
       await txn.delete(

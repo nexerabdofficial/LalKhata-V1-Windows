@@ -2,74 +2,270 @@ import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
 
+class FFProfitAccountRow {
+  final int accountId;
+  final String accountName;
+  final String groupCode;
+  final double amount;
+
+  const FFProfitAccountRow({
+    required this.accountId,
+    required this.accountName,
+    required this.groupCode,
+    required this.amount,
+  });
+}
+
+class FFProfitStatement {
+  final List<FFProfitAccountRow> incomeAccounts;
+  final List<FFProfitAccountRow> expenseAccounts;
+
+  final double salesIncome;
+  final double otherIncome;
+  final double cogs;
+  final double operatingExpenses;
+
+  const FFProfitStatement({
+    required this.incomeAccounts,
+    required this.expenseAccounts,
+    required this.salesIncome,
+    required this.otherIncome,
+    required this.cogs,
+    required this.operatingExpenses,
+  });
+
+  double get totalIncome => salesIncome + otherIncome;
+
+  double get grossProfit => salesIncome - cogs;
+
+  double get netProfit => grossProfit + otherIncome - operatingExpenses;
+}
+
 class ProfitRepository {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  // ============================================================
+  // FF PROFIT & LOSS
+  // ============================================================
+
+  Future<FFProfitStatement> getProfitStatement({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    final fromIso = from.toIso8601String();
+    final toIso = to.toIso8601String();
+
+    final incomeRows = await _loadIncomeAccounts(db, fromIso, toIso);
+
+    final expenseRows = await _loadExpenseAccounts(db, fromIso, toIso);
+
+    double salesIncome = 0;
+    double otherIncome = 0;
+
+    for (final row in incomeRows) {
+      if (row.groupCode == 'SALES_INCOME') {
+        salesIncome += row.amount;
+      } else {
+        otherIncome += row.amount;
+      }
+    }
+
+    double operatingExpenses = 0;
+
+    for (final row in expenseRows) {
+      operatingExpenses += row.amount;
+    }
+
+    final cogs = await _getCogs(db, fromIso, toIso);
+
+    return FFProfitStatement(
+      incomeAccounts: incomeRows,
+      expenseAccounts: expenseRows,
+      salesIncome: salesIncome,
+      otherIncome: otherIncome,
+      cogs: cogs,
+      operatingExpenses: operatingExpenses,
+    );
+  }
+
+  // ============================================================
+  // FF INCOME ACCOUNTS
+  // CREDIT - DEBIT
+  // ============================================================
+
+  Future<List<FFProfitAccountRow>> _loadIncomeAccounts(
+    DatabaseExecutor db,
+    String fromIso,
+    String toIso,
+  ) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        a.id AS account_id,
+        a.name AS account_name,
+        COALESCE(g.group_code, '') AS group_code,
+        COALESCE(SUM(jl.credit), 0) -
+        COALESCE(SUM(jl.debit), 0) AS amount
+      FROM accounts a
+
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+
+      INNER JOIN journal_lines jl
+        ON jl.account_id = a.id
+
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+
+      WHERE g.group_kind = 'INCOME'
+        AND je.transaction_date BETWEEN ? AND ?
+
+      GROUP BY
+        a.id,
+        a.name,
+        g.group_code
+
+      HAVING ABS(
+        COALESCE(SUM(jl.credit), 0) -
+        COALESCE(SUM(jl.debit), 0)
+      ) > 0.000001
+
+      ORDER BY a.name
+      ''',
+      [fromIso, toIso],
+    );
+
+    return rows
+        .map(
+          (row) => FFProfitAccountRow(
+            accountId: (row['account_id'] as num).toInt(),
+            accountName: row['account_name']?.toString() ?? '',
+            groupCode: row['group_code']?.toString() ?? '',
+            amount: _toDouble(row['amount']),
+          ),
+        )
+        .toList();
+  }
+
+  // ============================================================
+  // FF EXPENSE ACCOUNTS
+  // DEBIT - CREDIT
+  // ============================================================
+
+  Future<List<FFProfitAccountRow>> _loadExpenseAccounts(
+    DatabaseExecutor db,
+    String fromIso,
+    String toIso,
+  ) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        a.id AS account_id,
+        a.name AS account_name,
+        COALESCE(g.group_code, '') AS group_code,
+        COALESCE(SUM(jl.debit), 0) -
+        COALESCE(SUM(jl.credit), 0) AS amount
+      FROM accounts a
+
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+
+      INNER JOIN journal_lines jl
+        ON jl.account_id = a.id
+
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+
+      WHERE g.group_kind = 'EXPENSE'
+        AND je.transaction_date BETWEEN ? AND ?
+
+      GROUP BY
+        a.id,
+        a.name,
+        g.group_code
+
+      HAVING ABS(
+        COALESCE(SUM(jl.debit), 0) -
+        COALESCE(SUM(jl.credit), 0)
+      ) > 0.000001
+
+      ORDER BY a.name
+      ''',
+      [fromIso, toIso],
+    );
+
+    return rows
+        .map(
+          (row) => FFProfitAccountRow(
+            accountId: (row['account_id'] as num).toInt(),
+            accountName: row['account_name']?.toString() ?? '',
+            groupCode: row['group_code']?.toString() ?? '',
+            amount: _toDouble(row['amount']),
+          ),
+        )
+        .toList();
+  }
+
+  // ============================================================
+  // COGS
+  //
+  // IMPORTANT:
+  // sale_items.purchase_price is the sale-time weighted-average
+  // cost snapshot written by SaleRepository.
+  //
+  // Do not replace this with current product purchase price.
+  // ============================================================
+
+  Future<double> _getCogs(
+    DatabaseExecutor db,
+    String fromIso,
+    String toIso,
+  ) async {
+    final result = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(
+          SUM(si.qty * si.purchase_price),
+          0
+        ) AS total
+
+      FROM sale_items si
+
+      INNER JOIN sales s
+        ON s.id = si.sale_id
+
+      WHERE s.sale_date BETWEEN ? AND ?
+      ''',
+      [fromIso, toIso],
+    );
+
+    return _toDouble(result.first['total']);
+  }
+
+  // ============================================================
+  // LEGACY PUBLIC API
+  //
+  // Kept for existing UI compatibility.
+  // Data now follows FF P&L rules.
+  // ============================================================
 
   Future<double> getTotalSales({
     required DateTime from,
     required DateTime to,
   }) async {
-    final db = await _databaseHelper.database;
+    final report = await getProfitStatement(from: from, to: to);
 
-    final result = await db.rawQuery(
-      '''
-      SELECT COALESCE(SUM(grand_total),0) AS total
-      FROM sales
-      WHERE sale_date BETWEEN ? AND ?
-      ''',
-      [
-        from.toIso8601String(),
-        to.toIso8601String(),
-      ],
-    );
-
-    return ((result.first['total'] ?? 0) as num)
-        .toDouble();
-  }
-
-  Future<double> getTotalExpense({
-    required DateTime from,
-    required DateTime to,
-  }) async {
-    final db = await _databaseHelper.database;
-
-    final result = await db.rawQuery(
-      '''
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM expenses
-      WHERE expense_date BETWEEN ? AND ?
-      ''',
-      [
-        from.toIso8601String(),
-        to.toIso8601String(),
-      ],
-    );
-
-    return ((result.first['total'] ?? 0) as num)
-        .toDouble();
-  }
-
-  Future<double> getTotalIncome({
-    required DateTime from,
-    required DateTime to,
-  }) async {
-    final db = await _databaseHelper.database;
-
-    final result = await db.rawQuery(
-      '''
-      SELECT COALESCE(SUM(amount),0) AS total
-      FROM incomes
-      WHERE income_date BETWEEN ? AND ?
-      ''',
-      [
-        from.toIso8601String(),
-        to.toIso8601String(),
-      ],
-    );
-
-    return ((result.first['total'] ?? 0) as num)
-        .toDouble();
+    return report.salesIncome;
   }
 
   Future<double> getCostOfGoodsSold({
@@ -78,65 +274,50 @@ class ProfitRepository {
   }) async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery(
-      '''
-      SELECT
-      COALESCE(
-        SUM(qty * purchase_price),
-        0
-      ) AS total
-      FROM sale_items
-      WHERE sale_id IN (
-        SELECT id
-        FROM sales
-        WHERE sale_date BETWEEN ? AND ?
-      )
-      ''',
-      [
-        from.toIso8601String(),
-        to.toIso8601String(),
-      ],
-    );
-
-    return ((result.first['total'] ?? 0) as num)
-        .toDouble();
+    return _getCogs(db, from.toIso8601String(), to.toIso8601String());
   }
+
   Future<double> getGrossProfit({
-  required DateTime from,
-  required DateTime to,
-}) async {
-  final sales = await getTotalSales(
-    from: from,
-    to: to,
-  );
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final report = await getProfitStatement(from: from, to: to);
 
-  final cogs = await getCostOfGoodsSold(
-    from: from,
-    to: to,
-  );
+    return report.grossProfit;
+  }
 
-  return sales - cogs;
-}
+  Future<double> getTotalIncome({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final report = await getProfitStatement(from: from, to: to);
 
-Future<double> getNetProfit({
-  required DateTime from,
-  required DateTime to,
-}) async {
-  final gross = await getGrossProfit(
-    from: from,
-    to: to,
-  );
+    return report.otherIncome;
+  }
 
-  final income = await getTotalIncome(
-    from: from,
-    to: to,
-  );
+  Future<double> getTotalExpense({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final report = await getProfitStatement(from: from, to: to);
 
-  final expense = await getTotalExpense(
-    from: from,
-    to: to,
-  );
+    return report.operatingExpenses;
+  }
 
-  return gross + income - expense;
-}
+  Future<double> getNetProfit({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final report = await getProfitStatement(from: from, to: to);
+
+    return report.netProfit;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
 }

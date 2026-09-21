@@ -2,11 +2,22 @@ import 'package:sqflite/sqflite.dart';
 
 import '../database/database_helper.dart';
 import '../models/purchase.dart';
+import '../models/payment_allocation.dart';
 import '../models/purchase_item.dart';
+import 'ff/ff_journal_service.dart';
+import 'ff/ff_purchase_posting_service.dart';
+import 'ff/ff_payment_allocation_service.dart';
 
 class PurchaseService {
-  final DatabaseHelper _databaseHelper =
-      DatabaseHelper.instance;
+  final FFPaymentAllocationService _paymentAllocationService =
+      FFPaymentAllocationService.instance;
+
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFPurchasePostingService _ffPurchasePostingService =
+      FFPurchasePostingService.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // NEXT SUPPLIER PAYMENT VOUCHER
@@ -20,31 +31,22 @@ class PurchaseService {
   // Later payment    -> SP#3
   // ============================================================
 
-  Future<String> _getNextSupplierPaymentVoucher(
-    DatabaseExecutor db,
-  ) async {
-    final result = await db.rawQuery(
-      '''
+  Future<String> _getNextSupplierPaymentVoucher(DatabaseExecutor db) async {
+    final result = await db.rawQuery('''
       SELECT voucher_no
       FROM supplier_payments
       WHERE voucher_no LIKE 'SP#%'
       ORDER BY id DESC
       LIMIT 1
-      ''',
-    );
+      ''');
 
     if (result.isEmpty) {
       return 'SP#1';
     }
 
-    final lastVoucher =
-        result.first['voucher_no']?.toString() ?? '';
+    final lastVoucher = result.first['voucher_no']?.toString() ?? '';
 
-    final lastNumber =
-        int.tryParse(
-              lastVoucher.replaceFirst('SP#', ''),
-            ) ??
-            0;
+    final lastNumber = int.tryParse(lastVoucher.replaceFirst('SP#', '')) ?? 0;
 
     return 'SP#${lastNumber + 1}';
   }
@@ -55,39 +57,78 @@ class PurchaseService {
 
   Future<int> savePurchase(
     Purchase purchase,
-    List<PurchaseItem> items,
-  ) async {
+    List<PurchaseItem> items, {
+    List<PaymentAllocation>? paymentAllocations,
+  }) async {
     final db = await _databaseHelper.database;
 
-    return await db.transaction(
-      (txn) async {
-        // --------------------------------------------------------
-        // 1. INSERT PURCHASE
-        // --------------------------------------------------------
+    return await db.transaction((txn) async {
+      // --------------------------------------------------------
+      // 1. INSERT PURCHASE
+      // --------------------------------------------------------
 
-        final purchaseId = await txn.insert(
-          'purchases',
-          purchase.toMap(),
-        );
+      final purchaseId = await txn.insert('purchases', purchase.toMap());
 
-        // --------------------------------------------------------
-        // 2. INSERT PURCHASE ITEMS + INCREASE STOCK
-        // --------------------------------------------------------
+      final effectiveAllocations = <PaymentAllocation>[];
 
-        for (final item in items) {
-          await txn.insert(
-            'purchase_items',
-            {
-              'purchase_id': purchaseId,
-              'product_id': item.productId,
-              'qty': item.qty,
-              'purchase_price': item.purchasePrice,
-              'subtotal': item.subtotal,
-            },
+      if (paymentAllocations != null) {
+        for (final allocation in paymentAllocations) {
+          effectiveAllocations.add(
+            PaymentAllocation(
+              referenceType: 'PURCHASE',
+              referenceId: purchaseId,
+              accountId: allocation.accountId,
+              amount: allocation.amount,
+              paymentMethod: allocation.paymentMethod,
+              createdAt: allocation.createdAt,
+            ),
           );
+        }
+      } else if (purchase.paid > 0 && purchase.accountId != null) {
+        effectiveAllocations.add(
+          PaymentAllocation(
+            referenceType: 'PURCHASE',
+            referenceId: purchaseId,
+            accountId: purchase.accountId!,
+            amount: purchase.paid,
+            paymentMethod: purchase.paymentMethod,
+            createdAt: purchase.createdAt,
+          ),
+        );
+      }
 
-          await txn.rawUpdate(
-            '''
+      final effectivePaid = _paymentAllocationService.totalAmount(
+        effectiveAllocations,
+      );
+
+      if ((effectivePaid - purchase.paid).abs() > 0.000001) {
+        throw StateError(
+          'Purchase payment allocation total does not match paid amount.',
+        );
+      }
+
+      await _paymentAllocationService.replaceAllocationsWithExecutor(
+        txn,
+        referenceType: 'PURCHASE',
+        referenceId: purchaseId,
+        allocations: effectiveAllocations,
+      );
+
+      // --------------------------------------------------------
+      // 2. INSERT PURCHASE ITEMS + INCREASE STOCK
+      // --------------------------------------------------------
+
+      for (final item in items) {
+        await txn.insert('purchase_items', {
+          'purchase_id': purchaseId,
+          'product_id': item.productId,
+          'qty': item.qty,
+          'purchase_price': item.purchasePrice,
+          'subtotal': item.subtotal,
+        });
+
+        await txn.rawUpdate(
+          '''
             UPDATE products
             SET
               stock = stock + ?,
@@ -95,96 +136,103 @@ class PurchaseService {
               purchase_price = ?
             WHERE id = ?
             ''',
-            [
-              item.qty,
-              item.subtotal,
-              item.purchasePrice,
-              item.productId,
-            ],
-          );
-        }
+          [item.qty, item.subtotal, item.purchasePrice, item.productId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 3. UPDATE SUPPLIER DUE
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 3. UPDATE SUPPLIER DUE
+      // --------------------------------------------------------
 
-        if (purchase.due != 0) {
-          await txn.rawUpdate(
-            '''
+      if (purchase.due != 0) {
+        await txn.rawUpdate(
+          '''
             UPDATE suppliers
             SET balance = balance + ?
             WHERE id = ?
             ''',
-            [
-              purchase.due,
-              purchase.supplierId,
-            ],
-          );
-        }
+          [purchase.due, purchase.supplierId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 4. PURCHASE-TIME SUPPLIER PAYMENT
-        //
-        // IMPORTANT:
-        // Purchase-time payment gets SP# voucher.
-        //
-        // Example:
-        // First payment = SP#1
-        // Second payment = SP#2
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 4. PURCHASE-TIME SUPPLIER PAYMENT
+      //
+      // IMPORTANT:
+      // Purchase-time payment gets SP# voucher.
+      //
+      // Example:
+      // First payment = SP#1
+      // Second payment = SP#2
+      // --------------------------------------------------------
 
-        if (purchase.paid > 0) {
-          final voucherNo =
-              await _getNextSupplierPaymentVoucher(
-            txn,
-          );
+      for (final allocation in effectiveAllocations) {
+        final voucherNo = await _getNextSupplierPaymentVoucher(txn);
 
-          await txn.insert(
-            'supplier_payments',
-            {
-              'supplier_id': purchase.supplierId,
-              'purchase_id': purchaseId,
-              'voucher_no': voucherNo,
-              'amount': purchase.paid,
-              'account_id': purchase.accountId,
-              'payment_method': 'PURCHASE_PAYMENT',
-              'note': (purchase.note ?? '').isEmpty
-                  ? 'Paid during purchase'
-                  : purchase.note,
-              'created_at':
-                  DateTime.now().toIso8601String(),
-            },
-          );
+        await txn.insert('supplier_payments', {
+          'supplier_id': purchase.supplierId,
+          'purchase_id': purchaseId,
+          'voucher_no': voucherNo,
+          'amount': allocation.amount,
+          'account_id': allocation.accountId,
+          'payment_method': 'PURCHASE_PAYMENT',
+          'note': (purchase.note ?? '').isEmpty
+              ? 'Paid during purchase'
+              : purchase.note,
+          'created_at': allocation.createdAt,
+        });
 
-          // ------------------------------------------------------
-          // 5. PURCHASE PAYMENT -> ACCOUNT LEDGER
-          // ------------------------------------------------------
+        await txn.insert('account_transactions', {
+          'account_id': allocation.accountId,
+          'transaction_type': 'PURCHASE_PAYMENT',
+          'reference_type': 'PURCHASE',
+          'reference_id': purchaseId,
+          'voucher_no': voucherNo,
+          'debit': allocation.amount,
+          'credit': 0.0,
+          'transaction_date': purchase.purchaseDate,
+          'note': purchase.note,
+          'created_at': allocation.createdAt,
+        });
+      }
 
-          if (purchase.accountId != null) {
-            await txn.insert(
-              'account_transactions',
-              {
-                'account_id': purchase.accountId,
-                'transaction_type':
-                    'PURCHASE_PAYMENT',
-                'reference_type': 'PURCHASE',
-                'reference_id': purchaseId,
-                'voucher_no': voucherNo,
-                'debit': purchase.paid,
-                'credit': 0.0,
-                'transaction_date':
-                    purchase.purchaseDate,
-                'note': purchase.note,
-                'created_at':
-                    DateTime.now().toIso8601String(),
-              },
-            );
-          }
-        }
+      // --------------------------------------------------------
+      // 6. FF CENTRAL JOURNAL
+      //
+      // Dr Inventory
+      // Cr Cash / Bank / MFS for paid amount
+      // Cr Supplier Payable for due amount
+      // --------------------------------------------------------
 
-        return purchaseId;
-      },
-    );
+      final savedPurchaseMaps = await txn.query(
+        'purchases',
+        where: 'id = ?',
+        whereArgs: [purchaseId],
+        limit: 1,
+      );
+
+      if (savedPurchaseMaps.isEmpty) {
+        throw StateError('Saved purchase could not be loaded.');
+      }
+
+      final savedPurchase = Purchase.fromMap(savedPurchaseMaps.first);
+
+      final rawVoucher = savedPurchase.invoiceNo?.trim() ?? '';
+
+      final ffVoucherNo = rawVoucher.isNotEmpty
+          ? rawVoucher
+          : 'PURCHASE-$purchaseId';
+
+      await _ffPurchasePostingService.postPurchaseWithAllocationsWithExecutor(
+        txn,
+        purchaseId: purchaseId,
+        purchase: savedPurchase,
+        allocations: effectiveAllocations,
+        voucherNo: ffVoucherNo,
+      );
+
+      return purchaseId;
+    });
   }
 
   // ============================================================
@@ -194,102 +242,107 @@ class PurchaseService {
   Future<void> updatePurchase(
     int purchaseId,
     Purchase purchase,
-    List<PurchaseItem> items,
-  ) async {
+    List<PurchaseItem> items, {
+    List<PaymentAllocation>? paymentAllocations,
+  }) async {
     final db = await _databaseHelper.database;
 
-    await db.transaction(
-      (txn) async {
-        // --------------------------------------------------------
-        // 1. GET PREVIOUS PURCHASE
-        // --------------------------------------------------------
+    await db.transaction((txn) async {
+      // --------------------------------------------------------
+      // 1. GET PREVIOUS PURCHASE
+      // --------------------------------------------------------
 
-        final oldPurchaseMaps = await txn.query(
-          'purchases',
-          where: 'id = ?',
-          whereArgs: [purchaseId],
-          limit: 1,
-        );
+      final oldPurchaseMaps = await txn.query(
+        'purchases',
+        where: 'id = ?',
+        whereArgs: [purchaseId],
+        limit: 1,
+      );
 
-        if (oldPurchaseMaps.isEmpty) {
-          throw Exception(
-            'Purchase not found.',
-          );
-        }
+      if (oldPurchaseMaps.isEmpty) {
+        throw Exception('Purchase not found.');
+      }
 
-        final previousPurchase =
-            Purchase.fromMap(
-          oldPurchaseMaps.first,
-        );
+      final previousPurchase = Purchase.fromMap(oldPurchaseMaps.first);
 
-        // --------------------------------------------------------
-        // 2. GET PREVIOUS ITEMS
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // DELETE PREVIOUS FF JOURNAL
+      //
+      // This is inside the same SQLite transaction.
+      // If update fails later, deletion is rolled back too.
+      // --------------------------------------------------------
 
-        final oldItemMaps = await txn.query(
-          'purchase_items',
-          where: 'purchase_id = ?',
-          whereArgs: [purchaseId],
-        );
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'PURCHASE',
+        referenceId: purchaseId,
+      );
 
-        final previousItems = oldItemMaps
-            .map(
-              (e) => PurchaseItem.fromMap(e),
-            )
-            .toList();
+      await _paymentAllocationService.deleteAllocationsWithExecutor(
+        txn,
+        referenceType: 'PURCHASE',
+        referenceId: purchaseId,
+      );
 
-        // --------------------------------------------------------
-        // 3. REVERSE PREVIOUS STOCK
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 2. GET PREVIOUS ITEMS
+      // --------------------------------------------------------
 
-        for (final item in previousItems) {
-          await txn.rawUpdate(
-            '''
+      final oldItemMaps = await txn.query(
+        'purchase_items',
+        where: 'purchase_id = ?',
+        whereArgs: [purchaseId],
+      );
+
+      final previousItems = oldItemMaps
+          .map((e) => PurchaseItem.fromMap(e))
+          .toList();
+
+      // --------------------------------------------------------
+      // 3. REVERSE PREVIOUS STOCK
+      // --------------------------------------------------------
+
+      for (final item in previousItems) {
+        await txn.rawUpdate(
+          '''
             UPDATE products
             SET
               stock = stock - ?,
               stock_value = stock_value - ?
             WHERE id = ?
             ''',
-            [
-              item.qty,
-              item.subtotal,
-              item.productId,
-            ],
-          );
-        }
+          [item.qty, item.subtotal, item.productId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 4. REVERSE PREVIOUS SUPPLIER DUE
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 4. REVERSE PREVIOUS SUPPLIER DUE
+      // --------------------------------------------------------
 
-        if (previousPurchase.due != 0) {
-          await txn.rawUpdate(
-            '''
+      if (previousPurchase.due != 0) {
+        await txn.rawUpdate(
+          '''
             UPDATE suppliers
             SET balance = balance - ?
             WHERE id = ?
             ''',
-            [
-              previousPurchase.due,
-              previousPurchase.supplierId,
-            ],
-          );
-        }
+          [previousPurchase.due, previousPurchase.supplierId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 5. DELETE PREVIOUS PURCHASE-TIME PAYMENT
-        //
-        // New records:
-        // purchase_id identifies the payment.
-        //
-        // Old records:
-        // fallback uses old invoice number.
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 5. DELETE PREVIOUS PURCHASE-TIME PAYMENT
+      //
+      // New records:
+      // purchase_id identifies the payment.
+      //
+      // Old records:
+      // fallback uses old invoice number.
+      // --------------------------------------------------------
 
-        await txn.delete(
-          'supplier_payments',
-          where: '''
+      await txn.delete(
+        'supplier_payments',
+        where: '''
             (
               purchase_id = ?
               AND payment_method = ?
@@ -301,83 +354,119 @@ class PurchaseService {
               AND payment_method = ?
             )
           ''',
-          whereArgs: [
-            purchaseId,
-            'PURCHASE_PAYMENT',
-            previousPurchase.invoiceNo,
-            'PURCHASE_PAYMENT',
-          ],
-        );
+        whereArgs: [
+          purchaseId,
+          'PURCHASE_PAYMENT',
+          previousPurchase.invoiceNo,
+          'PURCHASE_PAYMENT',
+        ],
+      );
 
-        // --------------------------------------------------------
-        // 6. DELETE PREVIOUS PURCHASE ACCOUNT TRANSACTION
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 6. DELETE PREVIOUS PURCHASE ACCOUNT TRANSACTION
+      // --------------------------------------------------------
 
-        await txn.delete(
-          'account_transactions',
-          where: '''
+      await txn.delete(
+        'account_transactions',
+        where: '''
             reference_type = ?
             AND reference_id = ?
             AND transaction_type = ?
           ''',
-          whereArgs: [
-            'PURCHASE',
-            purchaseId,
-            'PURCHASE_PAYMENT',
-          ],
-        );
+        whereArgs: ['PURCHASE', purchaseId, 'PURCHASE_PAYMENT'],
+      );
 
-        // --------------------------------------------------------
-        // 7. DELETE OLD PURCHASE ITEMS
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 7. DELETE OLD PURCHASE ITEMS
+      // --------------------------------------------------------
 
-        await txn.delete(
-          'purchase_items',
-          where: 'purchase_id = ?',
-          whereArgs: [purchaseId],
-        );
+      await txn.delete(
+        'purchase_items',
+        where: 'purchase_id = ?',
+        whereArgs: [purchaseId],
+      );
 
-        // --------------------------------------------------------
-        // 8. UPDATE PURCHASE
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 8. UPDATE PURCHASE
+      // --------------------------------------------------------
 
-        final purchaseMap =
-            purchase.toMap();
+      final purchaseMap = purchase.toMap();
 
-        purchaseMap.remove('id');
+      purchaseMap.remove('id');
 
-        await txn.update(
-          'purchases',
-          purchaseMap,
-          where: 'id = ?',
-          whereArgs: [purchaseId],
-        );
+      await txn.update(
+        'purchases',
+        purchaseMap,
+        where: 'id = ?',
+        whereArgs: [purchaseId],
+      );
 
-        // --------------------------------------------------------
-        // 9. INSERT NEW PURCHASE ITEMS
-        // --------------------------------------------------------
+      final effectiveAllocations = <PaymentAllocation>[];
 
-        for (final item in items) {
-          await txn.insert(
-            'purchase_items',
-            {
-              'purchase_id': purchaseId,
-              'product_id': item.productId,
-              'qty': item.qty,
-              'purchase_price':
-                  item.purchasePrice,
-              'subtotal': item.subtotal,
-            },
+      if (paymentAllocations != null) {
+        for (final allocation in paymentAllocations) {
+          effectiveAllocations.add(
+            PaymentAllocation(
+              referenceType: 'PURCHASE',
+              referenceId: purchaseId,
+              accountId: allocation.accountId,
+              amount: allocation.amount,
+              paymentMethod: allocation.paymentMethod,
+              createdAt: allocation.createdAt,
+            ),
           );
         }
+      } else if (purchase.paid > 0 && purchase.accountId != null) {
+        effectiveAllocations.add(
+          PaymentAllocation(
+            referenceType: 'PURCHASE',
+            referenceId: purchaseId,
+            accountId: purchase.accountId!,
+            amount: purchase.paid,
+            paymentMethod: purchase.paymentMethod,
+            createdAt: purchase.createdAt,
+          ),
+        );
+      }
 
-        // --------------------------------------------------------
-        // 10. APPLY NEW STOCK
-        // --------------------------------------------------------
+      final effectivePaid = _paymentAllocationService.totalAmount(
+        effectiveAllocations,
+      );
 
-        for (final item in items) {
-          await txn.rawUpdate(
-            '''
+      if ((effectivePaid - purchase.paid).abs() > 0.000001) {
+        throw StateError(
+          'Purchase payment allocation total does not match paid amount.',
+        );
+      }
+
+      await _paymentAllocationService.replaceAllocationsWithExecutor(
+        txn,
+        referenceType: 'PURCHASE',
+        referenceId: purchaseId,
+        allocations: effectiveAllocations,
+      );
+
+      // --------------------------------------------------------
+      // 9. INSERT NEW PURCHASE ITEMS
+      // --------------------------------------------------------
+
+      for (final item in items) {
+        await txn.insert('purchase_items', {
+          'purchase_id': purchaseId,
+          'product_id': item.productId,
+          'qty': item.qty,
+          'purchase_price': item.purchasePrice,
+          'subtotal': item.subtotal,
+        });
+      }
+
+      // --------------------------------------------------------
+      // 10. APPLY NEW STOCK
+      // --------------------------------------------------------
+
+      for (final item in items) {
+        await txn.rawUpdate(
+          '''
             UPDATE products
             SET
               stock = stock + ?,
@@ -385,102 +474,89 @@ class PurchaseService {
               purchase_price = ?
             WHERE id = ?
             ''',
-            [
-              item.qty,
-              item.subtotal,
-              item.purchasePrice,
-              item.productId,
-            ],
-          );
-        }
+          [item.qty, item.subtotal, item.purchasePrice, item.productId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 11. APPLY NEW SUPPLIER DUE
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 11. APPLY NEW SUPPLIER DUE
+      // --------------------------------------------------------
 
-        if (purchase.due != 0) {
-          await txn.rawUpdate(
-            '''
+      if (purchase.due != 0) {
+        await txn.rawUpdate(
+          '''
             UPDATE suppliers
             SET balance = balance + ?
             WHERE id = ?
             ''',
-            [
-              purchase.due,
-              purchase.supplierId,
-            ],
-          );
-        }
+          [purchase.due, purchase.supplierId],
+        );
+      }
 
-        // --------------------------------------------------------
-        // 12. NEW PURCHASE-TIME PAYMENT
-        // --------------------------------------------------------
+      // --------------------------------------------------------
+      // 12. NEW PURCHASE-TIME PAYMENT
+      // --------------------------------------------------------
 
-        if (purchase.paid > 0) {
-          final voucherNo =
-              await _getNextSupplierPaymentVoucher(
-            txn,
-          );
+      for (final allocation in effectiveAllocations) {
+        final voucherNo = await _getNextSupplierPaymentVoucher(txn);
 
-          await txn.insert(
-            'supplier_payments',
-            {
-              'supplier_id':
-                  purchase.supplierId,
-              'purchase_id':
-                  purchaseId,
-              'voucher_no':
-                  voucherNo,
-              'amount':
-                  purchase.paid,
-              'account_id':
-                  purchase.accountId,
-              'payment_method':
-                  'PURCHASE_PAYMENT',
-              'note':
-                  (purchase.note ?? '').isEmpty
-                      ? 'Paid during purchase'
-                      : purchase.note,
-              'created_at':
-                  DateTime.now()
-                      .toIso8601String(),
-            },
-          );
+        await txn.insert('supplier_payments', {
+          'supplier_id': purchase.supplierId,
+          'purchase_id': purchaseId,
+          'voucher_no': voucherNo,
+          'amount': allocation.amount,
+          'account_id': allocation.accountId,
+          'payment_method': 'PURCHASE_PAYMENT',
+          'note': (purchase.note ?? '').isEmpty
+              ? 'Paid during purchase'
+              : purchase.note,
+          'created_at': allocation.createdAt,
+        });
 
-          // ------------------------------------------------------
-          // 13. ACCOUNT LEDGER
-          // ------------------------------------------------------
+        await txn.insert('account_transactions', {
+          'account_id': allocation.accountId,
+          'transaction_type': 'PURCHASE_PAYMENT',
+          'reference_type': 'PURCHASE',
+          'reference_id': purchaseId,
+          'voucher_no': voucherNo,
+          'debit': allocation.amount,
+          'credit': 0.0,
+          'transaction_date': purchase.purchaseDate,
+          'note': purchase.note,
+          'created_at': allocation.createdAt,
+        });
+      }
 
-          if (purchase.accountId != null) {
-            await txn.insert(
-              'account_transactions',
-              {
-                'account_id':
-                    purchase.accountId,
-                'transaction_type':
-                    'PURCHASE_PAYMENT',
-                'reference_type':
-                    'PURCHASE',
-                'reference_id':
-                    purchaseId,
-                'voucher_no':
-                    voucherNo,
-                'debit':
-                    purchase.paid,
-                'credit':
-                    0.0,
-                'transaction_date':
-                    purchase.purchaseDate,
-                'note':
-                    purchase.note,
-                'created_at':
-                    DateTime.now()
-                        .toIso8601String(),
-              },
-            );
-          }
-        }
-      },
-    );
+      // --------------------------------------------------------
+      // 14. CREATE UPDATED FF CENTRAL JOURNAL
+      // --------------------------------------------------------
+
+      final updatedPurchaseMaps = await txn.query(
+        'purchases',
+        where: 'id = ?',
+        whereArgs: [purchaseId],
+        limit: 1,
+      );
+
+      if (updatedPurchaseMaps.isEmpty) {
+        throw StateError('Updated purchase could not be loaded.');
+      }
+
+      final updatedPurchase = Purchase.fromMap(updatedPurchaseMaps.first);
+
+      final rawUpdatedVoucher = updatedPurchase.invoiceNo?.trim() ?? '';
+
+      final updatedFFVoucherNo = rawUpdatedVoucher.isNotEmpty
+          ? rawUpdatedVoucher
+          : 'PURCHASE-$purchaseId';
+
+      await _ffPurchasePostingService.postPurchaseWithAllocationsWithExecutor(
+        txn,
+        purchaseId: purchaseId,
+        purchase: updatedPurchase,
+        allocations: effectiveAllocations,
+        voucherNo: updatedFFVoucherNo,
+      );
+    });
   }
 }

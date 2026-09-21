@@ -5,51 +5,57 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../../models/account.dart';
-import '../../models/account_transaction.dart';
-import '../../services/account_transaction_repository.dart';
+import '../../services/ff/ff_universal_ledger_service.dart';
 
 class AccountLedgerScreen extends StatefulWidget {
   final Account account;
 
-  const AccountLedgerScreen({
-    super.key,
-    required this.account,
-  });
+  const AccountLedgerScreen({super.key, required this.account});
 
   @override
-  State<AccountLedgerScreen> createState() =>
-      _AccountLedgerScreenState();
+  State<AccountLedgerScreen> createState() => _AccountLedgerScreenState();
 }
 
 class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
-  final AccountTransactionRepository _repository =
-      AccountTransactionRepository();
+  final FFUniversalLedgerService _ledgerService =
+      FFUniversalLedgerService.instance;
 
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
   bool _loading = true;
-  List<AccountTransaction> _transactions = [];
+  List<Map<String, dynamic>> _transactions = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadLedger();
-  }
+  FFUniversalLedgerSummary? _summary;
+
+  // ============================================================
+  // LOAD FF UNIVERSAL LEDGER
+  // ============================================================
 
   Future<void> _loadLedger() async {
+    if (widget.account.id == null) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+      return;
+    }
+
     setState(() {
       _loading = true;
     });
 
     try {
-      final data = await _repository.getTransactionsByAccount(
-        widget.account.id!,
-      );
+      final results = await Future.wait([
+        _ledgerService.getLedger(accountId: widget.account.id!),
+        _ledgerService.getSummary(accountId: widget.account.id!),
+      ]);
 
       if (!mounted) return;
 
       setState(() {
-        _transactions = data;
+        _transactions = results[0] as List<Map<String, dynamic>>;
+        _summary = results[1] as FFUniversalLedgerSummary;
         _loading = false;
       });
     } catch (e) {
@@ -59,35 +65,49 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load ledger: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load FF ledger: $e')));
     }
   }
 
-  double get _totalDebit {
-    return _transactions.fold(
-      0,
-      (sum, item) => sum + item.debit,
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadLedger();
   }
 
-  double get _totalCredit {
-    return _transactions.fold(
-      0,
-      (sum, item) => sum + item.credit,
-    );
-  }
+  // ============================================================
+  // VALUES
+  // ============================================================
 
   double get _openingBalance {
-    return widget.account.openingBalance;
+    return _summary?.openingBalance ?? 0;
   }
 
   double get _currentBalance {
-    return widget.account.balance;
+    return _summary?.closingBalance ?? 0;
   }
+
+  double get _totalDebit {
+    return _summary?.totalDebit ?? 0;
+  }
+
+  double get _totalCredit {
+    return _summary?.totalCredit ?? 0;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  // ============================================================
+  // FORMAT
+  // ============================================================
 
   String _formatMoney(double value) {
     return NumberFormat('#,##0.##').format(value);
@@ -101,94 +121,99 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     }
   }
 
-String _voucher(AccountTransaction transaction) {
-  if (transaction.transactionType == "OPENING_BALANCE") {
-    return "OB";
-  }
+  String _voucher(Map<String, dynamic> row) {
+    final voucher = row['voucher_no']?.toString().trim() ?? '';
 
-  if (transaction.voucherNo != null &&
-      transaction.voucherNo!.trim().isNotEmpty) {
-    return transaction.voucherNo!;
-  }
-
-  return '-';
-}
-  String _description(AccountTransaction transaction) {
-    if (transaction.note != null &&
-        transaction.note!.trim().isNotEmpty) {
-      return transaction.note!;
+    if (voucher.isNotEmpty) {
+      return voucher;
     }
 
-    return transaction.transactionType;
+    return '-';
   }
 
-double _balanceAfterTransactions(int index) {
-  double balance = _openingBalance;
+  String _description(Map<String, dynamic> row) {
+    final note = row['note']?.toString().trim() ?? '';
 
-  for (int i = 0; i <= index; i++) {
-    final transaction = _transactions[i];
-
-    balance += transaction.credit;
-    balance -= transaction.debit;
-  }
-
-  return balance;
-}
-
-  Color _amountColor(AccountTransaction transaction) {
-    if (transaction.credit > 0) {
-      return Colors.green;
+    if (note.isNotEmpty) {
+      return note;
     }
 
-    if (transaction.debit > 0) {
+    final description = row['description']?.toString().trim() ?? '';
+
+    if (description.isNotEmpty) {
+      return description;
+    }
+
+    return row['transaction_type']?.toString().trim() ?? '';
+  }
+
+  String _transactionDate(Map<String, dynamic> row) {
+    return row['transaction_date']?.toString().trim() ?? '';
+  }
+
+  // ============================================================
+  // AMOUNT PRESENTATION
+  //
+  // IMPORTANT:
+  // Debit/Credit are accounting movements.
+  // We do NOT use legacy "+credit -debit" logic here.
+  // Running balance comes directly from FF Universal Ledger.
+  // ============================================================
+
+  Color _amountColor(Map<String, dynamic> row) {
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    if (debit > 0) {
       return Colors.red;
+    }
+
+    if (credit > 0) {
+      return Colors.green;
     }
 
     return Colors.grey;
   }
 
-  String _amountText(AccountTransaction transaction) {
-    if (transaction.credit > 0) {
-      return '+৳${_formatMoney(transaction.credit)}';
+  String _amountText(Map<String, dynamic> row) {
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    if (debit > 0) {
+      return 'Dr ৳${_formatMoney(debit)}';
     }
 
-    if (transaction.debit > 0) {
-      return '-৳${_formatMoney(transaction.debit)}';
+    if (credit > 0) {
+      return 'Cr ৳${_formatMoney(credit)}';
     }
 
     return '৳0';
   }
 
+  // ============================================================
+  // PDF
+  // ============================================================
+
   Future<void> _exportPdf() async {
     final pdf = pw.Document();
 
-    double runningBalance = _openingBalance;
-
     final rows = <List<String>>[
-      [
-        'Date',
-        'Voucher',
-        'Description',
-        'Debit',
-        'Credit',
-        'Balance',
-      ],
+      ['Date', 'Voucher', 'Description', 'Debit', 'Credit', 'Balance'],
     ];
 
     for (final transaction in _transactions) {
-      runningBalance += transaction.credit;
-      runningBalance -= transaction.debit;
+      final debit = _toDouble(transaction['debit']);
+
+      final credit = _toDouble(transaction['credit']);
+
+      final runningBalance = _toDouble(transaction['running_balance']);
 
       rows.add([
-        _formatDate(transaction.transactionDate),
+        _formatDate(_transactionDate(transaction)),
         _voucher(transaction),
         _description(transaction),
-        transaction.debit > 0
-            ? _formatMoney(transaction.debit)
-            : '',
-        transaction.credit > 0
-            ? _formatMoney(transaction.credit)
-            : '',
+        debit > 0 ? _formatMoney(debit) : '',
+        credit > 0 ? _formatMoney(credit) : '',
         _formatMoney(runningBalance),
       ]);
     }
@@ -199,8 +224,7 @@ double _balanceAfterTransactions(int index) {
         margin: const pw.EdgeInsets.all(24),
         header: (context) {
           return pw.Column(
-            crossAxisAlignment:
-                pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
                 'Account Ledger',
@@ -217,9 +241,7 @@ double _balanceAfterTransactions(int index) {
                   fontWeight: pw.FontWeight.bold,
                 ),
               ),
-              pw.Text(
-                'Type: ${widget.account.type}',
-              ),
+              pw.Text('Type: ${widget.account.type}'),
               pw.SizedBox(height: 12),
             ],
           );
@@ -229,46 +251,33 @@ double _balanceAfterTransactions(int index) {
             alignment: pw.Alignment.centerRight,
             child: pw.Text(
               'Page ${context.pageNumber} / ${context.pagesCount}',
-              style: const pw.TextStyle(
-                fontSize: 9,
-              ),
+              style: const pw.TextStyle(fontSize: 9),
             ),
           );
         },
         build: (context) {
           return [
             pw.Row(
-              mainAxisAlignment:
-                  pw.MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text(
-                  'Opening Balance: ৳${_formatMoney(_openingBalance)}',
-                ),
-                pw.Text(
-                  'Current Balance: ৳${_formatMoney(_currentBalance)}',
-                ),
+                pw.Text('Opening Balance: ${_formatMoney(_openingBalance)}'),
+                pw.Text('Closing Balance: ${_formatMoney(_currentBalance)}'),
               ],
             ),
             pw.SizedBox(height: 16),
             pw.Table.fromTextArray(
               headers: rows.first,
               data: rows.skip(1).toList(),
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-              ),
+              border: pw.TableBorder.all(color: PdfColors.grey400),
               headerStyle: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold,
                 fontSize: 8,
               ),
-              cellStyle: const pw.TextStyle(
-                fontSize: 8,
-              ),
-              headerDecoration:
-                  const pw.BoxDecoration(
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey300,
               ),
-              cellPadding:
-                  const pw.EdgeInsets.all(5),
+              cellPadding: const pw.EdgeInsets.all(5),
               columnWidths: {
                 0: const pw.FlexColumnWidth(1.1),
                 1: const pw.FlexColumnWidth(1.1),
@@ -280,21 +289,16 @@ double _balanceAfterTransactions(int index) {
             ),
             pw.SizedBox(height: 16),
             pw.Row(
-              mainAxisAlignment:
-                  pw.MainAxisAlignment.end,
+              mainAxisAlignment: pw.MainAxisAlignment.end,
               children: [
                 pw.Text(
-                  'Total Debit: ৳${_formatMoney(_totalDebit)}',
-                  style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                  ),
+                  'Total Debit: ${_formatMoney(_totalDebit)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                 ),
                 pw.SizedBox(width: 24),
                 pw.Text(
-                  'Total Credit: ৳${_formatMoney(_totalCredit)}',
-                  style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                  ),
+                  'Total Credit: ${_formatMoney(_totalCredit)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                 ),
               ],
             ),
@@ -310,29 +314,24 @@ double _balanceAfterTransactions(int index) {
     );
   }
 
+  // ============================================================
+  // SUMMARY
+  // ============================================================
+
   Widget _buildSummary() {
     return Card(
-      margin: const EdgeInsets.fromLTRB(
-        12,
-        12,
-        12,
-        6,
-      ),
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Opening Balance',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -347,21 +346,16 @@ double _balanceAfterTransactions(int index) {
             ),
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   const Text(
-                    'Current Balance',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
+                    'Closing Balance',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '৳${_formatMoney(_currentBalance)}',
                     style: const TextStyle(
-                      color: Colors.green,
                       fontWeight: FontWeight.bold,
                       fontSize: 17,
                     ),
@@ -375,109 +369,84 @@ double _balanceAfterTransactions(int index) {
     );
   }
 
-Widget _buildHeader() {
-  return Container(
-    margin: const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 6,
-    ),
-    padding: const EdgeInsets.symmetric(
-      horizontal: 10,
-      vertical: 10,
-    ),
-    decoration: BoxDecoration(
-      color: Theme.of(context)
-          .colorScheme
-          .surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: const Row(
-      children: [
-        SizedBox(
-          width: 70,
-          child: Text(
-            'Date',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
+  // ============================================================
+  // HEADER
+  // ============================================================
 
-        SizedBox(
-          width: 72,
-          child: Text(
-            'Voucher',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          SizedBox(
+            width: 72,
+            child: Text(
+              'Voucher',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-        ),
+          Expanded(
+            child: Text(
+              'Dr / Cr',
+              textAlign: TextAlign.right,
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          SizedBox(
+            width: 105,
+            child: Text(
+              'Balance',
+              textAlign: TextAlign.right,
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-        Expanded(
-          child: Text(
-            'Amount',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-
-        SizedBox(
-          width: 105,
-          child: Text(
-            'Balance',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
+  // ============================================================
+  // OPENING ROW
+  // ============================================================
 
   Widget _buildOpeningRow() {
     return Card(
-      margin: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 3,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         child: Row(
           children: [
             SizedBox(
-              width: 82,
+              width: 70,
               child: Text(
                 _formatDate(widget.account.openingDate),
-                style: const TextStyle(
-                  fontSize: 12,
-                ),
+                style: const TextStyle(fontSize: 12),
               ),
             ),
-            const SizedBox(width: 10),
-
+            const SizedBox(width: 2),
             const SizedBox(
-              width: 105,
+              width: 72,
               child: Text(
                 'OB',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
               ),
             ),
             Expanded(
               child: Text(
-                '+৳${_formatMoney(_openingBalance)}',
+                'Opening',
                 textAlign: TextAlign.right,
                 style: const TextStyle(
-                  color: Colors.green,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -487,9 +456,7 @@ Widget _buildHeader() {
               child: Text(
                 '৳${_formatMoney(_openingBalance)}',
                 textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -498,79 +465,108 @@ Widget _buildHeader() {
     );
   }
 
-Widget _buildTransactionRow(
-  AccountTransaction transaction,
-  int index,
-) {
-  final balance = _balanceAfterTransactions(index);
+  // ============================================================
+  // TRANSACTION ROW
+  // ============================================================
 
-  return Card(
-    margin: const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 3,
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 12,
-      ),
-      child: Row(
-  children: [
-    SizedBox(
-      width: 70,
-      child: Text(
-        _formatDate(
-          transaction.transactionDate,
-        ),
-        style: const TextStyle(
-          fontSize: 12,
-        ),
-      ),
-    ),
+  Widget _buildTransactionRow(Map<String, dynamic> transaction) {
+    final balance = _toDouble(transaction['running_balance']);
 
-    const SizedBox(width: 2),
-
-    SizedBox(
-      width: 72,
-      child: Text(
-        _voucher(transaction),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
-        ),
-      ),
-    ),
-
-    Expanded(
-      child: Text(
-        _amountText(transaction),
-        textAlign: TextAlign.right,
-        style: TextStyle(
-          color: _amountColor(transaction),
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ),
-
-    const SizedBox(width: 8),
-
-    SizedBox(
-      width: 105,
-      child: Text(
-        '৳${_formatMoney(balance)}',
-        textAlign: TextAlign.right,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 70,
+              child: Text(
+                _formatDate(_transactionDate(transaction)),
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            const SizedBox(width: 2),
+            SizedBox(
+              width: 72,
+              child: Text(
+                _voucher(transaction),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Tooltip(
+                message: _description(transaction),
+                child: Text(
+                  _amountText(transaction),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: _amountColor(transaction),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 105,
+              child: Text(
+                '৳${_formatMoney(balance)}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
         ),
       ),
-    ),
-  ],
-)
-    ),
-  );
-}
+    );
+  }
+
+  // ============================================================
+  // TOTALS
+  // ============================================================
+
+  Widget _buildTotals() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'Debit: ৳${_formatMoney(_totalDebit)}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Credit: ৳${_formatMoney(_totalCredit)}',
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -580,84 +576,40 @@ Widget _buildTransactionRow(
         actions: [
           IconButton(
             tooltip: 'Export PDF',
-            icon: const Icon(
-              Icons.picture_as_pdf,
-            ),
-            onPressed:
-                _loading ? null : _exportPdf,
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: _loading ? null : _exportPdf,
           ),
         ],
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadLedger,
               child: ListView(
-                padding: const EdgeInsets.only(
-                  bottom: 24,
-                ),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 24),
                 children: [
                   _buildSummary(),
                   _buildHeader(),
-                  if (_transactions.isEmpty)
+
+                  if (_openingBalance != 0) _buildOpeningRow(),
+
+                  if (_transactions.isEmpty && _openingBalance == 0)
                     const Padding(
                       padding: EdgeInsets.all(30),
                       child: Center(
                         child: Text(
                           'No transactions yet.',
-                          style: TextStyle(
-                            color: Colors.grey,
-                          ),
+                          style: TextStyle(color: Colors.grey),
                         ),
                       ),
                     ),
-                  ...List.generate(
-                    _transactions.length,
-                    (index) => _buildTransactionRow(
-                      _transactions[index],
-                      index,
-                    ),
-                  ),
+
+                  ..._transactions.map(_buildTransactionRow),
+
                   const SizedBox(height: 12),
-                  Card(
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.end,
-                        children: [
-                          Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                'Debit: ৳${_formatMoney(_totalDebit)}',
-                                style: const TextStyle(
-                                  color: Colors.red,
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Credit: ৳${_formatMoney(_totalCredit)}',
-                                style: const TextStyle(
-                                  color: Colors.green,
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+
+                  _buildTotals(),
                 ],
               ),
             ),

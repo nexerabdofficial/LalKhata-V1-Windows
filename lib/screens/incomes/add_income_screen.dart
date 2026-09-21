@@ -4,8 +4,6 @@ import '../../models/income.dart';
 import '../../services/income_repository.dart';
 import '../../models/account.dart';
 import '../../services/account_repository.dart';
-import '../../models/account_transaction.dart';
-import '../../services/account_transaction_repository.dart';
 
 class AddIncomeScreen extends StatefulWidget {
   const AddIncomeScreen({super.key});
@@ -26,8 +24,6 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
   final IncomeRepository _repository = IncomeRepository();
 
   final AccountRepository _accountRepository = AccountRepository();
-  final AccountTransactionRepository _transactionRepository =
-      AccountTransactionRepository();
 
   List<Account> _accounts = [];
 
@@ -73,21 +69,6 @@ class _AddIncomeScreenState extends State<AddIncomeScreen> {
           createdAt: now,
         ),
         voucherNo: voucherNo,
-      );
-
-      await _transactionRepository.insertTransaction(
-        AccountTransaction(
-          accountId: _selectedAccountId!,
-          transactionType: "INCOME",
-          referenceType: "INCOME",
-          referenceId: null,
-          voucherNo: voucherNo,
-          debit: 0,
-          credit: amount,
-          transactionDate: now,
-          note: _category.text.trim(),
-          createdAt: now,
-        ),
       );
 
       if (!mounted) return;

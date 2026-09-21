@@ -1,0 +1,284 @@
+import 'package:sqflite/sqflite.dart';
+
+import '../../database/database_helper.dart';
+import 'ff_journal_models.dart';
+import 'ff_journal_service.dart';
+
+class FFReceivePaymentService {
+  FFReceivePaymentService._();
+
+  static final FFReceivePaymentService instance = FFReceivePaymentService._();
+
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFJournalService _journalService = FFJournalService.instance;
+
+  // ============================================================
+  // RECEIVE
+  //
+  // Dr Receiving Cash / Bank / MFS
+  // Cr Selected Ledger
+  // ============================================================
+
+  Future<int> receive({
+    required int receivingAccountId,
+    required int ledgerAccountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String? referenceType,
+    int? referenceId,
+    String note = '',
+  }) async {
+    final db = await _databaseHelper.database;
+
+    return db.transaction(
+      (txn) => receiveWithExecutor(
+        txn,
+        receivingAccountId: receivingAccountId,
+        ledgerAccountId: ledgerAccountId,
+        amount: amount,
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: referenceType,
+        referenceId: referenceId,
+        note: note,
+      ),
+    );
+  }
+
+  Future<int> receiveWithExecutor(
+    DatabaseExecutor db, {
+    required int receivingAccountId,
+    required int ledgerAccountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String? referenceType,
+    int? referenceId,
+    String note = '',
+  }) async {
+    await _validate(
+      db,
+      cashAccountId: receivingAccountId,
+      ledgerAccountId: ledgerAccountId,
+      amount: amount,
+    );
+
+    return _journalService.createJournalWithExecutor(
+      db,
+      FFJournalEntry(
+        transactionType: 'RECEIVE',
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: referenceType ?? 'RECEIVE',
+        referenceId: referenceId,
+        description: note.trim().isEmpty ? 'Receive' : note.trim(),
+        createdAt: DateTime.now().toIso8601String(),
+        lines: [
+          FFJournalLine(
+            accountId: receivingAccountId,
+            debit: amount,
+            credit: 0,
+            note: note.trim().isEmpty ? 'Money received' : note.trim(),
+          ),
+          FFJournalLine(
+            accountId: ledgerAccountId,
+            debit: 0,
+            credit: amount,
+            note: note.trim().isEmpty ? 'Receive against ledger' : note.trim(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // PAYMENT
+  //
+  // Dr Selected Ledger
+  // Cr Paying Cash / Bank / MFS
+  // ============================================================
+
+  Future<int> payment({
+    required int payingAccountId,
+    required int ledgerAccountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String? referenceType,
+    int? referenceId,
+    String note = '',
+  }) async {
+    final db = await _databaseHelper.database;
+
+    return db.transaction(
+      (txn) => paymentWithExecutor(
+        txn,
+        payingAccountId: payingAccountId,
+        ledgerAccountId: ledgerAccountId,
+        amount: amount,
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: referenceType,
+        referenceId: referenceId,
+        note: note,
+      ),
+    );
+  }
+
+  Future<int> paymentWithExecutor(
+    DatabaseExecutor db, {
+    required int payingAccountId,
+    required int ledgerAccountId,
+    required double amount,
+    required String voucherNo,
+    required String transactionDate,
+    String? referenceType,
+    int? referenceId,
+    String note = '',
+  }) async {
+    await _validate(
+      db,
+      cashAccountId: payingAccountId,
+      ledgerAccountId: ledgerAccountId,
+      amount: amount,
+    );
+
+    return _journalService.createJournalWithExecutor(
+      db,
+      FFJournalEntry(
+        transactionType: 'PAYMENT',
+        voucherNo: voucherNo,
+        transactionDate: transactionDate,
+        referenceType: referenceType ?? 'PAYMENT',
+        referenceId: referenceId,
+        description: note.trim().isEmpty ? 'Payment' : note.trim(),
+        createdAt: DateTime.now().toIso8601String(),
+        lines: [
+          FFJournalLine(
+            accountId: ledgerAccountId,
+            debit: amount,
+            credit: 0,
+            note: note.trim().isEmpty ? 'Payment against ledger' : note.trim(),
+          ),
+          FFJournalLine(
+            accountId: payingAccountId,
+            debit: 0,
+            credit: amount,
+            note: note.trim().isEmpty ? 'Money paid' : note.trim(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // NEXT VOUCHER
+  // ============================================================
+
+  Future<String> getNextReceiveVoucherNo() async {
+    return _getNextVoucher(prefix: 'RV#', transactionType: 'RECEIVE');
+  }
+
+  Future<String> getNextPaymentVoucherNo() async {
+    return _getNextVoucher(prefix: 'PV#', transactionType: 'PAYMENT');
+  }
+
+  Future<String> _getNextVoucher({
+    required String prefix,
+    required String transactionType,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT voucher_no
+      FROM journal_entries
+      WHERE transaction_type = ?
+        AND voucher_no LIKE ?
+      ORDER BY id DESC
+      LIMIT 1
+      ''',
+      [transactionType, '$prefix%'],
+    );
+
+    if (rows.isEmpty) {
+      return '${prefix}1';
+    }
+
+    final last = rows.first['voucher_no']?.toString() ?? '';
+
+    final number = int.tryParse(last.replaceFirst(prefix, '')) ?? 0;
+
+    return '$prefix${number + 1}';
+  }
+
+  // ============================================================
+  // VALIDATION
+  // ============================================================
+
+  Future<void> _validate(
+    DatabaseExecutor db, {
+    required int cashAccountId,
+    required int ledgerAccountId,
+    required double amount,
+  }) async {
+    if (amount <= 0) {
+      throw ArgumentError('Amount must be greater than zero.');
+    }
+
+    if (cashAccountId <= 0 || ledgerAccountId <= 0) {
+      throw ArgumentError('Invalid account.');
+    }
+
+    if (cashAccountId == ledgerAccountId) {
+      throw ArgumentError(
+        'Cash account and ledger account cannot be the same.',
+      );
+    }
+
+    final cashRows = await db.rawQuery(
+      '''
+      SELECT
+        a.id,
+        g.group_code
+      FROM accounts a
+      LEFT JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+      LEFT JOIN ff_account_groups g
+        ON g.id = l.group_id
+      WHERE a.id = ?
+      LIMIT 1
+      ''',
+      [cashAccountId],
+    );
+
+    if (cashRows.isEmpty) {
+      throw StateError('Cash/Bank/MFS account not found.');
+    }
+
+    final cashGroup = cashRows.first['group_code']?.toString().toUpperCase();
+
+    const allowedCashGroups = {'CASH', 'BANK', 'MFS'};
+
+    if (!allowedCashGroups.contains(cashGroup)) {
+      throw StateError(
+        'Receive/Payment money account must be Cash, Bank or MFS.',
+      );
+    }
+
+    final ledgerRows = await db.query(
+      'accounts',
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [ledgerAccountId],
+      limit: 1,
+    );
+
+    if (ledgerRows.isEmpty) {
+      throw StateError('Selected ledger account not found.');
+    }
+  }
+}

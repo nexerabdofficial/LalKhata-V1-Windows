@@ -1,0 +1,371 @@
+import 'package:sqflite/sqflite.dart';
+
+import '../../database/database_helper.dart';
+
+class FFCashFlowRow {
+  final int journalId;
+  final int accountId;
+  final String accountName;
+  final String accountType;
+  final String groupCode;
+
+  final String transactionType;
+  final String? voucherNo;
+  final String transactionDate;
+  final String? description;
+  final String? note;
+
+  final double debit;
+  final double credit;
+
+  final bool isInternalTransfer;
+
+  const FFCashFlowRow({
+    required this.journalId,
+    required this.accountId,
+    required this.accountName,
+    required this.accountType,
+    required this.groupCode,
+    required this.transactionType,
+    required this.voucherNo,
+    required this.transactionDate,
+    required this.description,
+    required this.note,
+    required this.debit,
+    required this.credit,
+    required this.isInternalTransfer,
+  });
+
+  double get inflow => isInternalTransfer ? 0 : debit;
+
+  double get outflow => isInternalTransfer ? 0 : credit;
+
+  double get transferAmount =>
+      isInternalTransfer ? (debit > 0 ? debit : credit) : 0;
+}
+
+class FFCashFlowReport {
+  final List<FFCashFlowRow> rows;
+
+  final double openingBalance;
+  final double cashIn;
+  final double cashOut;
+  final double internalTransfers;
+  final double closingBalance;
+
+  const FFCashFlowReport({
+    required this.rows,
+    required this.openingBalance,
+    required this.cashIn,
+    required this.cashOut,
+    required this.internalTransfers,
+    required this.closingBalance,
+  });
+
+  double get netCashFlow => cashIn - cashOut;
+
+  double get expectedClosing => openingBalance + netCashFlow;
+
+  double get controlDifference => closingBalance - expectedClosing;
+
+  bool get isReconciled => controlDifference.abs() < 0.005;
+}
+
+class FFCashFlowService {
+  FFCashFlowService._();
+
+  static final FFCashFlowService instance = FFCashFlowService._();
+
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  Future<FFCashFlowReport> getReport({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    final start = DateTime(from.year, from.month, from.day);
+
+    final end = DateTime(to.year, to.month, to.day, 23, 59, 59, 999);
+
+    final startIso = start.toIso8601String();
+    final endIso = end.toIso8601String();
+
+    final cashAccountIds = await _getCashEquivalentAccountIds(db);
+
+    if (cashAccountIds.isEmpty) {
+      return const FFCashFlowReport(
+        rows: [],
+        openingBalance: 0,
+        cashIn: 0,
+        cashOut: 0,
+        internalTransfers: 0,
+        closingBalance: 0,
+      );
+    }
+
+    final openingBalance = await _getOpeningBalance(
+      db,
+      cashAccountIds,
+      startIso,
+    );
+
+    final rows = await _getRows(db, cashAccountIds, startIso, endIso);
+
+    double cashIn = 0;
+    double cashOut = 0;
+
+    final internalTransferJournals = <int, double>{};
+
+    for (final row in rows) {
+      if (row.isInternalTransfer) {
+        if (!internalTransferJournals.containsKey(row.journalId)) {
+          internalTransferJournals[row.journalId] = row.transferAmount;
+        }
+
+        continue;
+      }
+
+      cashIn += row.inflow;
+      cashOut += row.outflow;
+    }
+
+    double internalTransfers = 0;
+
+    for (final amount in internalTransferJournals.values) {
+      internalTransfers += amount;
+    }
+
+    final closingBalance = await _getClosingBalance(db, cashAccountIds, endIso);
+
+    return FFCashFlowReport(
+      rows: rows,
+      openingBalance: openingBalance,
+      cashIn: cashIn,
+      cashOut: cashOut,
+      internalTransfers: internalTransfers,
+      closingBalance: closingBalance,
+    );
+  }
+
+  Future<List<int>> _getCashEquivalentAccountIds(DatabaseExecutor db) async {
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT a.id
+      FROM accounts a
+
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+
+      WHERE g.group_code IN (
+        'CASH',
+        'BANK',
+        'MFS'
+      )
+
+      ORDER BY a.id
+      ''');
+
+    return rows.map((row) => (row['id'] as num).toInt()).toList();
+  }
+
+  String _placeholders(int count) {
+    return List.filled(count, '?').join(',');
+  }
+
+  Future<double> _getOpeningBalance(
+    DatabaseExecutor db,
+    List<int> accountIds,
+    String startIso,
+  ) async {
+    final placeholders = _placeholders(accountIds.length);
+
+    final result = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(
+          (
+            SELECT SUM(opening_balance)
+            FROM accounts
+            WHERE id IN ($placeholders)
+          ),
+          0
+        )
+        +
+        COALESCE(
+          (
+            SELECT
+              SUM(jl.debit - jl.credit)
+
+            FROM journal_lines jl
+
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+
+            WHERE jl.account_id
+              IN ($placeholders)
+
+              AND datetime(je.transaction_date) < datetime(?)
+          ),
+          0
+        ) AS balance
+      ''',
+      [...accountIds, ...accountIds, startIso],
+    );
+
+    return _toDouble(result.first['balance']);
+  }
+
+  Future<double> _getClosingBalance(
+    DatabaseExecutor db,
+    List<int> accountIds,
+    String endIso,
+  ) async {
+    final placeholders = _placeholders(accountIds.length);
+
+    final result = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(
+          (
+            SELECT SUM(opening_balance)
+            FROM accounts
+            WHERE id IN ($placeholders)
+          ),
+          0
+        )
+        +
+        COALESCE(
+          (
+            SELECT
+              SUM(jl.debit - jl.credit)
+
+            FROM journal_lines jl
+
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+
+            WHERE jl.account_id
+              IN ($placeholders)
+
+              AND datetime(je.transaction_date) <= datetime(?)
+          ),
+          0
+        ) AS balance
+      ''',
+      [...accountIds, ...accountIds, endIso],
+    );
+
+    return _toDouble(result.first['balance']);
+  }
+
+  Future<List<FFCashFlowRow>> _getRows(
+    DatabaseExecutor db,
+    List<int> accountIds,
+    String startIso,
+    String endIso,
+  ) async {
+    final placeholders = _placeholders(accountIds.length);
+
+    final rawRows = await db.rawQuery(
+      '''
+      SELECT
+        jl.journal_id,
+        jl.account_id,
+
+        a.name AS account_name,
+        a.type AS account_type,
+
+        g.group_code,
+
+        je.transaction_type,
+        je.voucher_no,
+        je.transaction_date,
+        je.description,
+
+        jl.note,
+        jl.debit,
+        jl.credit
+
+      FROM journal_lines jl
+
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+
+      INNER JOIN accounts a
+        ON a.id = jl.account_id
+
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+
+      WHERE jl.account_id
+        IN ($placeholders)
+
+        AND datetime(je.transaction_date)
+          BETWEEN datetime(?) AND datetime(?)
+
+      ORDER BY
+        je.transaction_date DESC,
+        jl.id DESC
+      ''',
+      [...accountIds, startIso, endIso],
+    );
+
+    final journalCashCounts = <int, int>{};
+
+    for (final row in rawRows) {
+      final journalId = (row['journal_id'] as num).toInt();
+
+      journalCashCounts[journalId] = (journalCashCounts[journalId] ?? 0) + 1;
+    }
+
+    final rows = <FFCashFlowRow>[];
+
+    for (final row in rawRows) {
+      final journalId = (row['journal_id'] as num).toInt();
+
+      final transactionType = row['transaction_type']?.toString() ?? '';
+
+      final cashLineCount = journalCashCounts[journalId] ?? 0;
+
+      final isInternalTransfer =
+          transactionType.toUpperCase() == 'FUND_TRANSFER' &&
+          cashLineCount >= 2;
+
+      rows.add(
+        FFCashFlowRow(
+          journalId: journalId,
+          accountId: (row['account_id'] as num).toInt(),
+          accountName: row['account_name']?.toString() ?? '',
+          accountType: row['account_type']?.toString() ?? '',
+          groupCode: row['group_code']?.toString() ?? '',
+          transactionType: transactionType,
+          voucherNo: row['voucher_no']?.toString(),
+          transactionDate: row['transaction_date']?.toString() ?? '',
+          description: row['description']?.toString(),
+          note: row['note']?.toString(),
+          debit: _toDouble(row['debit']),
+          credit: _toDouble(row['credit']),
+          isInternalTransfer: isInternalTransfer,
+        ),
+      );
+    }
+
+    return rows;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}

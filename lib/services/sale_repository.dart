@@ -3,9 +3,18 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
+import '../models/payment_allocation.dart';
+import 'ff/ff_payment_allocation_service.dart';
+import 'ff/ff_sale_posting_service.dart';
 
 class SaleRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFPaymentAllocationService _paymentAllocationService =
+      FFPaymentAllocationService.instance;
+
+  final FFSalePostingService _ffSalePostingService =
+      FFSalePostingService.instance;
 
   Future<int> insertSale(Sale sale) async {
     final db = await _databaseHelper.database;
@@ -30,6 +39,7 @@ class SaleRepository {
   Future<int> saveSale({
     required Sale sale,
     required List<SaleItem> items,
+    List<PaymentAllocation>? paymentAllocations,
   }) async {
     int savedSaleId = 0;
 
@@ -49,6 +59,47 @@ class SaleRepository {
         ...sale.toMap(),
         'invoice_no': invoiceNo,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      // ----------------------------------------------------------
+      // FF SPLIT PAYMENT ALLOCATIONS
+      // ----------------------------------------------------------
+
+      final effectiveAllocations = <PaymentAllocation>[];
+
+      if (paymentAllocations != null) {
+        for (final allocation in paymentAllocations) {
+          effectiveAllocations.add(
+            PaymentAllocation(
+              referenceType: 'SALE',
+              referenceId: savedSaleId,
+              accountId: allocation.accountId,
+              amount: allocation.amount,
+              paymentMethod: allocation.paymentMethod,
+              createdAt: allocation.createdAt,
+            ),
+          );
+        }
+      }
+
+      final effectivePaid = _paymentAllocationService.totalAmount(
+        effectiveAllocations,
+      );
+
+      if (paymentAllocations != null &&
+          (effectivePaid - sale.paid).abs() > 0.000001) {
+        throw StateError(
+          'Sale payment allocation total does not match paid amount.',
+        );
+      }
+
+      if (paymentAllocations != null) {
+        await _paymentAllocationService.replaceAllocationsWithExecutor(
+          txn,
+          referenceType: 'SALE',
+          referenceId: savedSaleId,
+          allocations: effectiveAllocations,
+        );
+      }
 
       for (final item in items) {
         // ----------------------------------------------------------
@@ -127,9 +178,113 @@ class SaleRepository {
           [sale.due, sale.customerId],
         );
       }
+
+      // ----------------------------------------------------------
+      // INVOICE-TIME PAYMENT
+      //
+      // IMPORTANT:
+      // Customer balance is NOT reduced here.
+      // Only the remaining invoice due was added above.
+      //
+      // These customer_payments rows are informational/history
+      // records for money received during this sale.
+      //
+      // FF accounting is posted ONLY by the SALE journal below.
+      // Therefore no CUSTOMER_PAYMENT FF journal is created here.
+      // ----------------------------------------------------------
+
+      if (paymentAllocations != null) {
+        for (final allocation in effectiveAllocations) {
+          final voucherNo = await _getNextCustomerPaymentVoucher(txn);
+
+          await txn.insert('customer_payments', {
+            'customer_id': sale.customerId,
+            'voucher_no': voucherNo,
+            'amount': allocation.amount,
+            'account_id': allocation.accountId,
+            'payment_method': allocation.paymentMethod,
+            'note': 'Paid during sale $invoiceNo',
+            'created_at': allocation.createdAt,
+          });
+
+          // Legacy operational account balance.
+          await txn.rawUpdate(
+            '''
+            UPDATE accounts
+            SET balance = balance + ?
+            WHERE id = ?
+            ''',
+            [allocation.amount, allocation.accountId],
+          );
+
+          // Legacy account ledger convention:
+          // cash receipt = CREDIT.
+          await txn.insert('account_transactions', {
+            'account_id': allocation.accountId,
+            'transaction_type': 'SALE_PAYMENT',
+            'reference_type': 'SALE',
+            'reference_id': savedSaleId,
+            'voucher_no': voucherNo,
+            'debit': 0.0,
+            'credit': allocation.amount,
+            'transaction_date': sale.saleDate,
+            'note': 'Paid during sale $invoiceNo',
+            'created_at': allocation.createdAt,
+          });
+        }
+
+        // --------------------------------------------------------
+        // FF CENTRAL SALE JOURNAL
+        //
+        // Dr each payment account
+        // Dr Customer Receivable for remaining due
+        // Cr Sales Income
+        // --------------------------------------------------------
+
+        final savedSaleRows = await txn.query(
+          'sales',
+          where: 'id = ?',
+          whereArgs: [savedSaleId],
+          limit: 1,
+        );
+
+        if (savedSaleRows.isEmpty) {
+          throw StateError('Saved sale could not be loaded for FF posting.');
+        }
+
+        final savedSale = Sale.fromMap(savedSaleRows.first);
+
+        await _ffSalePostingService.postSaleWithExecutor(
+          txn,
+          saleId: savedSaleId,
+          sale: savedSale,
+          allocations: effectiveAllocations,
+          voucherNo: invoiceNo,
+        );
+      }
     });
 
     return savedSaleId;
+  }
+
+  Future<String> _getNextCustomerPaymentVoucher(DatabaseExecutor db) async {
+    final result = await db.rawQuery('''
+      SELECT voucher_no
+      FROM customer_payments
+      WHERE voucher_no LIKE 'CP#%'
+      ORDER BY id DESC
+      LIMIT 1
+    ''');
+
+    if (result.isEmpty) {
+      return 'CP#1';
+    }
+
+    final lastVoucher = result.first['voucher_no']?.toString() ?? '';
+
+    final lastNumber = int.tryParse(lastVoucher.replaceFirst('CP#', '')) ?? 0;
+
+    return 'CP#${lastNumber + 1}';
   }
 
   Future<List<Map<String, dynamic>>> getSales() async {

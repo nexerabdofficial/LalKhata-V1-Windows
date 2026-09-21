@@ -6,6 +6,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'gab/gab_branding.dart';
 import 'app.dart';
+import 'services/ff/ff_system_accounts.dart';
+import 'services/ff/ff_party_account_service.dart';
 
 /// Global Route Observer
 final RouteObserver<ModalRoute<void>> routeObserver =
@@ -25,27 +27,36 @@ Future<void> main() async {
 
   await GABBranding.load();
 
-  debugPrint(
-    'SUPABASE DEBUG: Initialization completed.',
-  );
+  debugPrint('SUPABASE DEBUG: Initialization completed.');
 
   // ==========================================================
   // SQFLITE FFI
   // ==========================================================
 
-  if (!kIsWeb &&
-      (Platform.isLinux ||
-          Platform.isWindows ||
-          Platform.isMacOS)) {
+  if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
 
   // ==========================================================
+  // FF ACCOUNTING FOUNDATION
+  // ==========================================================
+
+  await FFSystemAccounts.instance.ensureFoundation();
+
+  // ==========================================================
+  // FF INDIVIDUAL CUSTOMER / SUPPLIER LEDGERS
+  //
+  // Idempotent:
+  // Existing links are reused.
+  // Missing party ledgers are created automatically.
+  // ==========================================================
+
+  await FFPartyAccountService.instance.backfillAll();
+
+  // ==========================================================
   // RUN APP
   // ==========================================================
 
-  runApp(
-    const NexeraInventoryApp(),
-  );
+  runApp(const NexeraInventoryApp());
 }

@@ -6,6 +6,7 @@ import '../../models/customer.dart';
 import '../../models/product.dart';
 import '../../models/sale.dart';
 import '../../models/sale_item.dart';
+import '../../models/payment_allocation.dart';
 
 import '../../services/account_repository.dart';
 import '../../services/customer_repository.dart';
@@ -41,6 +42,8 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   Customer? _selectedCustomer;
   Product? _selectedProduct;
   Account? _selectedAccount;
+
+  final List<_SalePaymentRow> _paymentRows = [];
 
   final List<CartItem> _cart = [];
 
@@ -112,12 +115,70 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     return _balanceForward + _invoiceTotal;
   }
 
-  double get _balanceDue {
-    final paid = double.tryParse(_paidController.text.trim()) ?? 0;
+  double get _splitPaidTotal {
+    double total = 0;
 
-    final balance = _totalOutstanding - paid;
+    for (final row in _paymentRows) {
+      total += double.tryParse(row.controller.text.trim()) ?? 0;
+    }
+
+    return total;
+  }
+
+  double get _balanceDue {
+    final balance = _totalOutstanding - _splitPaidTotal;
 
     return balance < 0 ? 0 : balance;
+  }
+
+  void _syncPaidController() {
+    final total = _splitPaidTotal;
+
+    _paidController.text = total.toStringAsFixed(2);
+  }
+
+  void _addPaymentRow() {
+    final account =
+        _selectedAccount ?? (_accounts.isNotEmpty ? _accounts.first : null);
+
+    if (account == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please create a payment account first.")),
+      );
+      return;
+    }
+
+    final controller = TextEditingController(text: "0");
+
+    controller.addListener(() {
+      _syncPaidController();
+
+      if (mounted) {
+        setState(() {});
+      }
+    });
+
+    setState(() {
+      _paymentRows.add(
+        _SalePaymentRow(account: account, controller: controller),
+      );
+    });
+
+    _syncPaidController();
+  }
+
+  void _removePaymentRow(int index) {
+    if (index < 0 || index >= _paymentRows.length) {
+      return;
+    }
+
+    final row = _paymentRows.removeAt(index);
+
+    row.controller.dispose();
+
+    _syncPaidController();
+
+    setState(() {});
   }
 
   // ============================================================
@@ -179,9 +240,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     super.initState();
 
     _qtyController.text = "1";
-    _paidController.text = "0";
-
-    _paidController.addListener(_calculateTotal);
+    _paidController.text = "0.00";
 
     _additionalChargeController.addListener(_calculateTotal);
 
@@ -232,6 +291,25 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
             );
           } catch (_) {
             _selectedAccount = _accounts.first;
+          }
+
+          if (_paymentRows.isEmpty && _selectedAccount != null) {
+            final controller = TextEditingController(text: "0");
+
+            controller.addListener(() {
+              _syncPaidController();
+
+              if (mounted) {
+                setState(() {});
+              }
+            });
+
+            _paymentRows.add(
+              _SalePaymentRow(
+                account: _selectedAccount!,
+                controller: controller,
+              ),
+            );
           }
         }
 
@@ -583,13 +661,6 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       return;
     }
 
-    if (_selectedAccount == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please select account.")));
-      return;
-    }
-
     if (_cart.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -597,13 +668,26 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       return;
     }
 
-    final paid = double.tryParse(_paidController.text.trim()) ?? 0;
+    final paid = _splitPaidTotal;
 
-    if (paid < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Paid amount cannot be negative.")),
-      );
-      return;
+    for (final row in _paymentRows) {
+      final amount = double.tryParse(row.controller.text.trim()) ?? 0;
+
+      if (amount < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Payment amount cannot be negative.")),
+        );
+        return;
+      }
+
+      if (amount > 0 && row.account.id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please select a valid payment account."),
+          ),
+        );
+        return;
+      }
     }
 
     final totalOutstanding = _totalOutstanding;
@@ -643,7 +727,19 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         paid: paid,
         due: invoiceDue < 0 ? 0 : invoiceDue,
         note: _noteController.text.trim(),
-        paymentMethod: _selectedAccount!.name,
+        paymentMethod:
+            _paymentRows
+                    .where(
+                      (row) =>
+                          (double.tryParse(row.controller.text.trim()) ?? 0) >
+                          0,
+                    )
+                    .length >
+                1
+            ? 'Split Payment'
+            : (_paymentRows.isNotEmpty
+                  ? _paymentRows.first.account.name
+                  : 'Cash'),
         createdAt: now,
       );
 
@@ -671,32 +767,32 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       // SAVE SALE
       // ==========================================================
 
-      final saleId = await _saleRepository.saveSale(sale: sale, items: items);
+      final nowForPayments = DateTime.now().toIso8601String();
 
-      // ==========================================================
-      // CUSTOMER PAYMENT / CP#
-      // ==========================================================
+      final positivePaymentRows = _paymentRows.where((row) {
+        final amount = double.tryParse(row.controller.text.trim()) ?? 0;
 
-      if (paid > 0) {
-        final voucherNo = await _customerRepository
-            .getNextCustomerPaymentVoucherNo();
+        return amount > 0;
+      }).toList();
 
-        await _customerRepository.saveCustomerPayment(
-          customerId: sale.customerId,
-          amount: paid,
-          accountId: _selectedAccount!.id!,
-          paymentMethod: _selectedAccount!.name,
-          voucherNo: voucherNo,
-        );
-      }
+      final provisionalAllocations = positivePaymentRows
+          .map(
+            (row) => PaymentAllocation(
+              referenceType: 'SALE',
+              referenceId: 0,
+              accountId: row.account.id!,
+              amount: double.tryParse(row.controller.text.trim()) ?? 0,
+              paymentMethod: row.account.name,
+              createdAt: nowForPayments,
+            ),
+          )
+          .toList();
 
-      // ==========================================================
-      // ACCOUNT BALANCE
-      // ==========================================================
-
-      if (paid > 0) {
-        await _accountRepository.addBalance(_selectedAccount!.id!, paid);
-      }
+      final saleId = await _saleRepository.saveSale(
+        sale: sale,
+        items: items,
+        paymentAllocations: provisionalAllocations,
+      );
 
       // ==========================================================
       // REFRESH APP
@@ -785,6 +881,10 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     _customerController.dispose();
     _productController.dispose();
     _qtyController.dispose();
+    for (final row in _paymentRows) {
+      row.controller.dispose();
+    }
+
     _paidController.dispose();
     _additionalChargeController.dispose();
     _discountController.dispose();
@@ -1244,331 +1344,929 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                     // ==================================================
                     // CART
                     // ==================================================
-                    SizedBox(
-                      height: 270,
-                      child: Card(
-                        elevation: 2,
-                        child: _cart.isEmpty
-                            ? const Center(child: Text("No Product Added"))
-                            : SingleChildScrollView(
-                                scrollDirection: Axis.vertical,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columnSpacing: 18,
-                                    headingRowColor: MaterialStateProperty.all(
-                                      Colors.green.shade100,
+                    Container(
+                      height: MediaQuery.sizeOf(context).width >= 900
+                          ? 220
+                          : 270,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _cart.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.shopping_cart_outlined,
+                                    size: 34,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "No Product Added",
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
                                     ),
-                                    columns: const [
-                                      DataColumn(label: Text("Product")),
-                                      DataColumn(
-                                        numeric: true,
-                                        label: Text("Qty"),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                // ================================
+                                // HEADER
+                                // ================================
+                                Container(
+                                  height:
+                                      MediaQuery.sizeOf(context).width >= 900
+                                      ? 42
+                                      : 52,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  color: Colors.green.shade100,
+                                  child: const Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 48,
+                                        child: Text(
+                                          "SL",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
-                                      DataColumn(
-                                        numeric: true,
-                                        label: Text("Rate"),
+                                      Expanded(
+                                        flex: 5,
+                                        child: Text(
+                                          "Product",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
-                                      DataColumn(
-                                        numeric: true,
-                                        label: Text("Total"),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          "Qty",
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
-                                      DataColumn(label: Text("")),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          "Rate",
+                                          textAlign: TextAlign.right,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          "Total",
+                                          textAlign: TextAlign.right,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 70,
+                                        child: Text(
+                                          "Action",
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
                                     ],
-                                    rows: List.generate(_cart.length, (index) {
-                                      final item = _cart[index];
-
-                                      return DataRow(
-                                        cells: [
-                                          DataCell(
-                                            SizedBox(
-                                              width: 150,
-                                              child: Text(
-                                                item.product.name,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ),
-
-                                          DataCell(
-                                            Text(item.quantity.toString()),
-                                          ),
-
-                                          DataCell(
-                                            InkWell(
-                                              onTap: () {
-                                                _editCartRate(index);
-                                              },
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 6,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.blue.shade50,
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: Colors.blue.shade200,
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Text(
-                                                      item.saleRate
-                                                          .toStringAsFixed(2),
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Icon(
-                                                      Icons.edit,
-                                                      size: 14,
-                                                      color:
-                                                          Colors.blue.shade700,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-
-                                          DataCell(
-                                            Text(
-                                              item.subtotal.toStringAsFixed(2),
-                                            ),
-                                          ),
-
-                                          DataCell(
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.delete,
-                                                color: Colors.red,
-                                              ),
-                                              onPressed: () {
-                                                _removeCartItem(index);
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    }),
                                   ),
                                 ),
-                              ),
-                      ),
+
+                                // ================================
+                                // ROWS
+                                // ================================
+                                Expanded(
+                                  child: ListView.separated(
+                                    padding: EdgeInsets.zero,
+                                    itemCount: _cart.length,
+                                    separatorBuilder: (_, __) => Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: Colors.grey.shade200,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final item = _cart[index];
+
+                                      return Container(
+                                        constraints: BoxConstraints(
+                                          minHeight:
+                                              MediaQuery.sizeOf(
+                                                    context,
+                                                  ).width >=
+                                                  900
+                                              ? 48
+                                              : 58,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 6,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 48,
+                                              child: Text(
+                                                "${index + 1}",
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade700,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+
+                                            Expanded(
+                                              flex: 5,
+                                              child: Text(
+                                                item.product.name,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                item.quantity.toString(),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ),
+
+                                            Expanded(
+                                              flex: 2,
+                                              child: Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: InkWell(
+                                                  onTap: () {
+                                                    _editCartRate(index);
+                                                  },
+                                                  borderRadius:
+                                                      BorderRadius.circular(7),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 7,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          Colors.blue.shade50,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            7,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors
+                                                            .blue
+                                                            .shade200,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          item.saleRate
+                                                              .toStringAsFixed(
+                                                                2,
+                                                              ),
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 5,
+                                                        ),
+                                                        Icon(
+                                                          Icons.edit_outlined,
+                                                          size: 14,
+                                                          color: Colors
+                                                              .blue
+                                                              .shade700,
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                item.subtotal.toStringAsFixed(
+                                                  2,
+                                                ),
+                                                textAlign: TextAlign.right,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+
+                                            SizedBox(
+                                              width: 70,
+                                              child: Center(
+                                                child: IconButton(
+                                                  tooltip: "Remove Product",
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .delete_outline_rounded,
+                                                    color: Colors.red,
+                                                  ),
+                                                  onPressed: () {
+                                                    _removeCartItem(index);
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                     ),
 
                     const SizedBox(height: 12),
 
                     // ==================================================
-                    // BILL SUMMARY
+                    // DESKTOP SUMMARY + PAYMENT WORKSPACE
                     // ==================================================
-                    Card(
-                      elevation: 3,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            _summaryRow("Subtotal", _subtotal),
+                    if (MediaQuery.sizeOf(context).width >= 900)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ============================================
+                          // LEFT : BILL SUMMARY
+                          // ============================================
+                          Expanded(
+                            child: Card(
+                              elevation: 2,
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    _summaryRow(
+                                      "Subtotal",
+                                      _subtotal,
+                                      compact: true,
+                                    ),
+                                    const SizedBox(height: 7),
 
-                            const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: SizedBox(
+                                            height: 48,
+                                            child: TextFormField(
+                                              controller:
+                                                  _additionalChargeController,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              decoration: const InputDecoration(
+                                                labelText: "Additional Charge",
+                                                prefixIcon: Icon(
+                                                  Icons.add_circle_outline,
+                                                  size: 20,
+                                                ),
+                                                border: OutlineInputBorder(),
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: SizedBox(
+                                            height: 48,
+                                            child: TextFormField(
+                                              controller: _discountController,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              decoration: const InputDecoration(
+                                                labelText: "Invoice Discount",
+                                                prefixIcon: Icon(
+                                                  Icons.discount_outlined,
+                                                  size: 20,
+                                                ),
+                                                border: OutlineInputBorder(),
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
 
-                            TextFormField(
-                              controller: _additionalChargeController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: const InputDecoration(
-                                labelText: "Additional Charge",
-                                prefixIcon: Icon(Icons.add_circle_outline),
-                                border: OutlineInputBorder(),
+                                    const Divider(height: 18),
+
+                                    _summaryRow(
+                                      "Invoice Total",
+                                      _invoiceTotal,
+                                      bold: true,
+                                      compact: true,
+                                    ),
+                                    _summaryRow(
+                                      "Previous Due (BF)",
+                                      _balanceForward,
+                                      compact: true,
+                                    ),
+
+                                    const SizedBox(height: 5),
+
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        borderRadius: BorderRadius.circular(7),
+                                      ),
+                                      child: _summaryRow(
+                                        "Total Outstanding",
+                                        _totalOutstanding,
+                                        bold: true,
+                                        compact: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
+                          ),
 
-                            const SizedBox(height: 12),
+                          const SizedBox(width: 12),
 
-                            TextFormField(
-                              controller: _discountController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: const InputDecoration(
-                                labelText: "Invoice Discount",
-                                prefixIcon: Icon(Icons.discount),
-                                border: OutlineInputBorder(),
+                          // ============================================
+                          // RIGHT : PAYMENT
+                          // ============================================
+                          Expanded(
+                            child: Card(
+                              elevation: 2,
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Expanded(
+                                          child: Text(
+                                            "Payment",
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _addPaymentRow,
+                                          icon: const Icon(Icons.add, size: 18),
+                                          label: const Text("Add Payment"),
+                                        ),
+                                      ],
+                                    ),
+
+                                    const SizedBox(height: 3),
+
+                                    ...List.generate(_paymentRows.length, (
+                                      index,
+                                    ) {
+                                      final row = _paymentRows[index];
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 7,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 3,
+                                              child: SizedBox(
+                                                height: 46,
+                                                child: DropdownButtonFormField<Account>(
+                                                  value: row.account,
+                                                  isExpanded: true,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: "Account",
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                        contentPadding:
+                                                            EdgeInsets.symmetric(
+                                                              horizontal: 10,
+                                                              vertical: 8,
+                                                            ),
+                                                      ),
+                                                  items: _accounts
+                                                      .map(
+                                                        (account) =>
+                                                            DropdownMenuItem<
+                                                              Account
+                                                            >(
+                                                              value: account,
+                                                              child: Text(
+                                                                account.name,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ),
+                                                      )
+                                                      .toList(),
+                                                  onChanged: (value) {
+                                                    if (value == null) {
+                                                      return;
+                                                    }
+
+                                                    setState(() {
+                                                      row.account = value;
+                                                    });
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 7),
+                                            Expanded(
+                                              flex: 2,
+                                              child: SizedBox(
+                                                height: 46,
+                                                child: TextFormField(
+                                                  controller: row.controller,
+                                                  keyboardType:
+                                                      const TextInputType.numberWithOptions(
+                                                        decimal: true,
+                                                      ),
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: "Amount",
+                                                        prefixText: "৳ ",
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                        contentPadding:
+                                                            EdgeInsets.symmetric(
+                                                              horizontal: 10,
+                                                              vertical: 8,
+                                                            ),
+                                                      ),
+                                                ),
+                                              ),
+                                            ),
+                                            if (_paymentRows.length > 1)
+                                              SizedBox(
+                                                width: 38,
+                                                child: IconButton(
+                                                  tooltip: "Remove payment",
+                                                  padding: EdgeInsets.zero,
+                                                  onPressed: () =>
+                                                      _removePaymentRow(index),
+                                                  icon: const Icon(
+                                                    Icons.remove_circle_outline,
+                                                    size: 20,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade50,
+                                        borderRadius: BorderRadius.circular(7),
+                                        border: Border.all(
+                                          color: Colors.green.shade100,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            "Total Paid",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            "৳${_splitPaidTotal.toStringAsFixed(2)}",
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 7),
+
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade50,
+                                        borderRadius: BorderRadius.circular(7),
+                                        border: Border.all(
+                                          color: Colors.red.shade100,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            "Balance Due",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          Text(
+                                            "৳${_balanceDue.toStringAsFixed(2)}",
+                                            style: const TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.red,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-
-                            const Divider(height: 28),
-
-                            _summaryRow(
-                              "Invoice Total",
-                              _invoiceTotal,
-                              bold: true,
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            _summaryRow("Previous Due (BF)", _balanceForward),
-
-                            const SizedBox(height: 8),
-
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                                horizontal: 4,
+                          ),
+                        ],
+                      )
+                    else ...[
+                      // ================================================
+                      // MOBILE / NARROW SCREEN - ORIGINAL FLOW
+                      // ================================================
+                      Card(
+                        elevation: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              _summaryRow("Subtotal", _subtotal),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _additionalChargeController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: "Additional Charge",
+                                  prefixIcon: Icon(Icons.add_circle_outline),
+                                  border: OutlineInputBorder(),
+                                ),
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                borderRadius: BorderRadius.circular(8),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _discountController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: "Invoice Discount",
+                                  prefixIcon: Icon(Icons.discount),
+                                  border: OutlineInputBorder(),
+                                ),
                               ),
-                              child: _summaryRow(
-                                "Total Outstanding",
-                                _totalOutstanding,
+                              const Divider(height: 28),
+                              _summaryRow(
+                                "Invoice Total",
+                                _invoiceTotal,
                                 bold: true,
+                              ),
+                              const SizedBox(height: 12),
+                              _summaryRow("Previous Due (BF)", _balanceForward),
+                              const SizedBox(height: 8),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: _summaryRow(
+                                  "Total Outstanding",
+                                  _totalOutstanding,
+                                  bold: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              "Payment",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _addPaymentRow,
+                            icon: const Icon(Icons.add),
+                            label: const Text("Add Payment"),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      ...List.generate(_paymentRows.length, (index) {
+                        final row = _paymentRows[index];
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: DropdownButtonFormField<Account>(
+                                  value: row.account,
+                                  isExpanded: true,
+                                  decoration: const InputDecoration(
+                                    labelText: "Account",
+                                    prefixIcon: Icon(
+                                      Icons.account_balance_wallet,
+                                    ),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: _accounts
+                                      .map(
+                                        (account) => DropdownMenuItem<Account>(
+                                          value: account,
+                                          child: Text(
+                                            account.name,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+
+                                    setState(() {
+                                      row.account = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: TextFormField(
+                                  controller: row.controller,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: "Amount",
+                                    prefixText: "৳ ",
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              if (_paymentRows.length > 1)
+                                IconButton(
+                                  tooltip: "Remove payment",
+                                  onPressed: () => _removePaymentRow(index),
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                ),
+                            ],
+                          ),
+                        );
+                      }),
+
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade100),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Total Paid",
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              "৳${_splitPaidTotal.toStringAsFixed(2)}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                    // ==================================================
-                    // PAYMENT METHOD
-                    // ==================================================
-                    DropdownButtonFormField<Account>(
-                      value: _selectedAccount,
-                      decoration: const InputDecoration(
-                        labelText: "Receive To Account",
-                        prefixIcon: Icon(Icons.account_balance_wallet),
-                        border: OutlineInputBorder(),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.red.shade100),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Balance Due",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              "৳${_balanceDue.toStringAsFixed(2)}",
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      items: _accounts.map((account) {
-                        return DropdownMenuItem<Account>(
-                          value: account,
-                          child: Text(account.name),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
+                    ],
 
-                        setState(() {
-                          _selectedAccount = value;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
 
                     // ==================================================
-                    // PAYMENT
+                    // NOTE + SAVE
                     // ==================================================
-                    TextFormField(
-                      controller: _paidController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      textInputAction: TextInputAction.done,
-                      decoration: const InputDecoration(
-                        labelText: "Paid Amount",
-                        prefixIcon: Icon(Icons.payments),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ==================================================
-                    // BALANCE DUE
-                    // ==================================================
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.shade100),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    if (MediaQuery.sizeOf(context).width >= 900)
+                      Row(
                         children: [
-                          const Text(
-                            "Balance Due",
-                            style: TextStyle(
+                          Expanded(
+                            flex: 3,
+                            child: SizedBox(
+                              height: 50,
+                              child: TextFormField(
+                                controller: _noteController,
+                                maxLines: 1,
+                                decoration: const InputDecoration(
+                                  labelText: "Note (Optional)",
+                                  prefixIcon: Icon(Icons.notes_rounded),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: SizedBox(
+                              height: 50,
+                              child: ElevatedButton.icon(
+                                icon: _saving
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.check_rounded),
+                                label: Text(
+                                  _saving ? "Saving..." : "Complete Sale",
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                onPressed: _saving ? null : _saveSale,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else ...[
+                      TextFormField(
+                        controller: _noteController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: "Note",
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 55,
+                        child: ElevatedButton.icon(
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.save),
+                          label: Text(
+                            _saving ? "Saving..." : "Save Sale",
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Text(
-                            "৳${_balanceDue.toStringAsFixed(2)}",
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // ==================================================
-                    // NOTE
-                    // ==================================================
-                    TextFormField(
-                      controller: _noteController,
-                      maxLines: 2,
-                      decoration: const InputDecoration(
-                        labelText: "Note",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // ==================================================
-                    // SAVE
-                    // ==================================================
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton.icon(
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save),
-                        label: Text(
-                          _saving ? "Saving..." : "Save Sale",
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          onPressed: _saving ? null : _saveSale,
                         ),
-                        onPressed: _saving ? null : _saveSale,
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -1580,23 +2278,28 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // SUMMARY ROW
   // ============================================================
 
-  Widget _summaryRow(String title, double amount, {bool bold = false}) {
+  Widget _summaryRow(
+    String title,
+    double amount, {
+    bool bold = false,
+    bool compact = false,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.symmetric(vertical: compact ? 2 : 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
             style: TextStyle(
-              fontSize: bold ? 18 : 15,
+              fontSize: compact ? (bold ? 15 : 13) : (bold ? 18 : 15),
               fontWeight: bold ? FontWeight.bold : FontWeight.w500,
             ),
           ),
           Text(
             "৳${amount.toStringAsFixed(2)}",
             style: TextStyle(
-              fontSize: bold ? 20 : 16,
+              fontSize: compact ? (bold ? 16 : 14) : (bold ? 20 : 16),
               fontWeight: bold ? FontWeight.bold : FontWeight.w600,
             ),
           ),
@@ -1604,4 +2307,11 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       ),
     );
   }
+}
+
+class _SalePaymentRow {
+  Account account;
+  final TextEditingController controller;
+
+  _SalePaymentRow({required this.account, required this.controller});
 }

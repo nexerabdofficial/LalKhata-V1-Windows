@@ -1,0 +1,118 @@
+import '../../models/sale.dart';
+import 'ff_journal_models.dart';
+import 'ff_posting_engine.dart';
+import 'ff_system_accounts.dart';
+
+class FFSalePostingService {
+  FFSalePostingService._();
+
+  static final FFSalePostingService instance = FFSalePostingService._();
+
+  final FFPostingEngine _postingEngine = FFPostingEngine.instance;
+
+  final FFSystemAccounts _systemAccounts = FFSystemAccounts.instance;
+
+  Future<int> postSale({
+    required int saleId,
+    required Sale sale,
+    required int paymentAccountId,
+    required String voucherNo,
+  }) async {
+    if (saleId <= 0) {
+      throw ArgumentError('Invalid sale ID.');
+    }
+
+    if (sale.customerId <= 0) {
+      throw ArgumentError('Invalid customer ID.');
+    }
+
+    if (paymentAccountId <= 0) {
+      throw ArgumentError('Invalid payment account.');
+    }
+
+    if (sale.grandTotal <= 0) {
+      throw ArgumentError('Sale grand total must be greater than zero.');
+    }
+
+    if (sale.paid < 0) {
+      throw ArgumentError('Sale paid amount cannot be negative.');
+    }
+
+    await _systemAccounts.ensureFoundation();
+
+    final receivableAccountId = await _systemAccounts.resolveAccountId(
+      FFSystemAccountCodes.customerReceivable,
+    );
+
+    final salesIncomeAccountId = await _systemAccounts.resolveAccountId(
+      FFSystemAccountCodes.salesIncome,
+    );
+
+    final paidAgainstCurrentInvoice = sale.paid > sale.grandTotal
+        ? sale.grandTotal
+        : sale.paid;
+
+    final currentInvoiceDue = sale.grandTotal - paidAgainstCurrentInvoice;
+
+    final previousDueCollection = sale.paid > sale.grandTotal
+        ? sale.paid - sale.grandTotal
+        : 0.0;
+
+    final lines = <FFJournalLine>[];
+
+    if (sale.paid > 0) {
+      lines.add(
+        FFJournalLine(
+          accountId: paymentAccountId,
+          debit: sale.paid,
+          note: 'Sale receipt',
+        ),
+      );
+    }
+
+    if (currentInvoiceDue > 0) {
+      lines.add(
+        FFJournalLine(
+          accountId: receivableAccountId,
+          entityType: 'CUSTOMER',
+          entityId: sale.customerId,
+          debit: currentInvoiceDue,
+          note: 'Current invoice receivable',
+        ),
+      );
+    }
+
+    lines.add(
+      FFJournalLine(
+        accountId: salesIncomeAccountId,
+        credit: sale.grandTotal,
+        note: 'Sales income',
+      ),
+    );
+
+    if (previousDueCollection > 0) {
+      lines.add(
+        FFJournalLine(
+          accountId: receivableAccountId,
+          entityType: 'CUSTOMER',
+          entityId: sale.customerId,
+          credit: previousDueCollection,
+          note: 'Previous due collection',
+        ),
+      );
+    }
+
+    return _postingEngine.post(
+      FFJournalEntry(
+        transactionType: 'SALE',
+        voucherNo: voucherNo,
+        transactionDate: sale.saleDate,
+        referenceType: 'SALE',
+        referenceId: saleId,
+        description: sale.note.trim().isEmpty ? 'Sale' : sale.note.trim(),
+        createdAt: sale.createdAt,
+        lines: lines,
+      ),
+    );
+  }
+}

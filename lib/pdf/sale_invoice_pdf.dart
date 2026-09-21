@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../gab/gab_branding.dart';
+import '../database/database_helper.dart';
+import '../config/app_build_config.dart';
 
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -12,7 +14,6 @@ import 'package:printing/printing.dart';
 
 import '../models/sale.dart';
 import '../models/sale_item.dart';
-import '../services/license_service.dart';
 import '../services/storage_service.dart';
 
 class SaleInvoicePdf {
@@ -26,15 +27,13 @@ class SaleInvoicePdf {
   // CUSTOMER LOGO
   // ============================================================
 
-  static Future<pw.MemoryImage?> _loadCustomerLogo() async {
+  static Future<pw.MemoryImage?> _loadImageFromPath(String? path) async {
     try {
-      final logoPath = await LicenseService.getCustomerLogoPath();
-
-      if (logoPath == null || logoPath.trim().isEmpty) {
+      if (path == null || path.trim().isEmpty) {
         return null;
       }
 
-      final file = File(logoPath);
+      final file = File(path.trim());
 
       if (!await file.exists()) {
         return null;
@@ -48,9 +47,21 @@ class SaleInvoicePdf {
 
       return pw.MemoryImage(bytes);
     } catch (_) {
-      // Logo must never break invoice generation.
+      // Branding image must never block invoice generation.
       return null;
     }
+  }
+
+  static Future<pw.MemoryImage?> _loadBusinessLogo() async {
+    final path = await _storageService.getInvoiceLogoPath();
+
+    return _loadImageFromPath(path);
+  }
+
+  static Future<pw.MemoryImage?> _loadInvoiceQr() async {
+    final path = await _storageService.getInvoiceQrPath();
+
+    return _loadImageFromPath(path);
   }
 
   // ============================================================
@@ -73,10 +84,60 @@ class SaleInvoicePdf {
     final boldFont = await PdfGoogleFonts.notoSansBold();
 
     // ==========================================================
-    // CUSTOMER LOGO
+    // INVOICE BRANDING
     // ==========================================================
 
-    final customerLogo = await _loadCustomerLogo();
+    final businessLogo = await _loadBusinessLogo();
+    final invoiceQr = await _loadInvoiceQr();
+
+    // ==========================================================
+    // PAYMENT ALLOCATIONS
+    // ==========================================================
+
+    final paymentBreakdown = <Map<String, dynamic>>[];
+
+    if (sale.id != null && sale.id! > 0) {
+      try {
+        final db = await DatabaseHelper.instance.database;
+
+        final rows = await db.rawQuery(
+          '''
+          SELECT
+            pa.amount,
+            pa.payment_method,
+            a.name AS account_name
+          FROM payment_allocations pa
+          LEFT JOIN accounts a
+            ON a.id = pa.account_id
+          WHERE pa.reference_type = ?
+            AND pa.reference_id = ?
+          ORDER BY pa.id ASC
+          ''',
+          ['SALE', sale.id],
+        );
+
+        for (final row in rows) {
+          final amount = ((row['amount'] ?? 0) as num).toDouble();
+
+          if (amount <= 0) {
+            continue;
+          }
+
+          final accountName = row['account_name']?.toString().trim() ?? '';
+
+          final paymentMethod = row['payment_method']?.toString().trim() ?? '';
+
+          paymentBreakdown.add({
+            'name': accountName.isNotEmpty
+                ? accountName
+                : (paymentMethod.isNotEmpty ? paymentMethod : 'Payment'),
+            'amount': amount,
+          });
+        }
+      } catch (_) {
+        // Payment breakdown must never block invoice generation.
+      }
+    }
 
     // ==========================================================
     // FORMAT
@@ -240,34 +301,35 @@ class SaleInvoicePdf {
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           // ======================================================
-          // CUSTOMER LOGO
-          //
-          // IMPORTANT:
-          // No background/container color is used here.
-          // Transparent PNG remains transparent.
-          // BoxFit.contain preserves aspect ratio.
+          // BUSINESS LOGO + INVOICE QR
           // ======================================================
-          if (customerLogo != null)
-            pw.Container(
-              width: double.infinity,
-              height: itemCount <= 8 ? 72 : 62,
-              margin: const pw.EdgeInsets.only(bottom: 8),
-              alignment: pw.Alignment.center,
-              child: pw.Image(
-                customerLogo,
-                fit: pw.BoxFit.contain,
-                alignment: pw.Alignment.center,
-              ),
+          if (businessLogo != null || invoiceQr != null)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 8),
+              child: businessLogo != null && invoiceQr != null
+                  ? pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        _brandingPlate(image: businessLogo, isQr: false),
+                        _brandingPlate(image: invoiceQr, isQr: true),
+                      ],
+                    )
+                  : pw.Center(
+                      child: _brandingPlate(
+                        image: businessLogo ?? invoiceQr!,
+                        isQr: businessLogo == null,
+                      ),
+                    ),
             ),
 
           // ======================================================
           // HEADER
           // ======================================================
           pw.Container(
-            padding: const pw.EdgeInsets.all(10),
+            padding: pw.EdgeInsets.fromLTRB(14, 12, 14, 12),
             decoration: pw.BoxDecoration(
               color: PdfColors.blue900,
-              borderRadius: pw.BorderRadius.circular(6),
+              borderRadius: pw.BorderRadius.circular(7),
             ),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -425,7 +487,9 @@ class SaleInvoicePdf {
                 child: pw.Container(
                   padding: pw.EdgeInsets.all(customerPadding),
                   decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: PdfColors.grey300),
+                    color: PdfColors.white,
+                    border: pw.Border.all(color: PdfColors.grey300, width: .7),
+                    borderRadius: pw.BorderRadius.circular(5),
                   ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -493,6 +557,7 @@ class SaleInvoicePdf {
                 padding: pw.EdgeInsets.all(summaryPadding),
                 decoration: pw.BoxDecoration(
                   color: PdfColors.grey100,
+                  border: pw.Border.all(color: PdfColors.grey300, width: .6),
                   borderRadius: pw.BorderRadius.circular(5),
                 ),
                 child: pw.Column(
@@ -638,7 +703,9 @@ class SaleInvoicePdf {
           pw.Container(
             padding: pw.EdgeInsets.all(summaryPadding),
             decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.grey300),
+              color: PdfColors.white,
+              border: pw.Border.all(color: PdfColors.grey300, width: .7),
+              borderRadius: pw.BorderRadius.circular(5),
             ),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -713,11 +780,40 @@ class SaleInvoicePdf {
 
                 _summaryRow(
                   "Payment Method",
-                  sale.paymentMethod.toString(),
+                  paymentBreakdown.length > 1
+                      ? "Split Payment"
+                      : sale.paymentMethod.toString(),
                   regularFont,
                   boldFont,
                   fontSize: normalFontSize,
                 ),
+
+                if (paymentBreakdown.isNotEmpty) ...[
+                  pw.SizedBox(height: 2),
+
+                  ...paymentBreakdown.map((payment) {
+                    final name = payment['name']?.toString() ?? 'Payment';
+
+                    final amount = ((payment['amount'] ?? 0) as num).toDouble();
+
+                    return pw.Padding(
+                      padding: const pw.EdgeInsets.only(
+                        left: 10,
+                        top: 1,
+                        bottom: 1,
+                      ),
+                      child: _summaryRow(
+                        "• $name",
+                        taka(amount),
+                        regularFont,
+                        boldFont,
+                        fontSize: normalFontSize,
+                      ),
+                    );
+                  }),
+
+                  pw.SizedBox(height: 2),
+                ],
 
                 _summaryRow(
                   "Paid Today",
@@ -737,7 +833,10 @@ class SaleInvoicePdf {
                     horizontal: 10,
                     vertical: itemCount <= 8 ? 8 : 6,
                   ),
-                  decoration: const pw.BoxDecoration(color: PdfColors.blue900),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.blue900,
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
@@ -824,7 +923,7 @@ class SaleInvoicePdf {
           pw.SizedBox(height: 3),
 
           pw.Text(
-            _amountInWords(finalDue.toInt()),
+            '${_amountInWords(currentInvoice.toInt())} — For Today\'s Invoice',
             style: pw.TextStyle(font: regularFont, fontSize: normalFontSize),
           ),
 
@@ -908,24 +1007,36 @@ class SaleInvoicePdf {
             child: pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Expanded(
-                  child: pw.Text(
-                    "Developed by "
-                    "${GABBranding.developedBy} — "
-                    "Building Ideas Into Software",
-                    style: pw.TextStyle(
-                      font: regularFont,
-                      fontSize: 7,
-                      color: PdfColors.grey700,
+                if (AppBuildConfig.showDeveloperBranding)
+                  pw.RichText(
+                    text: pw.TextSpan(
+                      children: [
+                        pw.TextSpan(
+                          text: "Developed by ",
+                          style: pw.TextStyle(
+                            font: regularFont,
+                            fontSize: 8,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                        pw.TextSpan(
+                          text: "Nexera IT BD",
+                          style: pw.TextStyle(
+                            font: boldFont,
+                            fontSize: 8,
+                            color: PdfColors.blue900,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                pw.SizedBox(width: 10),
+                  )
+                else
+                  pw.SizedBox(),
                 pw.Text(
                   "Page 1",
                   style: pw.TextStyle(
                     font: regularFont,
-                    fontSize: 7,
+                    fontSize: 8,
                     color: PdfColors.grey700,
                   ),
                 ),
@@ -958,6 +1069,26 @@ class SaleInvoicePdf {
     );
 
     return pdf.save();
+  }
+
+  // ============================================================
+  // BRANDING PLATE
+  // ============================================================
+
+  static pw.Widget _brandingPlate({
+    required pw.MemoryImage image,
+    required bool isQr,
+  }) {
+    return pw.Container(
+      width: isQr ? 72 : 105,
+      height: 58,
+      alignment: pw.Alignment.center,
+      child: pw.Image(
+        image,
+        fit: pw.BoxFit.contain,
+        alignment: pw.Alignment.center,
+      ),
+    );
   }
 
   // ============================================================

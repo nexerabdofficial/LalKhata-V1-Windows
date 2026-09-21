@@ -1,0 +1,200 @@
+import 'package:sqflite/sqflite.dart';
+
+import '../../database/database_helper.dart';
+
+class FFMoneyFlowRow {
+  final int journalId;
+  final int accountId;
+
+  final String accountName;
+  final String accountType;
+  final String groupCode;
+
+  final String transactionType;
+  final String? referenceType;
+  final int? referenceId;
+
+  final String? voucherNo;
+  final String transactionDate;
+
+  final String? description;
+  final String? note;
+
+  final double amount;
+
+  const FFMoneyFlowRow({
+    required this.journalId,
+    required this.accountId,
+    required this.accountName,
+    required this.accountType,
+    required this.groupCode,
+    required this.transactionType,
+    required this.referenceType,
+    required this.referenceId,
+    required this.voucherNo,
+    required this.transactionDate,
+    required this.description,
+    required this.note,
+    required this.amount,
+  });
+}
+
+class FFMoneyFlowReport {
+  final bool received;
+  final List<FFMoneyFlowRow> rows;
+  final double total;
+
+  const FFMoneyFlowReport({
+    required this.received,
+    required this.rows,
+    required this.total,
+  });
+
+  int get entryCount => rows.length;
+}
+
+class FFMoneyFlowService {
+  FFMoneyFlowService._();
+
+  static final FFMoneyFlowService instance = FFMoneyFlowService._();
+
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  Future<FFMoneyFlowReport> getTodayReport({
+    required bool received,
+    DateTime? day,
+  }) async {
+    final target = day ?? DateTime.now();
+
+    final start = DateTime(target.year, target.month, target.day);
+
+    final end = start.add(const Duration(days: 1));
+
+    return getReport(received: received, from: start, toExclusive: end);
+  }
+
+  Future<FFMoneyFlowReport> getReport({
+    required bool received,
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    final startIso = from.toIso8601String();
+    final endIso = toExclusive.toIso8601String();
+
+    final amountColumn = received ? 'jl.debit' : 'jl.credit';
+
+    final rawRows = await db.rawQuery(
+      '''
+      SELECT
+        je.id AS journal_id,
+
+        je.transaction_type,
+        je.reference_type,
+        je.reference_id,
+        je.voucher_no,
+        je.transaction_date,
+        je.description,
+
+        jl.account_id,
+        jl.note,
+        jl.debit,
+        jl.credit,
+
+        a.name AS account_name,
+        a.type AS account_type,
+
+        g.group_code
+
+      FROM journal_lines jl
+
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+
+      INNER JOIN accounts a
+        ON a.id = jl.account_id
+
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+
+      WHERE g.group_code IN (
+        'CASH',
+        'BANK',
+        'MFS'
+      )
+
+        AND $amountColumn > 0
+
+        AND je.transaction_date >= ?
+        AND je.transaction_date < ?
+
+        AND UPPER(
+          COALESCE(
+            je.transaction_type,
+            ''
+          )
+        ) NOT IN (
+          'CONTRA',
+          'FUND_TRANSFER'
+        )
+
+      ORDER BY
+        je.transaction_date DESC,
+        je.id DESC,
+        jl.id DESC
+      ''',
+      [startIso, endIso],
+    );
+
+    final rows = <FFMoneyFlowRow>[];
+
+    double total = 0;
+
+    for (final row in rawRows) {
+      final amount = received
+          ? _toDouble(row['debit'])
+          : _toDouble(row['credit']);
+
+      if (amount <= 0) {
+        continue;
+      }
+
+      total += amount;
+
+      rows.add(
+        FFMoneyFlowRow(
+          journalId: (row['journal_id'] as num).toInt(),
+          accountId: (row['account_id'] as num).toInt(),
+          accountName: row['account_name']?.toString() ?? '',
+          accountType: row['account_type']?.toString() ?? '',
+          groupCode: row['group_code']?.toString() ?? '',
+          transactionType: row['transaction_type']?.toString() ?? '',
+          referenceType: row['reference_type']?.toString(),
+          referenceId: row['reference_id'] == null
+              ? null
+              : (row['reference_id'] as num).toInt(),
+          voucherNo: row['voucher_no']?.toString(),
+          transactionDate: row['transaction_date']?.toString() ?? '',
+          description: row['description']?.toString(),
+          note: row['note']?.toString(),
+          amount: amount,
+        ),
+      );
+    }
+
+    return FFMoneyFlowReport(received: received, rows: rows, total: total);
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}

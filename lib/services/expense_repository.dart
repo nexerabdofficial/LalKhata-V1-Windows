@@ -3,9 +3,16 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import '../models/expense.dart';
 import 'refresh_service.dart';
+import 'ff/ff_income_expense_posting_service.dart';
+import 'ff/ff_journal_service.dart';
 
 class ExpenseRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFIncomeExpensePostingService _ffPostingService =
+      FFIncomeExpensePostingService.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // INSERT EXPENSE
@@ -29,6 +36,18 @@ class ExpenseRepository {
           WHERE id = ?
           ''',
           [expense.amount, expense.accountId],
+        );
+      }
+
+      if (expense.accountId != null) {
+        await _ffPostingService.postExpenseWithExecutor(
+          txn,
+          expenseId: id,
+          accountId: expense.accountId!,
+          amount: expense.amount,
+          voucherNo: 'EX#$id',
+          transactionDate: expense.expenseDate,
+          category: expense.category,
         );
       }
 
@@ -93,6 +112,12 @@ class ExpenseRepository {
     final expense = Expense.fromMap(data.first);
 
     final result = await db.transaction((txn) async {
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'EXPENSE',
+        referenceId: id,
+      );
+
       if (expense.accountId != null) {
         await txn.rawUpdate(
           '''

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/account.dart';
-import '../../models/account_transaction.dart';
-import '../../services/account_transaction_repository.dart';
-import '../../services/account_repository.dart';
+import '../../services/ff/ff_money_flow_service.dart';
 
 class AccountMoneyFlowScreen extends StatefulWidget {
   final bool received;
@@ -15,17 +12,11 @@ class AccountMoneyFlowScreen extends StatefulWidget {
 }
 
 class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
-  final AccountTransactionRepository _transactionRepository =
-      AccountTransactionRepository();
-
-  final AccountRepository _accountRepository = AccountRepository();
+  final FFMoneyFlowService _service = FFMoneyFlowService.instance;
 
   bool _loading = true;
 
-  List<AccountTransaction> _transactions = [];
-  Map<int, Account> _accounts = {};
-
-  double _total = 0;
+  FFMoneyFlowReport? _report;
 
   @override
   void initState() {
@@ -34,67 +25,19 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+      });
+    }
 
     try {
-      final transactions = await _transactionRepository.getAllTransactions();
-
-      final accounts = await _accountRepository.getAccounts();
-
-      final accountMap = <int, Account>{
-        for (final account in accounts)
-          if (account.id != null) account.id!: account,
-      };
-
-      final now = DateTime.now();
-
-      final start = DateTime(now.year, now.month, now.day);
-
-      final end = start.add(const Duration(days: 1));
-
-      final filtered = transactions.where((transaction) {
-        if (widget.received) {
-          if (transaction.credit <= 0) return false;
-          if (transaction.transactionType == 'FUND_TRANSFER_IN') {
-            return false;
-          }
-        } else {
-          if (transaction.debit <= 0) return false;
-          if (transaction.transactionType == 'FUND_TRANSFER_OUT') {
-            return false;
-          }
-        }
-
-        final date = DateTime.tryParse(transaction.transactionDate);
-
-        if (date == null) return false;
-
-        return !date.isBefore(start) && date.isBefore(end);
-      }).toList();
-
-      filtered.sort((a, b) {
-        final ad = DateTime.tryParse(a.transactionDate);
-        final bd = DateTime.tryParse(b.transactionDate);
-
-        if (ad == null || bd == null) return 0;
-
-        return bd.compareTo(ad);
-      });
-
-      double total = 0;
-
-      for (final transaction in filtered) {
-        total += widget.received ? transaction.credit : transaction.debit;
-      }
+      final report = await _service.getTodayReport(received: widget.received);
 
       if (!mounted) return;
 
       setState(() {
-        _transactions = filtered;
-        _accounts = accountMap;
-        _total = total;
+        _report = report;
         _loading = false;
       });
     } catch (e) {
@@ -117,12 +60,33 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
   String _date(String value) {
     final date = DateTime.tryParse(value);
 
-    if (date == null) return value;
+    if (date == null) {
+      return value;
+    }
 
     String two(int n) => n.toString().padLeft(2, '0');
 
-    return '${two(date.day)}-${two(date.month)}-${date.year} '
-        '${two(date.hour)}:${two(date.minute)}';
+    return '${two(date.day)}-'
+        '${two(date.month)}-'
+        '${date.year} '
+        '${two(date.hour)}:'
+        '${two(date.minute)}';
+  }
+
+  String _particular(FFMoneyFlowRow row) {
+    final reference = row.referenceType?.trim();
+
+    if (reference != null && reference.isNotEmpty) {
+      return reference;
+    }
+
+    final description = row.description?.trim();
+
+    if (description != null && description.isNotEmpty) {
+      return description;
+    }
+
+    return row.transactionType;
   }
 
   @override
@@ -135,13 +99,24 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
 
     final icon = received ? Icons.south_west_rounded : Icons.north_east_rounded;
 
+    final report = _report;
+
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: _transactions.isEmpty
+              child: report == null || report.rows.isEmpty
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: [
@@ -197,7 +172,7 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      _money(_total),
+                                      _money(report.total),
                                       style: TextStyle(
                                         fontSize: 21,
                                         color: color,
@@ -208,7 +183,7 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                 ),
                               ),
                               Text(
-                                '${_transactions.length} entries',
+                                '${report.entryCount} entries',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey.shade600,
@@ -219,18 +194,8 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        ..._transactions.map((transaction) {
-                          final account = _accounts[transaction.accountId];
-
-                          final amount = received
-                              ? transaction.credit
-                              : transaction.debit;
-
-                          final particular =
-                              transaction.referenceType?.trim().isNotEmpty ==
-                                  true
-                              ? transaction.referenceType!
-                              : transaction.transactionType;
+                        ...report.rows.map((row) {
+                          final particular = _particular(row);
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 9),
@@ -258,8 +223,7 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        account?.name ??
-                                            'Account #${transaction.accountId}',
+                                        row.accountName,
                                         style: const TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
@@ -274,21 +238,18 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                      if (transaction.voucherNo
-                                              ?.trim()
-                                              .isNotEmpty ==
+                                      if (row.voucherNo?.trim().isNotEmpty ==
                                           true)
                                         Text(
-                                          'Voucher: ${transaction.voucherNo}',
+                                          'Voucher: ${row.voucherNo}',
                                           style: TextStyle(
                                             fontSize: 10,
                                             color: Colors.grey.shade500,
                                           ),
                                         ),
-                                      if (transaction.note?.trim().isNotEmpty ==
-                                          true)
+                                      if (row.note?.trim().isNotEmpty == true)
                                         Text(
-                                          transaction.note!,
+                                          row.note!,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -298,7 +259,7 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                         ),
                                       const SizedBox(height: 3),
                                       Text(
-                                        _date(transaction.transactionDate),
+                                        _date(row.transactionDate),
                                         style: TextStyle(
                                           fontSize: 10,
                                           color: Colors.grey.shade500,
@@ -309,7 +270,7 @@ class _AccountMoneyFlowScreenState extends State<AccountMoneyFlowScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  _money(amount),
+                                  _money(row.amount),
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: color,

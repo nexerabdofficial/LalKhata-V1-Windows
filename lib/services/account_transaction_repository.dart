@@ -1,10 +1,15 @@
 import 'package:sqflite/sqflite.dart';
 
+import 'ff/ff_journal_models.dart';
+import 'ff/ff_journal_service.dart';
+
 import '../database/database_helper.dart';
 import '../models/account_transaction.dart';
 
 class AccountTransactionRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // INSERT TRANSACTION
@@ -371,6 +376,42 @@ class AccountTransactionRepository {
         'note': note,
         'created_at': createdAt,
       }, conflictAlgorithm: ConflictAlgorithm.abort);
+
+      // ------------------------------------------------------
+      // FF CENTRAL JOURNAL - CONTRA
+      //
+      // Dr Destination Account
+      // Cr Source Account
+      // ------------------------------------------------------
+
+      await _ffJournalService.createJournalWithExecutor(
+        txn,
+        FFJournalEntry(
+          transactionType: 'CONTRA',
+          voucherNo: voucherNo,
+          transactionDate: transactionDate,
+          referenceType: 'FUND_TRANSFER',
+          referenceId: null,
+          description: (note ?? '').trim().isNotEmpty
+              ? (note ?? '').trim()
+              : 'Contra',
+          createdAt: createdAt,
+          lines: [
+            FFJournalLine(
+              accountId: toAccountId,
+              debit: amount,
+              credit: 0,
+              note: 'Contra received',
+            ),
+            FFJournalLine(
+              accountId: fromAccountId,
+              debit: 0,
+              credit: amount,
+              note: 'Contra transferred',
+            ),
+          ],
+        ),
+      );
     });
   }
 
@@ -474,6 +515,13 @@ class AccountTransactionRepository {
         throw StateError('Journal voucher already exists: $voucherNo');
       }
 
+      // ========================================================
+      // LEGACY JOURNAL
+      //
+      // Keep account_transactions for compatibility with the
+      // existing account screens / legacy reports.
+      // ========================================================
+
       for (final entry in entries) {
         await txn.insert(
           'account_transactions',
@@ -481,6 +529,39 @@ class AccountTransactionRepository {
           conflictAlgorithm: ConflictAlgorithm.abort,
         );
       }
+
+      // ========================================================
+      // FF CENTRAL JOURNAL
+      //
+      // The FF journal is the accounting source of truth.
+      // It is written inside the SAME database transaction so
+      // legacy + FF can never become partially saved.
+      // ========================================================
+
+      final firstEntry = entries.first;
+
+      final narration = firstEntry.note?.trim() ?? '';
+
+      await _ffJournalService.createJournalWithExecutor(
+        txn,
+        FFJournalEntry(
+          transactionType: 'JOURNAL',
+          voucherNo: voucherNo,
+          transactionDate: firstEntry.transactionDate,
+          referenceType: 'JOURNAL',
+          referenceId: null,
+          description: narration.isEmpty ? 'Manual Journal' : narration,
+          createdAt: firstEntry.createdAt,
+          lines: entries.map((entry) {
+            return FFJournalLine(
+              accountId: entry.accountId,
+              debit: entry.debit,
+              credit: entry.credit,
+              note: entry.note?.trim(),
+            );
+          }).toList(),
+        ),
+      );
     });
   }
 }

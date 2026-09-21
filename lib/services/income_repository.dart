@@ -3,9 +3,16 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import '../models/income.dart';
 import 'refresh_service.dart';
+import 'ff/ff_income_expense_posting_service.dart';
+import 'ff/ff_journal_service.dart';
 
 class IncomeRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  final FFIncomeExpensePostingService _ffPostingService =
+      FFIncomeExpensePostingService.instance;
+
+  final FFJournalService _ffJournalService = FFJournalService.instance;
 
   // ============================================================
   // NEXT INCOME VOUCHER NO
@@ -77,6 +84,23 @@ class IncomeRepository {
         }, conflictAlgorithm: ConflictAlgorithm.abort);
       }
 
+      if (income.accountId != null) {
+        final effectiveVoucher =
+            voucherNo != null && voucherNo.trim().isNotEmpty
+            ? voucherNo.trim()
+            : 'INCOME-$id';
+
+        await _ffPostingService.postIncomeWithExecutor(
+          txn,
+          incomeId: id,
+          accountId: income.accountId!,
+          amount: income.amount,
+          voucherNo: effectiveVoucher,
+          transactionDate: income.incomeDate,
+          category: income.category,
+        );
+      }
+
       return id;
     });
 
@@ -118,6 +142,12 @@ class IncomeRepository {
     final income = Income.fromMap(data.first);
 
     await db.transaction((txn) async {
+      await _ffJournalService.deleteJournalByReferenceWithExecutor(
+        txn,
+        referenceType: 'INCOME',
+        referenceId: id,
+      );
+
       if (income.accountId != null) {
         await txn.rawUpdate(
           '''

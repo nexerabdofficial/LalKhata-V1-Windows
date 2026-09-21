@@ -17,7 +17,7 @@ class DatabaseHelper {
   // DATABASE VERSION
   // ============================================================
 
-  static const int _databaseVersion = 39;
+  static const int _databaseVersion = 43;
 
   // ============================================================
   // LICENSE DATABASE
@@ -361,10 +361,245 @@ class DatabaseHelper {
   }
 
   // ============================================================
+  // FF JOURNAL TABLES
+  // VERSION 40
+  // ============================================================
+
+  Future<void> _createFFJournalTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS journal_entries(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        transaction_type TEXT NOT NULL,
+        voucher_no TEXT NOT NULL,
+        transaction_date TEXT NOT NULL,
+        reference_type TEXT,
+        reference_id INTEGER,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        total_debit REAL NOT NULL DEFAULT 0,
+        total_credit REAL NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS journal_lines(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        journal_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        entity_type TEXT,
+        entity_id INTEGER,
+        debit REAL NOT NULL DEFAULT 0,
+        credit REAL NOT NULL DEFAULT 0,
+        note TEXT,
+        FOREIGN KEY(journal_id)
+          REFERENCES journal_entries(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(account_id)
+          REFERENCES accounts(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_date
+      ON journal_entries(transaction_date)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_voucher
+      ON journal_entries(voucher_no)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_entries_reference
+      ON journal_entries(reference_type, reference_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_journal
+      ON journal_lines(journal_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_account
+      ON journal_lines(account_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_journal_lines_entity
+      ON journal_lines(entity_type, entity_id)
+    ''');
+  }
+
+  // ============================================================
+  // FF ACCOUNT HIERARCHY TABLES
+  // VERSION 41
+  // ============================================================
+
+  Future<void> _createFFAccountHierarchyTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ff_account_groups(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        parent_id INTEGER,
+        group_code TEXT,
+        group_kind TEXT,
+        account_nature TEXT,
+        is_system INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(parent_id)
+          REFERENCES ff_account_groups(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ff_account_links(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        is_primary INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(account_id, group_id),
+        FOREIGN KEY(account_id)
+          REFERENCES accounts(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY(group_id)
+          REFERENCES ff_account_groups(id)
+          ON DELETE RESTRICT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_groups_parent
+      ON ff_account_groups(parent_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_groups_code
+      ON ff_account_groups(group_code)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_links_account
+      ON ff_account_links(account_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_account_links_group
+      ON ff_account_links(group_id)
+    ''');
+  }
+
+  // ============================================================
+  // FF PAYMENT ALLOCATIONS
+  //
+  // One business transaction may be paid through multiple
+  // accounts:
+  //
+  // SALE     -> Cash + Bank + MFS
+  // PURCHASE -> Cash + Bank + MFS
+  //
+  // Existing paid/due/account_id/payment_method fields remain
+  // for backward compatibility.
+  // ============================================================
+
+  Future<void> _createPaymentAllocationTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS payment_allocations(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reference_type TEXT NOT NULL,
+        reference_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        payment_method TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(account_id) REFERENCES accounts(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_payment_allocations_reference
+      ON payment_allocations(reference_type, reference_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_payment_allocations_account
+      ON payment_allocations(account_id)
+    ''');
+  }
+
+  // ============================================================
+  // FF PARTY ACCOUNT LINKS
+  // ============================================================
+
+  Future<void> _createFFPartyAccountLinkTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ff_party_account_links(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        party_type TEXT NOT NULL,
+        party_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(party_type, party_id),
+        UNIQUE(account_id),
+        FOREIGN KEY(account_id) REFERENCES accounts(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_party_account_links_party
+      ON ff_party_account_links(party_type, party_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ff_party_account_links_account
+      ON ff_party_account_links(account_id)
+    ''');
+  }
+
+  // ============================================================
   // DATABASE UPGRADE
   // ============================================================
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // ------------------------------------------------------------
+    // VERSION 40
+    // FF Central Journal
+    // ------------------------------------------------------------
+
+    if (oldVersion < 40) {
+      await _createFFJournalTables(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 41
+    // FF Account Hierarchy
+    // ------------------------------------------------------------
+
+    if (oldVersion < 41) {
+      await _createFFAccountHierarchyTables(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 42
+    // FF Split Payment Allocations
+    // ------------------------------------------------------------
+
+    if (oldVersion < 42) {
+      await _createPaymentAllocationTable(db);
+    }
+
+    // ------------------------------------------------------------
+    // VERSION 43
+    // Individual Customer / Supplier FF Ledger Mapping
+    // ------------------------------------------------------------
+
+    if (oldVersion < 43) {
+      await _createFFPartyAccountLinkTable(db);
+    }
+
     // ------------------------------------------------------------
     // VERSION 2
     // Suppliers
@@ -1246,6 +1481,19 @@ class DatabaseHelper {
         created_at TEXT NOT NULL
       )
     ''');
+
+    // ------------------------------------------------------------
+    // FF CENTRAL JOURNAL
+    // ------------------------------------------------------------
+
+    await _createFFJournalTables(db);
+
+    // ------------------------------------------------------------
+    // FF ACCOUNT HIERARCHY
+    // ------------------------------------------------------------
+
+    await _createFFAccountHierarchyTables(db);
+    await _createFFPartyAccountLinkTable(db);
 
     // ------------------------------------------------------------
     // SALES

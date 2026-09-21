@@ -5,18 +5,37 @@ import '../models/customer.dart';
 import '../models/customer_ledger.dart';
 import '../models/account_transaction.dart';
 import 'refresh_service.dart';
+import 'ff/ff_party_payment_posting_service.dart';
+import 'ff/ff_party_account_service.dart';
 
 class CustomerRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  final FFPartyPaymentPostingService _ffPartyPaymentPostingService =
+      FFPartyPaymentPostingService.instance;
+
+  final FFPartyAccountService _ffPartyAccountService =
+      FFPartyAccountService.instance;
+
   Future<int> insertCustomer(Customer customer) async {
     final Database db = await _databaseHelper.database;
 
-    return await db.insert(
-      'customers',
-      customer.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    return db.transaction((txn) async {
+      final data = customer.toMap()..remove('id');
+
+      final customerId = await txn.insert(
+        'customers',
+        data,
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+
+      await _ffPartyAccountService.ensureCustomerAccountWithExecutor(
+        txn,
+        customerId,
+      );
+
+      return customerId;
+    });
   }
 
   Future<List<Customer>> getCustomers() async {
@@ -87,14 +106,31 @@ class CustomerRepository {
   }
 
   Future<int> updateCustomer(Customer customer) async {
+    if (customer.id == null) {
+      throw ArgumentError('Customer ID is required for update.');
+    }
+
     final Database db = await _databaseHelper.database;
 
-    return await db.update(
-      'customers',
-      customer.toMap(),
-      where: 'id = ?',
-      whereArgs: [customer.id],
-    );
+    return db.transaction((txn) async {
+      final data = customer.toMap()..remove('id');
+
+      final updated = await txn.update(
+        'customers',
+        data,
+        where: 'id = ?',
+        whereArgs: [customer.id],
+      );
+
+      if (updated > 0) {
+        await _ffPartyAccountService.syncCustomerAccountWithExecutor(
+          txn,
+          customer.id!,
+        );
+      }
+
+      return updated;
+    });
   }
 
   Future<int> deleteCustomer(int id) async {
@@ -235,6 +271,24 @@ class CustomerRepository {
       );
 
       await txn.insert('account_transactions', transaction.toMap());
+
+      // ------------------------------------------------------
+      // 5. FF CENTRAL JOURNAL
+      //
+      // Dr Cash / Bank / MFS
+      // Cr Customer Receivable
+      // ------------------------------------------------------
+
+      await _ffPartyPaymentPostingService.postCustomerCollectionWithExecutor(
+        txn,
+        paymentId: id,
+        customerId: customerId,
+        accountId: accountId,
+        amount: amount,
+        voucherNo: voucherNo,
+        transactionDate: now,
+        note: note,
+      );
 
       return id;
     });
