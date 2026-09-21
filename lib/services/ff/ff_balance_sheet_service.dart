@@ -295,14 +295,8 @@ class FFBalanceSheetService {
   Future<double> _calculateOpeningDifference(DatabaseExecutor db) async {
     final rows = await db.rawQuery('''
       SELECT
-        COALESCE(a.opening_balance, 0)
-          AS opening_balance,
-
-        COALESCE(
-          g.account_nature,
-          ''
-        ) AS account_nature
-
+        COALESCE(a.opening_balance, 0) AS opening_balance,
+        COALESCE(g.account_nature, '') AS account_nature
       FROM accounts a
 
       INNER JOIN ff_account_links l
@@ -317,7 +311,7 @@ class FFBalanceSheetService {
         'LIABILITY',
         'EQUITY'
       )
-      ''');
+    ''');
 
     double debitOpening = 0;
     double creditOpening = 0;

@@ -2390,11 +2390,9 @@ class _BusinessOverviewScreenState extends State<BusinessOverviewScreen> {
               ),
             )
           else
-            ..._delayedDueCustomers.map(
-              (customer) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: _delayedDueCustomerRow(customer),
-              ),
+            Padding(
+              padding: EdgeInsets.zero,
+              child: _delayedDueCustomerRow(_delayedDueCustomers.first),
             ),
         ],
       ),

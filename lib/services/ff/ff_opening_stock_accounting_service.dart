@@ -71,45 +71,6 @@ class FFOpeningStockAccountingService {
         ],
       ),
     );
-
-    // Historical databases already carried an OBE master opening
-    // that balanced their opening structure before opening-stock
-    // journals existed. Reduce that master opening exactly once
-    // when converting the historical stock entry to a journal.
-    if (historicalBackfill) {
-      final rows = await db.query(
-        'accounts',
-        columns: ['opening_balance'],
-        where: 'id = ?',
-        whereArgs: [obeId],
-        limit: 1,
-      );
-
-      if (rows.isEmpty) {
-        throw StateError('Opening Balance Equity account not found.');
-      }
-
-      final raw = rows.first['opening_balance'];
-
-      final currentOpening = raw is num
-          ? raw.toDouble()
-          : double.tryParse(raw?.toString() ?? '') ?? 0.0;
-
-      final adjusted = currentOpening - amount;
-
-      if (adjusted < -0.000001) {
-        throw StateError(
-          'Historical opening stock exceeds Opening Balance Equity.',
-        );
-      }
-
-      await db.update(
-        'accounts',
-        {'opening_balance': adjusted.abs() < 0.000001 ? 0.0 : adjusted},
-        where: 'id = ?',
-        whereArgs: [obeId],
-      );
-    }
   }
 
   // ============================================================

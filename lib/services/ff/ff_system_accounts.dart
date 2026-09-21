@@ -18,10 +18,12 @@ class FFSystemGroupCodes {
   static const customerReceivable = 'CUSTOMER_RECEIVABLE';
   static const loanReceivable = 'LOAN_RECEIVABLE';
   static const inventory = 'INVENTORY';
+  static const prepaidExpense = 'PREPAID_EXPENSE';
 
   static const liabilities = 'LIABILITIES';
   static const supplierPayable = 'SUPPLIER_PAYABLE';
   static const loanPayable = 'LOAN_PAYABLE';
+  static const outstandingExpense = 'OUTSTANDING_EXPENSE';
   static const otherLiabilities = 'OTHER_LIABILITIES';
 
   static const equity = 'EQUITY';
@@ -54,6 +56,9 @@ class FFSystemAccountCodes {
   static const retainedEarnings = 'RETAINED_EARNINGS';
   static const openingBalanceEquity = 'OPENING_BALANCE_EQUITY';
   static const costOfGoodsSold = 'COST_OF_GOODS_SOLD';
+
+  static const prepaidExpense = 'PREPAID_EXPENSE';
+  static const outstandingExpense = 'OUTSTANDING_EXPENSE';
 
   static const purchaseAdditionalCharge = 'PURCHASE_ADDITIONAL_CHARGE';
 
@@ -151,11 +156,18 @@ class FFSystemAccounts {
         nature: 'DEBIT',
       );
 
-      // Keep the variable referenced because this group is part of
-      // the permanent hierarchy even though no default ledger is
-      // created directly under it here.
-      if (fixedAssets <= 0) {
-        throw StateError('Failed to create Fixed Assets group.');
+      final prepaidExpenseGroup = await _ensureGroup(
+        txn,
+        name: 'Prepaid Expense',
+        code: FFSystemGroupCodes.prepaidExpense,
+        parentId: currentAssets,
+        kind: 'ASSET',
+        nature: 'DEBIT',
+      );
+
+      // Keep permanent hierarchy references validated.
+      if (fixedAssets <= 0 || prepaidExpenseGroup <= 0) {
+        throw StateError('Failed to create required asset groups.');
       }
 
       final liabilities = await _ensureGroup(
@@ -184,6 +196,15 @@ class FFSystemAccounts {
         nature: 'CREDIT',
       );
 
+      final outstandingExpenseGroup = await _ensureGroup(
+        txn,
+        name: 'Outstanding Expense',
+        code: FFSystemGroupCodes.outstandingExpense,
+        parentId: liabilities,
+        kind: 'LIABILITY',
+        nature: 'CREDIT',
+      );
+
       await _ensureGroup(
         txn,
         name: 'Other Liabilities',
@@ -192,6 +213,10 @@ class FFSystemAccounts {
         kind: 'LIABILITY',
         nature: 'CREDIT',
       );
+
+      if (outstandingExpenseGroup <= 0) {
+        throw StateError('Failed to create Outstanding Expense group.');
+      }
 
       final equity = await _ensureGroup(
         txn,
@@ -314,6 +339,20 @@ class FFSystemAccounts {
         parentId: expense,
         kind: 'EXPENSE',
         nature: 'DEBIT',
+      );
+
+      await _ensureSystemAccount(
+        txn,
+        name: 'Prepaid Expense',
+        type: FFSystemAccountCodes.prepaidExpense,
+        groupId: prepaidExpenseGroup,
+      );
+
+      await _ensureSystemAccount(
+        txn,
+        name: 'Outstanding Expense',
+        type: FFSystemAccountCodes.outstandingExpense,
+        groupId: outstandingExpenseGroup,
       );
 
       await _ensureSystemAccount(
