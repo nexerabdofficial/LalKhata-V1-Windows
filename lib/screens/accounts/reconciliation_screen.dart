@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../models/account.dart';
-import '../../models/account_transaction.dart';
 import '../../services/account_repository.dart';
-import '../../services/account_transaction_repository.dart';
+import '../../services/ff/ff_journal_models.dart';
+import '../../services/ff/ff_journal_service.dart';
+import '../../services/ff/ff_universal_ledger_service.dart';
 
 class ReconciliationScreen extends StatefulWidget {
   const ReconciliationScreen({super.key});
@@ -15,13 +16,20 @@ class ReconciliationScreen extends StatefulWidget {
 class _ReconciliationScreenState extends State<ReconciliationScreen> {
   final AccountRepository _accountRepository = AccountRepository();
 
-  final AccountTransactionRepository _transactionRepository =
-      AccountTransactionRepository();
+  final FFUniversalLedgerService _ledgerService =
+      FFUniversalLedgerService.instance;
+
+  final FFJournalService _journalService = FFJournalService.instance;
 
   final TextEditingController _actualController = TextEditingController();
 
-  List<Account> _accounts = [];
-  Account? _selectedAccount;
+  final TextEditingController _noteController = TextEditingController();
+
+  List<Account> _moneyAccounts = [];
+  List<Account> _adjustmentAccounts = [];
+
+  Account? _selectedMoneyAccount;
+  Account? _selectedAdjustmentAccount;
 
   double _systemBalance = 0;
   double _actualBalance = 0;
@@ -30,33 +38,76 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
   bool _loading = true;
   bool _saving = false;
 
+  // ============================================================
+  // INIT
+  // ============================================================
+
   @override
   void initState() {
     super.initState();
-    _loadAccounts();
+
     _actualController.addListener(_calculateDifference);
+
+    _loadAccounts();
   }
 
   @override
   void dispose() {
+    _actualController.removeListener(_calculateDifference);
     _actualController.dispose();
+    _noteController.dispose();
+
     super.dispose();
+  }
+
+  // ============================================================
+  // ACCOUNT HELPERS
+  // ============================================================
+
+  bool _isMoneyAccount(Account account) {
+    final type = account.type.trim().toUpperCase();
+
+    return type == 'CASH' ||
+        type == 'BANK' ||
+        type == 'MFS' ||
+        type == 'MOBILE_BANKING';
   }
 
   Future<void> _loadAccounts() async {
     try {
       final accounts = await _accountRepository.getAccounts();
 
+      final moneyAccounts = accounts.where(_isMoneyAccount).toList();
+
+      final adjustmentAccounts = accounts
+          .where(
+            (account) =>
+                account.id != null &&
+                !_isMoneyAccount(account) &&
+                account.type.trim().toUpperCase() != 'CUSTOMER' &&
+                account.type.trim().toUpperCase() != 'SUPPLIER',
+          )
+          .toList();
+
       if (!mounted) return;
 
       setState(() {
-        _accounts = accounts;
-        _selectedAccount = accounts.isNotEmpty ? accounts.first : null;
+        _moneyAccounts = moneyAccounts;
+        _adjustmentAccounts = adjustmentAccounts;
+
+        _selectedMoneyAccount = moneyAccounts.isNotEmpty
+            ? moneyAccounts.first
+            : null;
+
+        _selectedAdjustmentAccount = null;
+
         _loading = false;
       });
 
-      if (_selectedAccount != null) {
-        await _loadSystemBalance(_selectedAccount!);
+      final account = _selectedMoneyAccount;
+
+      if (account != null) {
+        await _loadSystemBalance(account);
       }
     } catch (e) {
       if (!mounted) return;
@@ -65,34 +116,38 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
         _loading = false;
       });
 
-      _showMessage('Failed to load accounts: $e', error: true);
+      _showMessage('Failed to load reconciliation accounts: $e', error: true);
     }
   }
 
+  // ============================================================
+  // UNIVERSAL LEDGER BALANCE
+  // ============================================================
+
   Future<void> _loadSystemBalance(Account account) async {
     final accountId = account.id;
+
     if (accountId == null) {
       throw StateError('Selected account has no ID.');
     }
 
-    final transactions = await _transactionRepository.getTransactionsByAccount(
-      accountId,
+    final summary = await _ledgerService.getSummary(
+      accountId: accountId,
+      normalBalance: 'DEBIT',
     );
-
-    double balance = account.openingBalance;
-
-    for (final transaction in transactions) {
-      balance += transaction.credit;
-      balance -= transaction.debit;
-    }
 
     if (!mounted) return;
 
     setState(() {
-      _systemBalance = balance;
-      _calculateDifference();
+      _systemBalance = summary.closingBalance;
     });
+
+    _calculateDifference();
   }
+
+  // ============================================================
+  // DIFFERENCE
+  // ============================================================
 
   void _calculateDifference() {
     final actual = double.tryParse(_actualController.text.trim()) ?? 0;
@@ -105,37 +160,71 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
     });
   }
 
+  // ============================================================
+  // VOUCHER
+  // ============================================================
+
   Future<String> _generateVoucherNo() async {
-    final transactions = await _transactionRepository.getAllTransactions();
+    final entries = await _journalService.getJournalEntries();
 
     int maxNumber = 0;
 
-    for (final transaction in transactions) {
-      if (transaction.referenceType != 'RECONCILIATION') {
+    for (final entry in entries) {
+      final type = entry['transaction_type']?.toString().toUpperCase() ?? '';
+
+      if (type != 'RECONCILIATION') {
         continue;
       }
 
-      final voucher = transaction.voucherNo?.trim() ?? '';
+      final voucher = entry['voucher_no']?.toString().trim() ?? '';
 
-      final match = RegExp(r'^RECON#(\d+)$').firstMatch(voucher);
+      final match = RegExp(r'^RECON-(\d+)$').firstMatch(voucher);
 
       if (match == null) continue;
 
-      final number = int.tryParse(match.group(1)!) ?? 0;
+      final number = int.tryParse(match.group(1) ?? '') ?? 0;
 
       if (number > maxNumber) {
         maxNumber = number;
       }
     }
 
-    return 'RECON#${maxNumber + 1}';
+    return 'RECON-${(maxNumber + 1).toString().padLeft(6, '0')}';
   }
 
-  Future<void> _saveAdjustment() async {
-    if (_selectedAccount == null) return;
+  // ============================================================
+  // SAVE
+  // ============================================================
+
+  Future<void> _saveReconciliation() async {
+    final moneyAccount = _selectedMoneyAccount;
+    final adjustmentAccount = _selectedAdjustmentAccount;
+
+    if (moneyAccount == null || moneyAccount.id == null) {
+      _showMessage('Select a Cash, Bank or MFS account.', error: true);
+      return;
+    }
+
+    if (_actualController.text.trim().isEmpty) {
+      _showMessage('Enter statement / actual balance.', error: true);
+      return;
+    }
 
     if (_difference.abs() < 0.005) {
-      _showMessage('No adjustment is required.', error: true);
+      _showMessage('Account is already reconciled.');
+      return;
+    }
+
+    if (adjustmentAccount == null || adjustmentAccount.id == null) {
+      _showMessage('Select an adjustment ledger.', error: true);
+      return;
+    }
+
+    if (adjustmentAccount.id == moneyAccount.id) {
+      _showMessage(
+        'Adjustment ledger cannot be the same account.',
+        error: true,
+      );
       return;
     }
 
@@ -147,35 +236,86 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
       final voucher = await _generateVoucherNo();
 
       final now = DateTime.now();
-      final date =
-          '${now.year.toString().padLeft(4, '0')}-'
-          '${now.month.toString().padLeft(2, '0')}-'
-          '${now.day.toString().padLeft(2, '0')}';
-
       final createdAt = now.toIso8601String();
 
-      final adjustmentAmount = _difference.abs();
+      final amount = _difference.abs();
 
-      final transaction = AccountTransaction(
-        accountId: _selectedAccount!.id!,
-        transactionType: 'RECONCILIATION_ADJUSTMENT',
-        referenceType: 'RECONCILIATION',
-        referenceId: null,
-        voucherNo: voucher,
-        debit: _difference < 0 ? adjustmentAmount : 0,
-        credit: _difference > 0 ? adjustmentAmount : 0,
-        transactionDate: date,
-        note: 'Balance reconciliation adjustment',
-        createdAt: createdAt,
+      final lines = <FFJournalLine>[];
+
+      // --------------------------------------------------------
+      // ACTUAL > LEDGER
+      //
+      // Dr Cash / Bank / MFS
+      //    Cr Adjustment Ledger
+      // --------------------------------------------------------
+
+      if (_difference > 0) {
+        lines.add(
+          FFJournalLine(
+            accountId: moneyAccount.id!,
+            debit: amount,
+            note: 'Reconciliation increase',
+          ),
+        );
+
+        lines.add(
+          FFJournalLine(
+            accountId: adjustmentAccount.id!,
+            credit: amount,
+            note: 'Reconciliation counterpart',
+          ),
+        );
+      }
+
+      // --------------------------------------------------------
+      // ACTUAL < LEDGER
+      //
+      // Dr Adjustment Ledger
+      //    Cr Cash / Bank / MFS
+      // --------------------------------------------------------
+
+      if (_difference < 0) {
+        lines.add(
+          FFJournalLine(
+            accountId: adjustmentAccount.id!,
+            debit: amount,
+            note: 'Reconciliation counterpart',
+          ),
+        );
+
+        lines.add(
+          FFJournalLine(
+            accountId: moneyAccount.id!,
+            credit: amount,
+            note: 'Reconciliation decrease',
+          ),
+        );
+      }
+
+      final userNote = _noteController.text.trim();
+
+      await _journalService.createJournal(
+        FFJournalEntry(
+          transactionType: 'RECONCILIATION',
+          voucherNo: voucher,
+          transactionDate: createdAt,
+          referenceType: 'RECONCILIATION',
+          referenceId: null,
+          description: userNote.isEmpty ? 'Account reconciliation' : userNote,
+          createdAt: createdAt,
+          lines: lines,
+        ),
       );
 
-      await _transactionRepository.insertTransaction(transaction);
+      await _loadSystemBalance(moneyAccount);
 
       if (!mounted) return;
 
-      _actualController.clear();
+      _actualController.text = _systemBalance.toStringAsFixed(2);
 
-      await _loadSystemBalance(_selectedAccount!);
+      _noteController.clear();
+
+      _calculateDifference();
 
       _showMessage('Reconciliation saved: $voucher');
     } catch (e) {
@@ -191,6 +331,10 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
     }
   }
 
+  // ============================================================
+  // MESSAGE
+  // ============================================================
+
   void _showMessage(String message, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -200,152 +344,315 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
     );
   }
 
-  String _formatAmount(double value) {
-    return value.toStringAsFixed(2);
+  String _money(double value) {
+    return '৳ ${value.toStringAsFixed(2)}';
   }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
-    final differenceIsPositive = _difference > 0.004;
-    final differenceIsNegative = _difference < -0.004;
+    final differencePositive = _difference > 0.004;
+    final differenceNegative = _difference < -0.004;
+    final reconciled =
+        _actualController.text.trim().isNotEmpty && _difference.abs() < 0.005;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Reconciliation')),
+      appBar: AppBar(
+        title: const Text(
+          'Account Reconciliation',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading
+                ? null
+                : () async {
+                    final account = _selectedMoneyAccount;
+
+                    if (account != null) {
+                      await _loadSystemBalance(account);
+                    }
+                  },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _accounts.isEmpty
-          ? const Center(child: Text('No account found.'))
+          : _moneyAccounts.isEmpty
+          ? const Center(child: Text('No Cash, Bank or MFS account found.'))
           : RefreshIndicator(
               onRefresh: () async {
-                if (_selectedAccount != null) {
-                  await _loadSystemBalance(_selectedAccount!);
+                final account = _selectedMoneyAccount;
+
+                if (account != null) {
+                  await _loadSystemBalance(account);
                 }
               },
               child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text(
-                            'Account',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<Account>(
-                            initialValue: _selectedAccount,
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(
-                                Icons.account_balance_wallet_outlined,
+                          // ====================================
+                          // ACCOUNT
+                          // ====================================
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Cash / Bank / MFS Account',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  DropdownButtonFormField<Account>(
+                                    initialValue: _selectedMoneyAccount,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(
+                                        Icons.account_balance_wallet_outlined,
+                                      ),
+                                    ),
+                                    items: _moneyAccounts
+                                        .map(
+                                          (account) =>
+                                              DropdownMenuItem<Account>(
+                                                value: account,
+                                                child: Text(
+                                                  account.name,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                        )
+                                        .toList(),
+                                    onChanged: _saving
+                                        ? null
+                                        : (account) async {
+                                            if (account == null) {
+                                              return;
+                                            }
+
+                                            setState(() {
+                                              _selectedMoneyAccount = account;
+                                              _actualController.clear();
+                                              _selectedAdjustmentAccount = null;
+                                            });
+
+                                            await _loadSystemBalance(account);
+                                          },
+                                  ),
+                                ],
                               ),
                             ),
-                            items: _accounts
-                                .map(
-                                  (account) => DropdownMenuItem<Account>(
-                                    value: account,
-                                    child: Text(account.name),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (account) async {
-                              if (account == null) {
-                                return;
-                              }
-
-                              setState(() {
-                                _selectedAccount = account;
-                                _actualController.clear();
-                              });
-
-                              await _loadSystemBalance(account);
-                            },
                           ),
+
+                          const SizedBox(height: 14),
+
+                          // ====================================
+                          // BALANCE
+                          // ====================================
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                children: [
+                                  _BalanceRow(
+                                    label: 'Ledger Balance',
+                                    value: _money(_systemBalance),
+                                  ),
+                                  const SizedBox(height: 18),
+                                  TextField(
+                                    controller: _actualController,
+                                    enabled: !_saving,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                          signed: false,
+                                        ),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Statement / Actual Balance',
+                                      prefixText: '৳ ',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      color: reconciled
+                                          ? Colors.green.withValues(alpha: 0.08)
+                                          : differenceNegative
+                                          ? Colors.red.withValues(alpha: 0.08)
+                                          : differencePositive
+                                          ? Colors.orange.withValues(
+                                              alpha: 0.08,
+                                            )
+                                          : Colors.grey.withValues(alpha: 0.08),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          reconciled
+                                              ? 'Reconciled'
+                                              : 'Difference',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _money(_difference),
+                                          style: TextStyle(
+                                            fontSize: 26,
+                                            fontWeight: FontWeight.bold,
+                                            color: reconciled
+                                                ? Colors.green
+                                                : differenceNegative
+                                                ? Colors.red
+                                                : differencePositive
+                                                ? Colors.orange
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // ====================================
+                          // COUNTERPART
+                          // ====================================
+                          if (_difference.abs() >= 0.005)
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(18),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Text(
+                                      'Adjustment Ledger',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Select the ledger that explains the difference.',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    DropdownButtonFormField<Account>(
+                                      initialValue: _selectedAdjustmentAccount,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(
+                                          Icons.account_tree_outlined,
+                                        ),
+                                      ),
+                                      hint: const Text(
+                                        'Select adjustment ledger',
+                                      ),
+                                      items: _adjustmentAccounts
+                                          .map(
+                                            (account) =>
+                                                DropdownMenuItem<Account>(
+                                                  value: account,
+                                                  child: Text(
+                                                    account.name,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                          )
+                                          .toList(),
+                                      onChanged: _saving
+                                          ? null
+                                          : (account) {
+                                              setState(() {
+                                                _selectedAdjustmentAccount =
+                                                    account;
+                                              });
+                                            },
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _noteController,
+                                      enabled: !_saving,
+                                      maxLines: 2,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Note / Reason',
+                                        hintText:
+                                            'e.g. Bank charge, interest, cash shortage...',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          if (_difference.abs() >= 0.005)
+                            const SizedBox(height: 18),
+
+                          // ====================================
+                          // SAVE
+                          // ====================================
+                          SizedBox(
+                            height: 50,
+                            child: FilledButton.icon(
+                              onPressed: _saving || _difference.abs() < 0.005
+                                  ? null
+                                  : _saveReconciliation,
+                              icon: _saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.balance_outlined),
+                              label: Text(
+                                _saving
+                                    ? 'Saving...'
+                                    : reconciled
+                                    ? 'Reconciled'
+                                    : 'Save Reconciliation',
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          _BalanceRow(
-                            label: 'System Balance',
-                            value: '৳ ${_formatAmount(_systemBalance)}',
-                          ),
-                          const SizedBox(height: 18),
-                          TextField(
-                            controller: _actualController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'Actual Balance',
-                              prefixText: '৳ ',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: differenceIsNegative
-                                  ? Colors.red.withValues(alpha: 0.08)
-                                  : differenceIsPositive
-                                  ? Colors.green.withValues(alpha: 0.08)
-                                  : Colors.grey.withValues(alpha: 0.08),
-                            ),
-                            child: Column(
-                              children: [
-                                const Text(
-                                  'Difference',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '৳ ${_formatAmount(_difference)}',
-                                  style: TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
-                                    color: differenceIsNegative
-                                        ? Colors.red
-                                        : differenceIsPositive
-                                        ? Colors.green
-                                        : Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    height: 50,
-                    child: FilledButton.icon(
-                      onPressed: _saving || _difference.abs() < 0.005
-                          ? null
-                          : _saveAdjustment,
-                      icon: _saving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.check_circle_outline),
-                      label: Text(_saving ? 'Saving...' : 'Save Adjustment'),
                     ),
                   ),
                 ],
