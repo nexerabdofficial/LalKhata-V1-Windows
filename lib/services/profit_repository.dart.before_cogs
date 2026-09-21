@@ -73,22 +73,12 @@ class ProfitRepository {
     }
 
     double operatingExpenses = 0;
-    double journalCogs = 0;
 
     for (final row in expenseRows) {
-      if (row.groupCode == 'COST_OF_GOODS_SOLD') {
-        journalCogs += row.amount;
-      } else {
-        operatingExpenses += row.amount;
-      }
+      operatingExpenses += row.amount;
     }
 
-    final snapshotCogs = await _getCogs(db, fromIso, toIso);
-
-    // Historical sales may pre-date COGS journal posting.
-    // The sale-item snapshot remains the costing source of truth.
-    // Once all sales in the period are journal-posted, both values match.
-    final cogs = journalCogs > 0.000001 ? journalCogs : snapshotCogs;
+    final cogs = await _getCogs(db, fromIso, toIso);
 
     return FFProfitStatement(
       incomeAccounts: incomeRows,

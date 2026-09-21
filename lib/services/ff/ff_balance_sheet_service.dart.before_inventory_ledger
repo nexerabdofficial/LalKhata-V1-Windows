@@ -54,9 +54,15 @@ class FFBalanceSheetReport {
   // ----------------------------------------------------------
 
   double get totalAssets {
-    double total = 0;
+    double total = inventoryValue;
 
     for (final row in assets) {
+      // Inventory is represented by current physical stock value.
+      // Therefore inventory ledger is not counted again.
+      if (row.accountType == 'INVENTORY') {
+        continue;
+      }
+
       total += row.balance;
     }
 
@@ -132,9 +138,7 @@ class FFBalanceSheetService {
 
     final rows = await _loadAccounts(db, effectiveAsOf.toIso8601String());
 
-    final inventoryValue = rows
-        .where((row) => row.accountType == 'INVENTORY')
-        .fold<double>(0, (sum, row) => sum + row.balance);
+    final inventoryValue = await _loadInventoryValue(db);
 
     final profitStatement = await _profitRepository.getProfitStatement(
       from: DateTime(2000, 1, 1),
@@ -278,10 +282,25 @@ class FFBalanceSheetService {
   // ==========================================================
   // INVENTORY
   //
-  // Balance Sheet inventory follows the accounting Inventory ledger.
-  // Physical product stock valuation remains the operational costing
-  // source and is not modified by this report.
+  // Balance Sheet inventory is the current physical inventory
+  // valuation already maintained by the stock/costing engine.
+  //
+  // Do NOT calculate current inventory again from journal.
+  // Do NOT modify weighted-average costing here.
   // ==========================================================
+
+  Future<double> _loadInventoryValue(DatabaseExecutor db) async {
+    final result = await db.rawQuery('''
+      SELECT
+        COALESCE(
+          SUM(stock_value),
+          0
+        ) AS total
+      FROM products
+      ''');
+
+    return _toDouble(result.first['total']);
+  }
 
   // ==========================================================
   // OPENING CONTROL

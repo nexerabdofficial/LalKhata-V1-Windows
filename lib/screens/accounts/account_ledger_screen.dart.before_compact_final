@@ -1,0 +1,731 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+import '../../models/account.dart';
+import '../../services/ff/ff_universal_ledger_service.dart';
+
+class AccountLedgerScreen extends StatefulWidget {
+  final Account account;
+
+  const AccountLedgerScreen({super.key, required this.account});
+
+  @override
+  State<AccountLedgerScreen> createState() => _AccountLedgerScreenState();
+}
+
+class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
+  final FFUniversalLedgerService _ledgerService =
+      FFUniversalLedgerService.instance;
+
+  final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _transactions = [];
+
+  FFUniversalLedgerSummary? _summary;
+
+  // ============================================================
+  // LOAD FF UNIVERSAL LEDGER
+  // ============================================================
+
+  Future<void> _loadLedger() async {
+    if (widget.account.id == null) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      final results = await Future.wait([
+        _ledgerService.getLedger(accountId: widget.account.id!),
+        _ledgerService.getSummary(accountId: widget.account.id!),
+      ]);
+
+      if (!mounted) return;
+
+      setState(() {
+        _transactions = results[0] as List<Map<String, dynamic>>;
+        _summary = results[1] as FFUniversalLedgerSummary;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load ledger: $e')));
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLedger();
+  }
+
+  // ============================================================
+  // VALUES
+  // ============================================================
+
+  double get _openingBalance {
+    return _summary?.openingBalance ?? 0;
+  }
+
+  double get _currentBalance {
+    return _summary?.closingBalance ?? 0;
+  }
+
+  double get _totalDebit {
+    return _summary?.totalDebit ?? 0;
+  }
+
+  double get _totalCredit {
+    return _summary?.totalCredit ?? 0;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  // ============================================================
+  // FORMAT
+  // ============================================================
+
+  String _formatMoney(double value) {
+    return NumberFormat('#,##0.##').format(value);
+  }
+
+  String _formatDate(String value) {
+    try {
+      return _dateFormat.format(DateTime.parse(value));
+    } catch (_) {
+      return value.length >= 10 ? value.substring(0, 10) : value;
+    }
+  }
+
+  String _voucher(Map<String, dynamic> row) {
+    final voucher = row['voucher_no']?.toString().trim() ?? '';
+
+    if (voucher.isNotEmpty) {
+      return voucher;
+    }
+
+    return '-';
+  }
+
+  String _description(Map<String, dynamic> row) {
+    final note = row['note']?.toString().trim() ?? '';
+
+    if (note.isNotEmpty) {
+      return note;
+    }
+
+    final description = row['description']?.toString().trim() ?? '';
+
+    if (description.isNotEmpty) {
+      return description;
+    }
+
+    return row['transaction_type']?.toString().trim() ?? '';
+  }
+
+  String _transactionDate(Map<String, dynamic> row) {
+    return row['transaction_date']?.toString().trim() ?? '';
+  }
+
+  // ============================================================
+  // AMOUNT PRESENTATION
+  //
+  // IMPORTANT:
+  // Debit/Credit are accounting movements.
+  // We do NOT use legacy "+credit -debit" logic here.
+  // Running balance comes directly from FF Universal Ledger.
+  // ============================================================
+
+  Color _amountColor(Map<String, dynamic> row) {
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    if (debit > 0) {
+      return Colors.red;
+    }
+
+    if (credit > 0) {
+      return Colors.green;
+    }
+
+    return Colors.grey;
+  }
+
+  String _amountText(Map<String, dynamic> row) {
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    if (debit > 0) {
+      return 'Dr ৳${_formatMoney(debit)}';
+    }
+
+    if (credit > 0) {
+      return 'Cr ৳${_formatMoney(credit)}';
+    }
+
+    return '৳0';
+  }
+
+  // ============================================================
+  // PDF
+  // ============================================================
+
+  Future<void> _exportPdf() async {
+    final pdf = pw.Document();
+
+    final rows = <List<String>>[
+      ['Date', 'Voucher', 'Description', 'Debit', 'Credit', 'Balance'],
+    ];
+
+    for (final transaction in _transactions) {
+      final debit = _toDouble(transaction['debit']);
+
+      final credit = _toDouble(transaction['credit']);
+
+      final runningBalance = _toDouble(transaction['running_balance']);
+
+      rows.add([
+        _formatDate(_transactionDate(transaction)),
+        _voucher(transaction),
+        _description(transaction),
+        debit > 0 ? _formatMoney(debit) : '',
+        credit > 0 ? _formatMoney(credit) : '',
+        _formatMoney(runningBalance),
+      ]);
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        header: (context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Account Ledger',
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text(
+                widget.account.name,
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text('Type: ${widget.account.type}'),
+              pw.SizedBox(height: 12),
+            ],
+          );
+        },
+        footer: (context) {
+          return pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Page ${context.pageNumber} / ${context.pagesCount}',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          );
+        },
+        build: (context) {
+          return [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Opening Balance: ${_formatMoney(_openingBalance)}'),
+                pw.Text('Closing Balance: ${_formatMoney(_currentBalance)}'),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Table.fromTextArray(
+              headers: rows.first,
+              data: rows.skip(1).toList(),
+              border: pw.TableBorder.all(color: PdfColors.grey400),
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 8,
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey300,
+              ),
+              cellPadding: const pw.EdgeInsets.all(5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.1),
+                1: const pw.FlexColumnWidth(1.1),
+                2: const pw.FlexColumnWidth(2.0),
+                3: const pw.FlexColumnWidth(1.1),
+                4: const pw.FlexColumnWidth(1.1),
+                5: const pw.FlexColumnWidth(1.2),
+              },
+            ),
+            pw.SizedBox(height: 16),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'Total Debit: ${_formatMoney(_totalDebit)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(width: 24),
+                pw.Text(
+                  'Total Credit: ${_formatMoney(_totalCredit)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+              ],
+            ),
+          ];
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (format) async {
+        return pdf.save();
+      },
+    );
+  }
+
+  // ============================================================
+  // SUMMARY
+  // ============================================================
+
+  Widget _buildSummary() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Opening Balance',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '৳${_formatMoney(_openingBalance)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Closing Balance',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '৳${_formatMoney(_currentBalance)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // LEDGER TABLE
+  // ============================================================
+
+  static const double _dateWidth = 105;
+  static const double _voucherWidth = 125;
+  static const double _amountWidth = 120;
+  static const double _balanceWidth = 135;
+  static const double _minimumParticularWidth = 300;
+
+  double get _minimumTableWidth =>
+      _dateWidth +
+      _voucherWidth +
+      _minimumParticularWidth +
+      (_amountWidth * 2) +
+      _balanceWidth;
+
+  Widget _tableCell(
+    String text, {
+    required double width,
+    TextAlign align = TextAlign.left,
+    FontWeight fontWeight = FontWeight.normal,
+    Color? color,
+    bool header = false,
+    int maxLines = 1,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+        child: Text(
+          text,
+          textAlign: align,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: header ? 13 : 12.5,
+            fontWeight: fontWeight,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableHeader() {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+      ),
+      child: Row(
+        children: [
+          _tableCell(
+            'Date',
+            width: _dateWidth,
+            fontWeight: FontWeight.bold,
+            header: true,
+          ),
+          _tableCell(
+            'Voucher',
+            width: _voucherWidth,
+            fontWeight: FontWeight.bold,
+            header: true,
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+              child: Text(
+                'Particulars',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          _tableCell(
+            'Debit',
+            width: _amountWidth,
+            align: TextAlign.right,
+            fontWeight: FontWeight.bold,
+            header: true,
+          ),
+          _tableCell(
+            'Credit',
+            width: _amountWidth,
+            align: TextAlign.right,
+            fontWeight: FontWeight.bold,
+            header: true,
+          ),
+          _tableCell(
+            'Balance',
+            width: _balanceWidth,
+            align: TextAlign.right,
+            fontWeight: FontWeight.bold,
+            header: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpeningTableRow() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          _tableCell(
+            _formatDate(widget.account.openingDate),
+            width: _dateWidth,
+          ),
+          _tableCell('OB', width: _voucherWidth, fontWeight: FontWeight.w600),
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+              child: Text(
+                'Opening Balance',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          _tableCell('', width: _amountWidth, align: TextAlign.right),
+          _tableCell('', width: _amountWidth, align: TextAlign.right),
+          _tableCell(
+            '৳${_formatMoney(_openingBalance)}',
+            width: _balanceWidth,
+            align: TextAlign.right,
+            fontWeight: FontWeight.bold,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionTableRow(Map<String, dynamic> transaction) {
+    final debit = _toDouble(transaction['debit']);
+    final credit = _toDouble(transaction['credit']);
+    final balance = _toDouble(transaction['running_balance']);
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _tableCell(
+            _formatDate(_transactionDate(transaction)),
+            width: _dateWidth,
+          ),
+          Tooltip(
+            message: _voucher(transaction),
+            child: _tableCell(
+              _voucher(transaction),
+              width: _voucherWidth,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Expanded(
+            child: Tooltip(
+              message: _description(transaction),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 11,
+                ),
+                child: Text(
+                  _description(transaction),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+            ),
+          ),
+          _tableCell(
+            debit > 0 ? '৳${_formatMoney(debit)}' : '',
+            width: _amountWidth,
+            align: TextAlign.right,
+            fontWeight: debit > 0 ? FontWeight.w600 : FontWeight.normal,
+            color: debit > 0 ? Colors.red : null,
+          ),
+          _tableCell(
+            credit > 0 ? '৳${_formatMoney(credit)}' : '',
+            width: _amountWidth,
+            align: TextAlign.right,
+            fontWeight: credit > 0 ? FontWeight.w600 : FontWeight.normal,
+            color: credit > 0 ? Colors.green : null,
+          ),
+          _tableCell(
+            '৳${_formatMoney(balance)}',
+            width: _balanceWidth,
+            align: TextAlign.right,
+            fontWeight: FontWeight.bold,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLedgerTable() {
+    final hasOpening = _openingBalance != 0;
+    final hasTransactions = _transactions.isNotEmpty;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth > _minimumTableWidth
+              ? constraints.maxWidth
+              : _minimumTableWidth;
+
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: width,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: width, child: _buildTableHeader()),
+
+                  if (hasOpening)
+                    SizedBox(width: width, child: _buildOpeningTableRow()),
+
+                  ..._transactions.map(
+                    (transaction) => SizedBox(
+                      width: width,
+                      child: _buildTransactionTableRow(transaction),
+                    ),
+                  ),
+
+                  if (!hasOpening && !hasTransactions)
+                    SizedBox(
+                      width: width,
+                      child: const Padding(
+                        padding: EdgeInsets.all(28),
+                        child: Center(
+                          child: Text(
+                            'No transactions yet.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ============================================================
+  // TOTALS
+  // ============================================================
+
+  Widget _buildTotals() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(child: _totalItem('Total Debit', _totalDebit, Colors.red)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _totalItem('Total Credit', _totalCredit, Colors.green),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _totalItem(
+                'Closing Balance',
+                _currentBalance,
+                null,
+                alignRight: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _totalItem(
+    String label,
+    double amount,
+    Color? color, {
+    bool alignRight = false,
+  }) {
+    return Column(
+      crossAxisAlignment: alignRight
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          '৳${_formatMoney(amount)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.account.name),
+        actions: [
+          IconButton(
+            tooltip: 'Export PDF',
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: _loading ? null : _exportPdf,
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadLedger,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 24),
+                children: [
+                  _buildSummary(),
+                  _buildLedgerTable(),
+                  _buildTotals(),
+                ],
+              ),
+            ),
+    );
+  }
+}

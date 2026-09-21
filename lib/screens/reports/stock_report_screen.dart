@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/product.dart';
 import '../../services/product_repository.dart';
+import 'stock_report_preview_screen.dart';
 
 class StockReportScreen extends StatefulWidget {
   const StockReportScreen({super.key});
@@ -108,15 +109,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
 
   int get selectedTotalProducts => selectedProducts.length;
 
-  int get selectedInStock =>
-      selectedProducts.where((e) => e.stock > 10).length;
+  int get selectedInStock => selectedProducts.where((e) => e.stock > 10).length;
 
   int get selectedLowStock =>
-      selectedProducts
-          .where(
-            (e) => e.stock > 0 && e.stock <= 10,
-          )
-          .length;
+      selectedProducts.where((e) => e.stock > 0 && e.stock <= 10).length;
 
   int get selectedOutStock =>
       selectedProducts.where((e) => e.stock <= 0).length;
@@ -179,18 +175,35 @@ class _StockReportScreenState extends State<StockReportScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Stock Report"),
+        actions: [
+          IconButton(
+            tooltip: 'PDF Preview',
+            onPressed: _loading
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StockReportPreviewScreen(
+                          products: List<Product>.from(selectedProducts),
+                          isMaterial: _selectedType == StockType.material,
+                        ),
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
 
-                  final horizontalPadding =
-                      width >= 900 ? 24.0 : 12.0;
+                  final horizontalPadding = width >= 900 ? 24.0 : 12.0;
 
                   return Column(
                     children: [
@@ -206,47 +219,36 @@ class _StockReportScreenState extends State<StockReportScreen> {
                         ),
                         child: LayoutBuilder(
                           builder: (context, selectorConstraints) {
-                            final isPhone =
-                                selectorConstraints.maxWidth < 600;
+                            final isPhone = selectorConstraints.maxWidth < 600;
 
                             if (isPhone) {
                               return Column(
                                 children: [
                                   _stockTypeCard(
                                     title: "Material Stock",
-                                    subtitle:
-                                        "Raw materials & components",
+                                    subtitle: "Raw materials & components",
                                     count: materialCount,
                                     value: materialStockValue,
                                     icon: Icons.construction,
                                     color: Colors.orange,
                                     selected:
-                                        _selectedType ==
-                                            StockType.material,
+                                        _selectedType == StockType.material,
                                     onTap: () {
-                                      _selectType(
-                                        StockType.material,
-                                      );
+                                      _selectType(StockType.material);
                                     },
                                   ),
                                   const SizedBox(height: 8),
                                   _stockTypeCard(
                                     title: "Product Stock",
-                                    subtitle:
-                                        "Finished products",
-                                    count:
-                                        finishedProductCount,
-                                    value:
-                                        finishedProductStockValue,
+                                    subtitle: "Finished products",
+                                    count: finishedProductCount,
+                                    value: finishedProductStockValue,
                                     icon: Icons.inventory_2,
                                     color: Colors.blue,
                                     selected:
-                                        _selectedType ==
-                                            StockType.product,
+                                        _selectedType == StockType.product,
                                     onTap: () {
-                                      _selectType(
-                                        StockType.product,
-                                      );
+                                      _selectType(StockType.product);
                                     },
                                   ),
                                 ],
@@ -258,19 +260,15 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                 Expanded(
                                   child: _stockTypeCard(
                                     title: "Material Stock",
-                                    subtitle:
-                                        "Raw materials & components",
+                                    subtitle: "Raw materials & components",
                                     count: materialCount,
                                     value: materialStockValue,
                                     icon: Icons.construction,
                                     color: Colors.orange,
                                     selected:
-                                        _selectedType ==
-                                            StockType.material,
+                                        _selectedType == StockType.material,
                                     onTap: () {
-                                      _selectType(
-                                        StockType.material,
-                                      );
+                                      _selectType(StockType.material);
                                     },
                                   ),
                                 ),
@@ -278,21 +276,15 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                 Expanded(
                                   child: _stockTypeCard(
                                     title: "Product Stock",
-                                    subtitle:
-                                        "Finished products",
-                                    count:
-                                        finishedProductCount,
-                                    value:
-                                        finishedProductStockValue,
+                                    subtitle: "Finished products",
+                                    count: finishedProductCount,
+                                    value: finishedProductStockValue,
                                     icon: Icons.inventory_2,
                                     color: Colors.blue,
                                     selected:
-                                        _selectedType ==
-                                            StockType.product,
+                                        _selectedType == StockType.product,
                                     onTap: () {
-                                      _selectType(
-                                        StockType.product,
-                                      );
+                                      _selectType(StockType.product);
                                     },
                                   ),
                                 ),
@@ -316,21 +308,15 @@ class _StockReportScreenState extends State<StockReportScreen> {
                           height: 44,
                           child: TextField(
                             decoration: InputDecoration(
-                              hintText: _selectedType ==
-                                      StockType.material
+                              hintText: _selectedType == StockType.material
                                   ? "Search material..."
                                   : "Search product...",
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                size: 21,
-                              ),
-                              contentPadding:
-                                  const EdgeInsets.symmetric(
+                              prefixIcon: const Icon(Icons.search, size: 21),
+                              contentPadding: const EdgeInsets.symmetric(
                                 vertical: 0,
                               ),
                               border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             onChanged: (value) {
@@ -351,8 +337,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                         ),
                         child: LayoutBuilder(
                           builder: (context, cardConstraints) {
-                            final isPhone =
-                                cardConstraints.maxWidth < 600;
+                            final isPhone = cardConstraints.maxWidth < 600;
 
                             if (isPhone) {
                               return Column(
@@ -362,10 +347,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                       Expanded(
                                         child: _summaryCard(
                                           "Items",
-                                          selectedTotalProducts
-                                              .toString(),
-                                          _selectedType ==
-                                                  StockType.material
+                                          selectedTotalProducts.toString(),
+                                          _selectedType == StockType.material
                                               ? Colors.orange
                                               : Colors.blue,
                                         ),
@@ -374,8 +357,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                       Expanded(
                                         child: _summaryCard(
                                           "In Stock",
-                                          selectedInStock
-                                              .toString(),
+                                          selectedInStock.toString(),
                                           Colors.green,
                                         ),
                                       ),
@@ -387,8 +369,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                       Expanded(
                                         child: _summaryCard(
                                           "Low Stock",
-                                          selectedLowStock
-                                              .toString(),
+                                          selectedLowStock.toString(),
                                           Colors.orange,
                                         ),
                                       ),
@@ -396,8 +377,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                       Expanded(
                                         child: _summaryCard(
                                           "Out Stock",
-                                          selectedOutStock
-                                              .toString(),
+                                          selectedOutStock.toString(),
                                           Colors.red,
                                         ),
                                       ),
@@ -412,10 +392,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                 Expanded(
                                   child: _summaryCard(
                                     "Items",
-                                    selectedTotalProducts
-                                        .toString(),
-                                    _selectedType ==
-                                            StockType.material
+                                    selectedTotalProducts.toString(),
+                                    _selectedType == StockType.material
                                         ? Colors.orange
                                         : Colors.blue,
                                   ),
@@ -465,12 +443,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
                             margin: EdgeInsets.zero,
                             elevation: 1,
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(
+                              padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                               ),
                               child: Row(
@@ -478,17 +454,14 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                   CircleAvatar(
                                     radius: 16,
                                     backgroundColor:
-                                        (_selectedType ==
-                                                    StockType.material
+                                        (_selectedType == StockType.material
                                                 ? Colors.orange
                                                 : Colors.blue)
                                             .withOpacity(.10),
                                     child: Icon(
-                                      Icons
-                                          .account_balance_wallet,
+                                      Icons.account_balance_wallet,
                                       size: 17,
-                                      color: _selectedType ==
-                                              StockType.material
+                                      color: _selectedType == StockType.material
                                           ? Colors.orange
                                           : Colors.blue,
                                     ),
@@ -496,16 +469,13 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                   const SizedBox(width: 9),
                                   Expanded(
                                     child: Text(
-                                      _selectedType ==
-                                              StockType.material
+                                      _selectedType == StockType.material
                                           ? "Material Stock Value"
                                           : "Product Stock Value",
                                       maxLines: 1,
-                                      overflow:
-                                          TextOverflow.ellipsis,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        fontWeight:
-                                            FontWeight.w600,
+                                        fontWeight: FontWeight.w600,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -513,11 +483,9 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                   Text(
                                     "৳${selectedStockValue.toStringAsFixed(2)}",
                                     maxLines: 1,
-                                    overflow:
-                                        TextOverflow.ellipsis,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontWeight:
-                                          FontWeight.bold,
+                                      fontWeight: FontWeight.bold,
                                       fontSize: 15,
                                     ),
                                   ),
@@ -543,27 +511,23 @@ class _StockReportScreenState extends State<StockReportScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              _selectedType ==
-                                      StockType.material
+                              _selectedType == StockType.material
                                   ? Icons.construction
                                   : Icons.inventory_2,
                               size: 20,
-                              color: _selectedType ==
-                                      StockType.material
+                              color: _selectedType == StockType.material
                                   ? Colors.orange
                                   : Colors.blue,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                _selectedType ==
-                                        StockType.material
+                                _selectedType == StockType.material
                                     ? "Material Stock"
                                     : "Product Stock",
                                 style: const TextStyle(
                                   fontSize: 17,
-                                  fontWeight:
-                                      FontWeight.bold,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
@@ -573,8 +537,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
                                   fontSize: 13,
-                                  fontWeight:
-                                      FontWeight.w600,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                           ],
@@ -590,10 +553,9 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                 child: Text(
                                   _search.trim().isNotEmpty
                                       ? "No matching item found"
-                                      : _selectedType ==
-                                              StockType.material
-                                          ? "No Material Found"
-                                          : "No Product Found",
+                                      : _selectedType == StockType.material
+                                      ? "No Material Found"
+                                      : "No Product Found",
                                 ),
                               )
                             : ListView.builder(
@@ -603,18 +565,14 @@ class _StockReportScreenState extends State<StockReportScreen> {
                                   horizontalPadding,
                                   12,
                                 ),
-                                itemCount:
-                                    selectedProducts.length,
-                                itemBuilder:
-                                    (context, index) {
-                                  final product =
-                                      selectedProducts[index];
+                                itemCount: selectedProducts.length,
+                                itemBuilder: (context, index) {
+                                  final product = selectedProducts[index];
 
                                   return _productCard(
                                     product,
                                     isMaterial:
-                                        _selectedType ==
-                                            StockType.material,
+                                        _selectedType == StockType.material,
                                   );
                                 },
                               ),
@@ -647,9 +605,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: selected
-              ? color.withOpacity(.55)
-              : Colors.transparent,
+          color: selected ? color.withOpacity(.55) : Colors.transparent,
           width: selected ? 1.2 : 0,
         ),
       ),
@@ -657,27 +613,18 @@ class _StockReportScreenState extends State<StockReportScreen> {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 21,
-                backgroundColor:
-                    color.withOpacity(.12),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 21,
-                ),
+                backgroundColor: color.withOpacity(.12),
+                child: Icon(icon, color: color, size: 21),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
@@ -690,8 +637,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                     Text(
                       subtitle,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade600,
@@ -702,8 +648,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
               ),
               const SizedBox(width: 8),
               Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     "$count Items",
@@ -725,9 +670,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
               ),
               const SizedBox(width: 5),
               Icon(
-                selected
-                    ? Icons.keyboard_arrow_down
-                    : Icons.chevron_right,
+                selected ? Icons.keyboard_arrow_down : Icons.chevron_right,
                 color: color,
               ),
             ],
@@ -741,38 +684,27 @@ class _StockReportScreenState extends State<StockReportScreen> {
   // PRODUCT / MATERIAL CARD
   // ============================================================
 
-  Widget _productCard(
-    Product product, {
-    required bool isMaterial,
-  }) {
+  Widget _productCard(Product product, {required bool isMaterial}) {
     final color = stockColor(product.stock);
     final avgCost = averageCost(product);
 
     return Card(
-      margin: const EdgeInsets.symmetric(
-        vertical: 4,
-      ),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
-          crossAxisAlignment:
-              CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // ==================================================
             // ICON
             // ==================================================
             CircleAvatar(
               radius: 20,
-              backgroundColor:
-                  color.withOpacity(.12),
+              backgroundColor: color.withOpacity(.12),
               child: Icon(
-                isMaterial
-                    ? Icons.construction
-                    : Icons.inventory_2,
+                isMaterial ? Icons.construction : Icons.inventory_2,
                 color: color,
                 size: 20,
               ),
@@ -785,14 +717,12 @@ class _StockReportScreenState extends State<StockReportScreen> {
             // ==================================================
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     product.name,
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -804,8 +734,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                   Text(
                     "Average Cost : ৳${avgCost.toStringAsFixed(2)}",
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
@@ -819,18 +748,14 @@ class _StockReportScreenState extends State<StockReportScreen> {
                     Text(
                       "Sell : ৳${product.sellingPrice.toStringAsFixed(2)}",
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                      ),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
                     ),
 
                   Text(
                     "Value : ৳${product.stockValue.toStringAsFixed(2)}",
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
@@ -840,12 +765,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
                   const Text(
                     "Stock Value = Stock × Average Cost",
                     maxLines: 1,
-                    overflow:
-                        TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey,
-                    ),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
                   ),
                 ],
               ),
@@ -857,8 +778,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
             // STOCK STATUS
             // ==================================================
             Column(
-              mainAxisAlignment:
-                  MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   "${product.stock}",
@@ -870,23 +790,19 @@ class _StockReportScreenState extends State<StockReportScreen> {
                 ),
                 const SizedBox(height: 5),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                     horizontal: 9,
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        color.withOpacity(.12),
-                    borderRadius:
-                        BorderRadius.circular(20),
+                    color: color.withOpacity(.12),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     stockText(product.stock),
                     style: TextStyle(
                       color: color,
-                      fontWeight:
-                          FontWeight.bold,
+                      fontWeight: FontWeight.bold,
                       fontSize: 10,
                     ),
                   ),
@@ -903,54 +819,36 @@ class _StockReportScreenState extends State<StockReportScreen> {
   // COMPACT SUMMARY CARD
   // ============================================================
 
-  Widget _summaryCard(
-    String title,
-    String value,
-    Color color,
-  ) {
+  Widget _summaryCard(String title, String value, Color color) {
     return SizedBox(
       height: 60,
       child: Card(
         elevation: 1,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-            vertical: 6,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 15,
-                backgroundColor:
-                    color.withOpacity(.12),
-                child: Icon(
-                  Icons.inventory_2,
-                  color: color,
-                  size: 16,
-                ),
+                backgroundColor: color.withOpacity(.12),
+                child: Icon(Icons.inventory_2, color: color, size: 16),
               ),
               const SizedBox(width: 7),
               Expanded(
                 child: Column(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     FittedBox(
                       fit: BoxFit.scaleDown,
-                      alignment:
-                          Alignment.centerLeft,
+                      alignment: Alignment.centerLeft,
                       child: Text(
                         value,
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight:
-                              FontWeight.bold,
+                          fontWeight: FontWeight.bold,
                           color: color,
                         ),
                       ),
@@ -959,12 +857,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
                     Text(
                       title,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 10,
-                        color:
-                            Colors.grey.shade600,
+                        color: Colors.grey.shade600,
                       ),
                     ),
                   ],
@@ -982,7 +878,4 @@ class _StockReportScreenState extends State<StockReportScreen> {
 // STOCK TYPE
 // ============================================================
 
-enum StockType {
-  material,
-  product,
-}
+enum StockType { material, product }

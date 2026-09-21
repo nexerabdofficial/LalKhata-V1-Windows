@@ -3,10 +3,6 @@ import 'package:sqflite/sqflite.dart';
 import '../../database/database_helper.dart';
 import '../profit_repository.dart';
 
-// ============================================================
-// BALANCE SHEET ROW
-// ============================================================
-
 class FFBalanceSheetRow {
   final int accountId;
   final String accountName;
@@ -27,10 +23,6 @@ class FFBalanceSheetRow {
   });
 }
 
-// ============================================================
-// BALANCE SHEET REPORT
-// ============================================================
-
 class FFBalanceSheetReport {
   final List<FFBalanceSheetRow> assets;
   final List<FFBalanceSheetRow> liabilities;
@@ -49,23 +41,19 @@ class FFBalanceSheetReport {
     required this.openingDifference,
   });
 
-  // ----------------------------------------------------------
-  // ASSETS
-  // ----------------------------------------------------------
-
   double get totalAssets {
     double total = 0;
 
     for (final row in assets) {
+      if (row.accountType == 'INVENTORY') {
+        continue;
+      }
+
       total += row.balance;
     }
 
-    return total;
+    return total + inventoryValue;
   }
-
-  // ----------------------------------------------------------
-  // LIABILITIES
-  // ----------------------------------------------------------
 
   double get totalLiabilities {
     double total = 0;
@@ -76,10 +64,6 @@ class FFBalanceSheetReport {
 
     return total;
   }
-
-  // ----------------------------------------------------------
-  // EQUITY
-  // ----------------------------------------------------------
 
   double get ledgerEquity {
     double total = 0;
@@ -95,22 +79,12 @@ class FFBalanceSheetReport {
     return total;
   }
 
-  double get totalEquity {
-    return ledgerEquity + currentProfit;
-  }
+  double get totalEquity => ledgerEquity + currentProfit;
 
-  double get liabilitiesAndEquity {
-    return totalLiabilities + totalEquity;
-  }
+  double get liabilitiesAndEquity => totalLiabilities + totalEquity;
 
-  double get accountingDifference {
-    return totalAssets - liabilitiesAndEquity;
-  }
+  double get accountingDifference => totalAssets - liabilitiesAndEquity;
 }
-
-// ============================================================
-// BALANCE SHEET SERVICE
-// ============================================================
 
 class FFBalanceSheetService {
   FFBalanceSheetService._();
@@ -121,53 +95,36 @@ class FFBalanceSheetService {
 
   final ProfitRepository _profitRepository = ProfitRepository();
 
-  // ==========================================================
-  // PUBLIC REPORT
-  // ==========================================================
-
   Future<FFBalanceSheetReport> getReport({DateTime? asOf}) async {
     final db = await _databaseHelper.database;
 
     final effectiveAsOf = asOf ?? DateTime(9999, 12, 31, 23, 59, 59, 999);
 
-    final rows = await _loadAccounts(db, effectiveAsOf.toIso8601String());
+    final rows = await _loadBalanceSheetAccounts(
+      db,
+      effectiveAsOf.toIso8601String(),
+    );
 
-    final inventoryValue = rows
-        .where((row) => row.accountType == 'INVENTORY')
-        .fold<double>(0, (sum, row) => sum + row.balance);
+    final inventoryValue = await _loadCurrentInventoryValue(db);
 
-    final profitStatement = await _profitRepository.getProfitStatement(
+    final profit = await _profitRepository.getProfitStatement(
       from: DateTime(2000, 1, 1),
       to: effectiveAsOf,
     );
 
-    final openingDifference = await _calculateOpeningDifference(db);
+    final openingDifference = await _loadOpeningDifference(db);
 
     return FFBalanceSheetReport(
       assets: rows.where((row) => row.groupKind == 'ASSET').toList(),
       liabilities: rows.where((row) => row.groupKind == 'LIABILITY').toList(),
       equity: rows.where((row) => row.groupKind == 'EQUITY').toList(),
       inventoryValue: inventoryValue,
-      currentProfit: profitStatement.netProfit,
+      currentProfit: profit.netProfit,
       openingDifference: openingDifference,
     );
   }
 
-  // ==========================================================
-  // LOAD BALANCE SHEET ACCOUNTS
-  //
-  // IMPORTANT:
-  // Every ledger is counted exactly once.
-  //
-  // Party opening balances belong to individual CUSTOMER /
-  // SUPPLIER ledgers.
-  //
-  // CUSTOMER_RECEIVABLE and SUPPLIER_PAYABLE aggregate
-  // accounts are compatibility/control accounts only.
-  // No customer/supplier opening balance is injected here.
-  // ==========================================================
-
-  Future<List<FFBalanceSheetRow>> _loadAccounts(
+  Future<List<FFBalanceSheetRow>> _loadBalanceSheetAccounts(
     DatabaseExecutor db,
     String asOfIso,
   ) async {
@@ -177,31 +134,52 @@ class FFBalanceSheetService {
         a.id,
         a.name,
         a.type,
-
         COALESCE(g.group_code, '') AS group_code,
         COALESCE(g.group_kind, '') AS group_kind,
         COALESCE(g.account_nature, '') AS account_nature,
 
-        COALESCE(a.opening_balance, 0) AS opening_balance,
+        CASE
+          WHEN a.type = 'CUSTOMER_RECEIVABLE'
+            THEN COALESCE(
+              (
+                SELECT SUM(opening_balance)
+                FROM customers
+              ),
+              0
+            )
+
+          WHEN a.type = 'SUPPLIER_PAYABLE'
+            THEN COALESCE(
+              (
+                SELECT SUM(opening_balance)
+                FROM suppliers
+              ),
+              0
+            )
+
+          ELSE COALESCE(a.opening_balance, 0)
+        END AS opening_balance,
 
         COALESCE(
-          SUM(
-            CASE
-              WHEN je.transaction_date <= ?
-              THEN jl.debit
-              ELSE 0
-            END
+          (
+            SELECT SUM(jl.debit)
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = a.id
+              AND je.transaction_date <= ?
           ),
           0
         ) AS total_debit,
 
         COALESCE(
-          SUM(
-            CASE
-              WHEN je.transaction_date <= ?
-              THEN jl.credit
-              ELSE 0
-            END
+          (
+            SELECT SUM(jl.credit)
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = a.id
+              AND je.transaction_date <= ?
           ),
           0
         ) AS total_credit
@@ -215,26 +193,11 @@ class FFBalanceSheetService {
       INNER JOIN ff_account_groups g
         ON g.id = l.group_id
 
-      LEFT JOIN journal_lines jl
-        ON jl.account_id = a.id
-
-      LEFT JOIN journal_entries je
-        ON je.id = jl.journal_id
-
       WHERE g.group_kind IN (
         'ASSET',
         'LIABILITY',
         'EQUITY'
       )
-
-      GROUP BY
-        a.id,
-        a.name,
-        a.type,
-        a.opening_balance,
-        g.group_code,
-        g.group_kind,
-        g.account_nature
 
       ORDER BY
         g.group_kind,
@@ -275,33 +238,43 @@ class FFBalanceSheetService {
     return result;
   }
 
-  // ==========================================================
-  // INVENTORY
-  //
-  // Balance Sheet inventory follows the accounting Inventory ledger.
-  // Physical product stock valuation remains the operational costing
-  // source and is not modified by this report.
-  // ==========================================================
+  Future<double> _loadCurrentInventoryValue(DatabaseExecutor db) async {
+    final result = await db.rawQuery('''
+      SELECT
+        COALESCE(SUM(stock_value), 0) AS total
+      FROM products
+      ''');
 
-  // ==========================================================
-  // OPENING CONTROL
-  //
-  // This is diagnostic only.
-  // It does NOT create capital.
-  // It does NOT post a journal.
-  // It does NOT force the Balance Sheet to balance.
-  // ==========================================================
+    return _toDouble(result.first['total']);
+  }
 
-  Future<double> _calculateOpeningDifference(DatabaseExecutor db) async {
+  Future<double> _loadOpeningDifference(DatabaseExecutor db) async {
     final rows = await db.rawQuery('''
       SELECT
-        COALESCE(a.opening_balance, 0)
-          AS opening_balance,
+        a.type,
+        COALESCE(g.account_nature, '') AS account_nature,
 
-        COALESCE(
-          g.account_nature,
-          ''
-        ) AS account_nature
+        CASE
+          WHEN a.type = 'CUSTOMER_RECEIVABLE'
+            THEN COALESCE(
+              (
+                SELECT SUM(opening_balance)
+                FROM customers
+              ),
+              0
+            )
+
+          WHEN a.type = 'SUPPLIER_PAYABLE'
+            THEN COALESCE(
+              (
+                SELECT SUM(opening_balance)
+                FROM suppliers
+              ),
+              0
+            )
+
+          ELSE COALESCE(a.opening_balance, 0)
+        END AS opening_balance
 
       FROM accounts a
 
@@ -311,16 +284,10 @@ class FFBalanceSheetService {
 
       INNER JOIN ff_account_groups g
         ON g.id = l.group_id
-
-      WHERE g.group_kind IN (
-        'ASSET',
-        'LIABILITY',
-        'EQUITY'
-      )
       ''');
 
-    double debitOpening = 0;
-    double creditOpening = 0;
+    double debit = 0;
+    double credit = 0;
 
     for (final row in rows) {
       final amount = _toDouble(row['opening_balance']);
@@ -328,18 +295,14 @@ class FFBalanceSheetService {
       final nature = row['account_nature']?.toString().toUpperCase() ?? '';
 
       if (nature == 'DEBIT') {
-        debitOpening += amount;
+        debit += amount;
       } else if (nature == 'CREDIT') {
-        creditOpening += amount;
+        credit += amount;
       }
     }
 
-    return debitOpening - creditOpening;
+    return debit - credit;
   }
-
-  // ==========================================================
-  // DOUBLE HELPER
-  // ==========================================================
 
   double _toDouble(dynamic value) {
     if (value is num) {

@@ -36,7 +36,6 @@ class FFSystemGroupCodes {
   static const otherIncome = 'OTHER_INCOME';
 
   static const expense = 'EXPENSE';
-  static const costOfGoodsSold = 'COST_OF_GOODS_SOLD';
   static const operatingExpense = 'OPERATING_EXPENSE';
   static const sellingExpense = 'SELLING_EXPENSE';
   static const otherExpense = 'OTHER_EXPENSE';
@@ -53,7 +52,6 @@ class FFSystemAccountCodes {
   static const ownerWithdrawal = 'OWNER_WITHDRAWAL';
   static const retainedEarnings = 'RETAINED_EARNINGS';
   static const openingBalanceEquity = 'OPENING_BALANCE_EQUITY';
-  static const costOfGoodsSold = 'COST_OF_GOODS_SOLD';
 
   static const purchaseAdditionalCharge = 'PURCHASE_ADDITIONAL_CHARGE';
 
@@ -280,15 +278,6 @@ class FFSystemAccounts {
         nature: 'DEBIT',
       );
 
-      final costOfGoodsSoldGroup = await _ensureGroup(
-        txn,
-        name: 'Cost of Goods Sold',
-        code: FFSystemGroupCodes.costOfGoodsSold,
-        parentId: expense,
-        kind: 'EXPENSE',
-        nature: 'DEBIT',
-      );
-
       final operatingExpenseGroup = await _ensureGroup(
         txn,
         name: 'Operating Expense',
@@ -370,13 +359,6 @@ class FFSystemAccounts {
         name: 'Opening Balance Equity',
         type: FFSystemAccountCodes.openingBalanceEquity,
         groupId: openingBalanceEquityGroup,
-      );
-
-      await _ensureSystemAccount(
-        txn,
-        name: 'Cost of Goods Sold',
-        type: FFSystemAccountCodes.costOfGoodsSold,
-        groupId: costOfGoodsSoldGroup,
       );
 
       await _ensureSystemAccount(

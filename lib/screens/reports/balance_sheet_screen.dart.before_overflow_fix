@@ -370,14 +370,9 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
             ),
           ),
 
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
-              ),
-            ),
-          ),
+          ...children,
+
+          const Spacer(),
 
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),

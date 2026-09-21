@@ -5,9 +5,6 @@ import '../../main.dart';
 import '../../models/account.dart';
 import '../../services/account_repository.dart';
 import '../../services/account_service.dart';
-import '../../services/ff/ff_account_hierarchy_service.dart';
-import '../../services/ff/ff_universal_ledger_service.dart';
-import '../../models/ff_account_group.dart';
 import 'add_account_screen.dart';
 import 'account_ledger_screen.dart';
 import 'fund_transfer_screen.dart';
@@ -28,21 +25,11 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   final AccountRepository _repository = AccountRepository();
   final AccountService _accountService = AccountService();
 
-  final FFAccountHierarchyService _hierarchyService =
-      FFAccountHierarchyService.instance;
-
-  final FFUniversalLedgerService _ledgerService =
-      FFUniversalLedgerService.instance;
-
   final TextEditingController _searchController = TextEditingController();
 
   bool _loading = true;
 
   List<Account> _allAccounts = [];
-  List<FFAccountGroup> _groups = [];
-
-  final Map<int, int> _accountGroupIds = {};
-  final Map<int, double> _ledgerBalances = {};
 
   String _search = "";
 
@@ -106,52 +93,12 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     }
 
     try {
-      final results = await Future.wait([
-        _repository.getAccounts(),
-        _hierarchyService.getGroups(activeOnly: true),
-      ]);
-
-      final accounts = results[0] as List<Account>;
-      final groups = results[1] as List<FFAccountGroup>;
-
-      final groupPairs = await Future.wait(
-        accounts.where((a) => a.id != null).map((account) async {
-          final group = await _hierarchyService.getPrimaryGroupForAccount(
-            account.id!,
-          );
-
-          return MapEntry(account.id!, group?.id);
-        }),
-      );
-
-      final balancePairs = await Future.wait(
-        accounts.where((a) => a.id != null).map((account) async {
-          final summary = await _ledgerService.getSummary(
-            accountId: account.id!,
-          );
-
-          return MapEntry(account.id!, summary.closingBalance);
-        }),
-      );
+      final data = await _repository.getAccounts();
 
       if (!mounted) return;
 
       setState(() {
-        _allAccounts = accounts;
-        _groups = groups;
-
-        _accountGroupIds..clear();
-
-        for (final pair in groupPairs) {
-          if (pair.value != null) {
-            _accountGroupIds[pair.key] = pair.value!;
-          }
-        }
-
-        _ledgerBalances
-          ..clear()
-          ..addEntries(balancePairs);
-
+        _allAccounts = data;
         _loading = false;
       });
     } catch (e) {
@@ -360,184 +307,6 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     }
   }
 
-  List<FFAccountGroup> _childGroups(int? parentId) {
-    final items = _groups.where((group) {
-      return group.parentId == parentId;
-    }).toList();
-
-    items.sort((a, b) => a.name.compareTo(b.name));
-
-    return items;
-  }
-
-  List<Account> _accountsForGroup(int groupId) {
-    final visible = _filteredAccounts();
-
-    final items = visible.where((account) {
-      final id = account.id;
-
-      if (id == null) return false;
-
-      return _accountGroupIds[id] == groupId;
-    }).toList();
-
-    items.sort((a, b) => a.name.compareTo(b.name));
-
-    return items;
-  }
-
-  bool _groupHasVisibleContent(int groupId) {
-    if (_accountsForGroup(groupId).isNotEmpty) {
-      return true;
-    }
-
-    for (final child in _childGroups(groupId)) {
-      if (_groupHasVisibleContent(child.id!)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  double _accountClosingBalance(Account account) {
-    final id = account.id;
-
-    if (id == null) return 0;
-
-    return _ledgerBalances[id] ?? 0;
-  }
-
-  Widget _buildLedgerTile(Account account, int depth) {
-    final systemControlled = _isSystemControlled(account);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 18.0 + (depth * 18.0),
-        right: 12,
-        top: 3,
-        bottom: 3,
-      ),
-      child: Card(
-        elevation: 0,
-        child: ListTile(
-          leading: CircleAvatar(
-            radius: 18,
-            child: Icon(getIcon(account.type), size: 19),
-          ),
-          title: Text(
-            account.name,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(_typeLabels[account.type] ?? account.type),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "৳${formatMoney(_accountClosingBalance(account))}",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'ledger') {
-                    _openLedger(account);
-                  } else if (value == 'edit') {
-                    _editAccount(account);
-                  } else if (value == 'delete') {
-                    _deleteAccount(account);
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'ledger', child: Text('Ledger')),
-                  if (!systemControlled)
-                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  if (!systemControlled)
-                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
-              ),
-            ],
-          ),
-          onTap: () => _openLedger(account),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGroupNode(FFAccountGroup group, int depth) {
-    final children = _childGroups(group.id);
-    final accounts = _accountsForGroup(group.id!);
-
-    final visibleChildren = children
-        .where((child) => _groupHasVisibleContent(child.id!))
-        .toList();
-
-    final totalLedgers =
-        accounts.length +
-        visibleChildren.fold<int>(
-          0,
-          (total, child) => total + _countGroupLedgers(child.id!),
-        );
-
-    return Padding(
-      padding: EdgeInsets.only(left: depth * 12.0, right: 8, top: 2, bottom: 2),
-      child: Card(
-        elevation: depth == 0 ? 1 : 0,
-        child: ExpansionTile(
-          initiallyExpanded: depth == 0,
-          leading: Icon(
-            depth == 0 ? Icons.account_tree_outlined : Icons.folder_outlined,
-          ),
-          title: Text(
-            group.name,
-            style: TextStyle(
-              fontWeight: depth <= 1 ? FontWeight.bold : FontWeight.w600,
-            ),
-          ),
-          subtitle: Text('$totalLedgers ledger${totalLedgers == 1 ? '' : 's'}'),
-          children: [
-            ...visibleChildren.map(
-              (child) => _buildGroupNode(child, depth + 1),
-            ),
-            ...accounts.map((account) => _buildLedgerTile(account, depth + 1)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  int _countGroupLedgers(int groupId) {
-    var count = _accountsForGroup(groupId).length;
-
-    for (final child in _childGroups(groupId)) {
-      count += _countGroupLedgers(child.id!);
-    }
-
-    return count;
-  }
-
-  Widget _buildHierarchy() {
-    final roots = _childGroups(
-      null,
-    ).where((group) => _groupHasVisibleContent(group.id!)).toList();
-
-    if (roots.isEmpty) {
-      return Center(
-        child: Text(
-          _search.trim().isEmpty ? "No Accounts Yet" : "No matching accounts",
-          style: const TextStyle(fontSize: 18),
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.only(left: 6, right: 6, bottom: 90),
-      children: roots.map((group) => _buildGroupNode(group, 0)).toList(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -664,7 +433,160 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
                     ),
                   ),
 
-                  Expanded(child: _buildHierarchy()),
+                  Expanded(
+                    child: _filteredAccounts().isEmpty
+                        ? Center(
+                            child: Text(
+                              _search.trim().isEmpty
+                                  ? "No Accounts Yet"
+                                  : "No matching accounts",
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 90),
+                            itemCount: _filteredAccounts().length,
+                            itemBuilder: (context, index) {
+                              final account = _filteredAccounts()[index];
+
+                              return Card(
+                                elevation: 2,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            child: Icon(getIcon(account.type)),
+                                          ),
+
+                                          const SizedBox(width: 12),
+
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  account.name,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+
+                                                const SizedBox(height: 4),
+
+                                                Text(
+                                                  _typeLabels[account.type] ??
+                                                      account.type,
+                                                  style: const TextStyle(
+                                                    color: Colors.grey,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              const Text(
+                                                "Balance",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+
+                                              Text(
+                                                "৳${formatMoney(account.balance)}",
+                                                style: const TextStyle(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.green,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+
+                                      const SizedBox(height: 12),
+
+                                      const Divider(height: 1),
+
+                                      const SizedBox(height: 10),
+
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _editAccount(account),
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                size: 18,
+                                              ),
+                                              label: const Text(
+                                                "Edit",
+                                                maxLines: 1,
+                                                softWrap: false,
+                                              ),
+                                            ),
+                                          ),
+
+                                          const SizedBox(width: 8),
+
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _openLedger(account),
+                                              icon: const Icon(
+                                                Icons.receipt_long,
+                                                size: 18,
+                                              ),
+                                              label: const Text(
+                                                "Ledger",
+                                                maxLines: 1,
+                                                softWrap: false,
+                                              ),
+                                            ),
+                                          ),
+
+                                          const SizedBox(width: 8),
+
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _deleteAccount(account),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                                size: 18,
+                                              ),
+                                              label: const Text(
+                                                "Delete",
+                                                maxLines: 1,
+                                                softWrap: false,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             ),

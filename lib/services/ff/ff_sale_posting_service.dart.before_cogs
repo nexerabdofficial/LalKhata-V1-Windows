@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
 
-import '../../database/database_helper.dart';
 import '../../models/payment_allocation.dart';
 import '../../models/sale.dart';
 import 'ff_journal_models.dart';
@@ -89,25 +88,11 @@ class FFSalePostingService {
       FFSystemAccountCodes.salesIncome,
     );
 
-    final inventoryAccountId = await _systemAccounts.resolveAccountId(
-      FFSystemAccountCodes.inventory,
-    );
-
-    final cogsAccountId = await _systemAccounts.resolveAccountId(
-      FFSystemAccountCodes.costOfGoodsSold,
-    );
-
-    final db = await DatabaseHelper.instance.database;
-    final saleCost = await _loadSaleCost(db, saleId);
-
     final lines = _buildLines(
       sale: sale,
       allocations: allocations,
       receivableAccountId: receivableAccountId,
       salesIncomeAccountId: salesIncomeAccountId,
-      inventoryAccountId: inventoryAccountId,
-      cogsAccountId: cogsAccountId,
-      saleCost: saleCost,
     );
 
     return _postingEngine.post(
@@ -157,26 +142,11 @@ class FFSalePostingService {
       FFSystemAccountCodes.salesIncome,
     );
 
-    final inventoryAccountId = await _resolveSystemAccountId(
-      db,
-      FFSystemAccountCodes.inventory,
-    );
-
-    final cogsAccountId = await _resolveSystemAccountId(
-      db,
-      FFSystemAccountCodes.costOfGoodsSold,
-    );
-
-    final saleCost = await _loadSaleCost(db, saleId);
-
     final lines = _buildLines(
       sale: sale,
       allocations: allocations,
       receivableAccountId: receivableAccountId,
       salesIncomeAccountId: salesIncomeAccountId,
-      inventoryAccountId: inventoryAccountId,
-      cogsAccountId: cogsAccountId,
-      saleCost: saleCost,
     );
 
     return _journalService.createJournalWithExecutor(
@@ -203,9 +173,6 @@ class FFSalePostingService {
     required List<PaymentAllocation> allocations,
     required int receivableAccountId,
     required int salesIncomeAccountId,
-    required int inventoryAccountId,
-    required int cogsAccountId,
-    required double saleCost,
   }) {
     final totalPaid = allocations.fold<double>(
       0,
@@ -272,24 +239,6 @@ class FFSalePostingService {
       );
     }
 
-    if (saleCost > 0.000001) {
-      lines.add(
-        FFJournalLine(
-          accountId: cogsAccountId,
-          debit: saleCost,
-          note: 'Cost of goods sold',
-        ),
-      );
-
-      lines.add(
-        FFJournalLine(
-          accountId: inventoryAccountId,
-          credit: saleCost,
-          note: 'Inventory issued on sale',
-        ),
-      );
-    }
-
     return lines;
   }
 
@@ -337,26 +286,6 @@ class FFSalePostingService {
         'sale paid amount (${sale.paid}).',
       );
     }
-  }
-
-  Future<double> _loadSaleCost(DatabaseExecutor db, int saleId) async {
-    final rows = await db.rawQuery(
-      '''
-      SELECT
-        COALESCE(SUM(qty * purchase_price), 0) AS total
-      FROM sale_items
-      WHERE sale_id = ?
-      ''',
-      [saleId],
-    );
-
-    final value = rows.first['total'];
-
-    if (value is num) {
-      return value.toDouble();
-    }
-
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   Future<int> _resolveSystemAccountId(DatabaseExecutor db, String type) async {
