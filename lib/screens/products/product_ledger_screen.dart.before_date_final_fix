@@ -81,32 +81,45 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
   // ============================================================
 
   List<ProductLedger> get _filteredLedger {
-    final from = _fromDate == null ? null : _dateOnly(_fromDate!);
-    final to = _toDate == null ? null : _dateOnly(_toDate!);
-
     return _ledger.where((item) {
-      final parsed = DateTime.tryParse(item.date);
+      final date = DateTime.tryParse(item.date);
 
-      if (parsed == null) {
+      if (date == null) {
         return false;
       }
 
-      final date = _dateOnly(parsed);
+      // FROM DATE
+      if (_fromDate != null) {
+        final start = DateTime(
+          _fromDate!.year,
+          _fromDate!.month,
+          _fromDate!.day,
+        );
 
-      if (from != null && date.isBefore(from)) {
-        return false;
+        if (date.isBefore(start)) {
+          return false;
+        }
       }
 
-      if (to != null && date.isAfter(to)) {
-        return false;
+      // TO DATE
+      if (_toDate != null) {
+        final end = DateTime(
+          _toDate!.year,
+          _toDate!.month,
+          _toDate!.day,
+          23,
+          59,
+          59,
+          999,
+        );
+
+        if (date.isAfter(end)) {
+          return false;
+        }
       }
 
       return true;
     }).toList();
-  }
-
-  DateTime _dateOnly(DateTime value) {
-    return DateTime(value.year, value.month, value.day);
   }
 
   // ============================================================
@@ -133,10 +146,7 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
         break;
 
       case 'This Week':
-        // Bangladesh business week starts on Saturday.
-        // Dart weekday: Monday=1 ... Saturday=6, Sunday=7.
-        final daysSinceSaturday = (today.weekday + 1) % 7;
-        from = today.subtract(Duration(days: daysSinceSaturday));
+        from = today.subtract(Duration(days: today.weekday - 1));
         to = today;
         break;
 
@@ -207,22 +217,16 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
       return 0;
     }
 
-    final startDate = _dateOnly(_fromDate!);
+    final start = DateTime(_fromDate!.year, _fromDate!.month, _fromDate!.day);
 
     int stock = 0;
 
     for (final item in _ledger) {
-      final parsed = DateTime.tryParse(item.date);
+      final date = DateTime.tryParse(item.date);
 
-      if (parsed == null) {
-        continue;
-      }
+      if (date == null) continue;
 
-      final transactionDate = _dateOnly(parsed);
-
-      // Everything strictly BEFORE the selected period
-      // becomes the brought-forward / previous stock.
-      if (transactionDate.isBefore(startDate)) {
+      if (date.isBefore(start)) {
         stock += item.stockIn;
         stock -= item.stockOut;
       }

@@ -122,11 +122,29 @@ class FFTrialBalanceService {
 
       double opening = _toDouble(account['account_opening']);
 
-      // Opening balance belongs to the individual account ledger.
-      //
-      // CUSTOMER_RECEIVABLE and SUPPLIER_PAYABLE are aggregate/control
-      // accounts only. Party openings are already stored in the linked
-      // CUSTOMER / SUPPLIER accounts and must not be injected here again.
+      // System AR opening comes from customers.
+      if (accountType == 'CUSTOMER_RECEIVABLE') {
+        final result = await db.rawQuery('''
+          SELECT
+            COALESCE(SUM(opening_balance), 0)
+              AS total
+          FROM customers
+        ''');
+
+        opening = _toDouble(result.first['total']);
+      }
+
+      // System AP opening comes from suppliers.
+      if (accountType == 'SUPPLIER_PAYABLE') {
+        final result = await db.rawQuery('''
+          SELECT
+            COALESCE(SUM(opening_balance), 0)
+              AS total
+          FROM suppliers
+        ''');
+
+        opening = _toDouble(result.first['total']);
+      }
 
       double beforeDebit = 0;
       double beforeCredit = 0;
@@ -235,76 +253,6 @@ class FFTrialBalanceService {
       totalPeriodCredit += periodCredit;
       totalClosingDebit += closingDebit;
       totalClosingCredit += closingCredit;
-    }
-
-    // ==========================================================
-    // OPENING BALANCE EQUITY CONTROL
-    //
-    // Account opening balances are stored on the account master,
-    // not posted again as journals. Therefore any net opening
-    // difference needs exactly one accounting counterpart.
-    //
-    // This is report-layer opening control only:
-    // - no journal is created
-    // - no account opening is duplicated
-    // - period movement remains unchanged
-    // ==========================================================
-
-    final openingDifference = totalOpeningDebit - totalOpeningCredit;
-
-    if (openingDifference.abs() > 0.000001) {
-      final obeIndex = rows.indexWhere(
-        (row) =>
-            row.accountType.trim().toUpperCase() == 'OPENING_BALANCE_EQUITY',
-      );
-
-      if (obeIndex >= 0) {
-        final obe = rows[obeIndex];
-
-        final adjustmentDebit = openingDifference < 0
-            ? -openingDifference
-            : 0.0;
-
-        final adjustmentCredit = openingDifference > 0
-            ? openingDifference
-            : 0.0;
-
-        final newOpeningDebit = obe.openingDebit + adjustmentDebit;
-
-        final newOpeningCredit = obe.openingCredit + adjustmentCredit;
-
-        final closingNet =
-            newOpeningDebit -
-            newOpeningCredit +
-            obe.periodDebit -
-            obe.periodCredit;
-
-        final newClosingDebit = closingNet > 0 ? closingNet : 0.0;
-
-        final newClosingCredit = closingNet < 0 ? -closingNet : 0.0;
-
-        rows[obeIndex] = FFTrialBalanceRow(
-          accountId: obe.accountId,
-          accountName: obe.accountName,
-          accountType: obe.accountType,
-          groupName: obe.groupName,
-          groupKind: obe.groupKind,
-          normalBalance: obe.normalBalance,
-          openingDebit: newOpeningDebit,
-          openingCredit: newOpeningCredit,
-          periodDebit: obe.periodDebit,
-          periodCredit: obe.periodCredit,
-          closingDebit: newClosingDebit,
-          closingCredit: newClosingCredit,
-        );
-
-        totalOpeningDebit += adjustmentDebit;
-        totalOpeningCredit += adjustmentCredit;
-
-        totalClosingDebit += newClosingDebit - obe.closingDebit;
-
-        totalClosingCredit += newClosingCredit - obe.closingCredit;
-      }
     }
 
     return FFTrialBalanceReport(

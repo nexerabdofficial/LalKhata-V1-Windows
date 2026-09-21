@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/ff/ff_cash_flow_service.dart';
-import 'cash_flow_preview_screen.dart';
 
 class CashFlowScreen extends StatefulWidget {
   const CashFlowScreen({super.key});
@@ -312,23 +311,6 @@ class _CashFlowScreenState extends State<CashFlowScreen> {
       appBar: AppBar(
         title: const Text('Cash Flow'),
         actions: [
-          IconButton(
-            tooltip: 'PDF Preview',
-            onPressed: _loading
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CashFlowPreviewScreen(
-                          from: _startDate,
-                          to: _endDate,
-                        ),
-                      ),
-                    );
-                  },
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _loadReport,

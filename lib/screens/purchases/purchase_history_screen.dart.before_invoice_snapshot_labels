@@ -331,7 +331,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _kpiCard(
-                                          "Paid at Invoice",
+                                          "Paid",
                                           "৳${totalPaid.toStringAsFixed(0)}",
                                           Icons.check_circle,
                                           Colors.green,
@@ -344,7 +344,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                     children: [
                                       Expanded(
                                         child: _kpiCard(
-                                          "Initial Due",
+                                          "Due",
                                           "৳${totalDue.toStringAsFixed(0)}",
                                           Icons.warning,
                                           Colors.red,
@@ -378,7 +378,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Paid at Invoice",
+                                    "Paid",
                                     "৳${totalPaid.toStringAsFixed(0)}",
                                     Icons.check_circle,
                                     Colors.green,
@@ -387,7 +387,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Initial Due",
+                                    "Due",
                                     "৳${totalDue.toStringAsFixed(0)}",
                                     Icons.warning,
                                     Colors.red,
@@ -608,14 +608,14 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                   ),
                   Expanded(
                     child: _amountColumn(
-                      "Paid at Invoice",
+                      "Paid",
                       "৳${purchase.paid.toStringAsFixed(0)}",
                       Colors.green,
                     ),
                   ),
                   Expanded(
                     child: _amountColumn(
-                      "Initial Due",
+                      "Due",
                       "৳${purchase.due.toStringAsFixed(0)}",
                       Colors.red,
                     ),

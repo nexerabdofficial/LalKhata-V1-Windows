@@ -3,37 +3,28 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
-import '../../models/account.dart';
-import '../../pdf/account_ledger_pdf.dart';
+import '../../pdf/cash_flow_pdf.dart';
 
-class AccountLedgerPreviewScreen extends StatefulWidget {
-  final Account account;
-  final String? fromDate;
-  final String? toDate;
+class CashFlowPreviewScreen extends StatefulWidget {
+  final DateTime from;
+  final DateTime to;
 
-  const AccountLedgerPreviewScreen({
+  const CashFlowPreviewScreen({
     super.key,
-    required this.account,
-    this.fromDate,
-    this.toDate,
+    required this.from,
+    required this.to,
   });
 
   @override
-  State<AccountLedgerPreviewScreen> createState() =>
-      _AccountLedgerPreviewScreenState();
+  State<CashFlowPreviewScreen> createState() => _CashFlowPreviewScreenState();
 }
 
-class _AccountLedgerPreviewScreenState
-    extends State<AccountLedgerPreviewScreen> {
+class _CashFlowPreviewScreenState extends State<CashFlowPreviewScreen> {
   bool _saving = false;
   bool _printing = false;
 
   Future<Uint8List> _buildPdf() {
-    return AccountLedgerPdf.generate(
-      account: widget.account,
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-    );
+    return CashFlowPdf.generate(from: widget.from, to: widget.to);
   }
 
   Future<void> _savePdf() async {
@@ -42,23 +33,19 @@ class _AccountLedgerPreviewScreenState
     setState(() => _saving = true);
 
     try {
-      final file = await AccountLedgerPdf.savePdf(
-        account: widget.account,
-        fromDate: widget.fromDate,
-        toDate: widget.toDate,
-      );
+      final file = await CashFlowPdf.savePdf(from: widget.from, to: widget.to);
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Ledger saved:\n${file.path}')));
+      ).showSnackBar(SnackBar(content: Text('Report saved:\n${file.path}')));
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not save ledger: $e')));
+      ).showSnackBar(SnackBar(content: Text('Could not save report: $e')));
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -75,7 +62,7 @@ class _AccountLedgerPreviewScreenState
       final bytes = await _buildPdf();
 
       await Printing.layoutPdf(
-        name: 'Account_Ledger_${widget.account.name}.pdf',
+        name: 'Cash_Flow.pdf',
         onLayout: (_) async => bytes,
       );
     } catch (e) {
@@ -83,7 +70,7 @@ class _AccountLedgerPreviewScreenState
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not print ledger: $e')));
+      ).showSnackBar(SnackBar(content: Text('Could not print report: $e')));
     } finally {
       if (mounted) {
         setState(() => _printing = false);
@@ -95,21 +82,9 @@ class _AccountLedgerPreviewScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Account Ledger',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              widget.account.name,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.normal,
-              ),
-            ),
-          ],
+        title: const Text(
+          'Cash Flow Statement',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
@@ -139,7 +114,7 @@ class _AccountLedgerPreviewScreenState
       ),
       body: PdfPreview(
         build: (_) => _buildPdf(),
-        maxPageWidth: 600,
+        maxPageWidth: 700,
         previewPageMargin: const EdgeInsets.all(20),
         padding: const EdgeInsets.all(24),
         allowPrinting: false,
@@ -147,19 +122,8 @@ class _AccountLedgerPreviewScreenState
         canChangePageFormat: false,
         canChangeOrientation: false,
         canDebug: false,
-        pdfFileName: 'Account_Ledger_${widget.account.name}.pdf',
+        pdfFileName: 'Cash_Flow.pdf',
         loadingWidget: const Center(child: CircularProgressIndicator()),
-        onError: (context, error) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'Could not load ledger preview.\n\n$error',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        },
       ),
     );
   }

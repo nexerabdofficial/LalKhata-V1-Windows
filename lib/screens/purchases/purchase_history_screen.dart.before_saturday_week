@@ -103,9 +103,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
         return DateTimeRange(start: yesterday, end: yesterday);
 
       case PurchaseDateFilter.thisWeek:
-        // Bangladesh business week: Saturday -> Today
-        final daysSinceSaturday = (today.weekday + 1) % 7;
-        final start = today.subtract(Duration(days: daysSinceSaturday));
+        final start = today.subtract(Duration(days: today.weekday - 1));
 
         return DateTimeRange(start: start, end: today);
 
@@ -331,7 +329,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _kpiCard(
-                                          "Paid at Invoice",
+                                          "Paid",
                                           "৳${totalPaid.toStringAsFixed(0)}",
                                           Icons.check_circle,
                                           Colors.green,
@@ -344,7 +342,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                     children: [
                                       Expanded(
                                         child: _kpiCard(
-                                          "Initial Due",
+                                          "Due",
                                           "৳${totalDue.toStringAsFixed(0)}",
                                           Icons.warning,
                                           Colors.red,
@@ -378,7 +376,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Paid at Invoice",
+                                    "Paid",
                                     "৳${totalPaid.toStringAsFixed(0)}",
                                     Icons.check_circle,
                                     Colors.green,
@@ -387,7 +385,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Initial Due",
+                                    "Due",
                                     "৳${totalDue.toStringAsFixed(0)}",
                                     Icons.warning,
                                     Colors.red,
@@ -608,14 +606,14 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                   ),
                   Expanded(
                     child: _amountColumn(
-                      "Paid at Invoice",
+                      "Paid",
                       "৳${purchase.paid.toStringAsFixed(0)}",
                       Colors.green,
                     ),
                   ),
                   Expanded(
                     child: _amountColumn(
-                      "Initial Due",
+                      "Due",
                       "৳${purchase.due.toStringAsFixed(0)}",
                       Colors.red,
                     ),

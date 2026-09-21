@@ -327,11 +327,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AccountLedgerPreviewScreen(
-          account: widget.account,
-          fromDate: _fromIso,
-          toDate: _toIso,
-        ),
+        builder: (_) => AccountLedgerPreviewScreen(account: widget.account),
       ),
     );
   }

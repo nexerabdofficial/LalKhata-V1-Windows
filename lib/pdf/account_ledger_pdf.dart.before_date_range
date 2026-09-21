@@ -121,11 +121,7 @@ class AccountLedgerPdf {
     return cleaned.isEmpty ? 'Account' : cleaned;
   }
 
-  static Future<Uint8List> generate({
-    required Account account,
-    String? fromDate,
-    String? toDate,
-  }) async {
+  static Future<Uint8List> generate({required Account account}) async {
     if (account.id == null) {
       throw StateError('Account ID is required.');
     }
@@ -133,16 +129,8 @@ class AccountLedgerPdf {
     final ledgerService = FFUniversalLedgerService.instance;
 
     final results = await Future.wait([
-      ledgerService.getLedger(
-        accountId: account.id!,
-        fromDate: fromDate,
-        toDate: toDate,
-      ),
-      ledgerService.getSummary(
-        accountId: account.id!,
-        fromDate: fromDate,
-        toDate: toDate,
-      ),
+      ledgerService.getLedger(accountId: account.id!),
+      ledgerService.getSummary(accountId: account.id!),
       _loadBusinessLogo(),
       _loadInvoiceQr(),
     ]);
@@ -175,26 +163,11 @@ class AccountLedgerPdf {
 
     final rows = <List<String>>[];
 
-    final isFiltered = fromDate != null;
-
-    String periodLabel = 'All Transactions';
-
-    if (fromDate != null && toDate != null) {
-      try {
-        periodLabel =
-            '${DateFormat('dd MMM yyyy').format(DateTime.parse(fromDate))}'
-            ' - '
-            '${DateFormat('dd MMM yyyy').format(DateTime.parse(toDate))}';
-      } catch (_) {
-        periodLabel = '$fromDate - $toDate';
-      }
-    }
-
     if (summary.openingBalance != 0) {
       rows.add([
-        isFiltered ? 'B/F' : _formatDate(account.openingDate),
-        isFiltered ? 'B/F' : 'OB',
-        isFiltered ? 'Balance Brought Forward' : 'Opening Balance',
+        _formatDate(account.openingDate),
+        'OB',
+        'Opening Balance',
         '',
         '',
         taka(summary.openingBalance),
@@ -377,15 +350,6 @@ class AccountLedgerPdf {
                         'Type: ${account.type}',
                         style: pw.TextStyle(font: regularFont, fontSize: 8.5),
                       ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        'Period: $periodLabel',
-                        style: pw.TextStyle(
-                          font: regularFont,
-                          fontSize: 8.5,
-                          color: PdfColors.grey700,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -531,16 +495,8 @@ class AccountLedgerPdf {
     );
   }
 
-  static Future<File> savePdf({
-    required Account account,
-    String? fromDate,
-    String? toDate,
-  }) async {
-    final bytes = await generate(
-      account: account,
-      fromDate: fromDate,
-      toDate: toDate,
-    );
+  static Future<File> savePdf({required Account account}) async {
+    final bytes = await generate(account: account);
 
     final directory = await getApplicationDocumentsDirectory();
 

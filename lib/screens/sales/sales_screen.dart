@@ -74,8 +74,9 @@ class _SalesScreenState extends State<SalesScreen> {
         case SalesDateFilter.thisWeek:
           final now = DateTime.now();
 
-          // Monday = start of week
-          final from = now.subtract(Duration(days: now.weekday - 1));
+          // Bangladesh business week: Saturday -> Today
+          final daysSinceSaturday = (now.weekday + 1) % 7;
+          final from = now.subtract(Duration(days: daysSinceSaturday));
 
           sales = await _repository.getSalesByDateRange(
             fromDate: _formatDate(from),
@@ -395,7 +396,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _kpiCard(
-                                          "Paid",
+                                          "Paid at Invoice",
                                           "৳${totalPaid.toStringAsFixed(0)}",
                                           Icons.check_circle,
                                           Colors.blue,
@@ -408,7 +409,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                     children: [
                                       Expanded(
                                         child: _kpiCard(
-                                          "Due",
+                                          "Initial Due",
                                           "৳${totalDue.toStringAsFixed(0)}",
                                           Icons.warning,
                                           Colors.red,
@@ -442,7 +443,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Paid",
+                                    "Paid at Invoice",
                                     "৳${totalPaid.toStringAsFixed(0)}",
                                     Icons.check_circle,
                                     Colors.blue,
@@ -451,7 +452,7 @@ class _SalesScreenState extends State<SalesScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Due",
+                                    "Initial Due",
                                     "৳${totalDue.toStringAsFixed(0)}",
                                     Icons.warning,
                                     Colors.red,
@@ -660,16 +661,6 @@ class _SalesScreenState extends State<SalesScreen> {
                       ],
                     ),
                   ),
-
-                  const SizedBox(width: 8),
-
-                  Text(
-                    "৳${sale['grand_total']}",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
                 ],
               ),
 
@@ -679,13 +670,17 @@ class _SalesScreenState extends State<SalesScreen> {
                 children: [
                   Expanded(
                     child: _amountColumn(
-                      "Paid",
+                      "Paid at Invoice",
                       "৳${sale['paid']}",
                       Colors.green,
                     ),
                   ),
                   Expanded(
-                    child: _amountColumn("Due", "৳${sale['due']}", Colors.red),
+                    child: _amountColumn(
+                      "Initial Due",
+                      "৳${sale['due']}",
+                      Colors.red,
+                    ),
                   ),
                   Expanded(
                     child: _amountColumn(

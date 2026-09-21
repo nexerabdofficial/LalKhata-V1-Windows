@@ -9,9 +9,6 @@ import 'balance_sheet_screen.dart';
 import 'income_expense_report_screen.dart';
 import 'internal_audit_screen.dart';
 import 'trial_balance_screen.dart';
-import 'cash_flow_screen.dart';
-import 'sales_report_screen.dart';
-import 'purchase_report_screen.dart';
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
@@ -100,39 +97,6 @@ class ReportsScreen extends StatelessWidget {
               Icons.bar_chart,
               Colors.deepOrange,
               const IncomeExpenseReportScreen(),
-            ),
-
-            // =========================
-            // CASH FLOW
-            // =========================
-            _reportCard(
-              context,
-              "Cash Flow",
-              Icons.account_balance_wallet_outlined,
-              Colors.green,
-              const CashFlowScreen(),
-            ),
-
-            // =========================
-            // SALES REPORT
-            // =========================
-            _reportCard(
-              context,
-              "Sales Report",
-              Icons.receipt_long_outlined,
-              Colors.blueGrey,
-              const SalesReportScreen(),
-            ),
-
-            // =========================
-            // PURCHASE REPORT
-            // =========================
-            _reportCard(
-              context,
-              "Purchase Report",
-              Icons.shopping_bag_outlined,
-              Colors.brown,
-              const PurchaseReportScreen(),
             ),
 
             // =========================

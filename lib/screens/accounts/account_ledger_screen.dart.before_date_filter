@@ -25,131 +25,8 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 
   FFUniversalLedgerSummary? _summary;
 
-  String _dateFilter = 'All';
-  DateTime? _fromDate;
-  DateTime? _toDate;
-
-  static const List<String> _dateFilters = [
-    'All',
-    'Today',
-    'Yesterday',
-    'This Week',
-    'This Month',
-    'Custom',
-  ];
-
   // ============================================================
-  // DATE RANGE
-  // ============================================================
-
-  String? get _fromIso {
-    final date = _fromDate;
-    if (date == null) return null;
-
-    return DateTime(date.year, date.month, date.day).toIso8601String();
-  }
-
-  String? get _toIso {
-    final date = _toDate;
-    if (date == null) return null;
-
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-      23,
-      59,
-      59,
-      999,
-    ).toIso8601String();
-  }
-
-  void _setPreset(String value) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    DateTime? from;
-    DateTime? to;
-
-    switch (value) {
-      case 'Today':
-        from = today;
-        to = today;
-        break;
-
-      case 'Yesterday':
-        final yesterday = today.subtract(const Duration(days: 1));
-        from = yesterday;
-        to = yesterday;
-        break;
-
-      case 'This Week':
-        from = today.subtract(Duration(days: today.weekday - 1));
-        to = today;
-        break;
-
-      case 'This Month':
-        from = DateTime(today.year, today.month, 1);
-        to = today;
-        break;
-
-      case 'All':
-        from = null;
-        to = null;
-        break;
-    }
-
-    setState(() {
-      _dateFilter = value;
-      _fromDate = from;
-      _toDate = to;
-    });
-  }
-
-  Future<void> _selectDateFilter(String value) async {
-    if (value != 'Custom') {
-      _setPreset(value);
-      await _loadLedger();
-      return;
-    }
-
-    final now = DateTime.now();
-
-    final initialStart = _fromDate ?? DateTime(now.year, now.month, 1);
-
-    final initialEnd = _toDate ?? now;
-
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
-      helpText: 'Select Ledger Date Range',
-    );
-
-    if (picked == null) return;
-
-    setState(() {
-      _dateFilter = 'Custom';
-      _fromDate = picked.start;
-      _toDate = picked.end;
-    });
-
-    await _loadLedger();
-  }
-
-  String get _rangeLabel {
-    if (_fromDate == null || _toDate == null) {
-      return 'All Transactions';
-    }
-
-    return '${DateFormat('dd MMM yyyy').format(_fromDate!)}'
-        ' - '
-        '${DateFormat('dd MMM yyyy').format(_toDate!)}';
-  }
-
-  // ============================================================
-  // LOAD UNIVERSAL LEDGER
+  // LOAD FF UNIVERSAL LEDGER
   // ============================================================
 
   Future<void> _loadLedger() async {
@@ -168,16 +45,8 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 
     try {
       final results = await Future.wait([
-        _ledgerService.getLedger(
-          accountId: widget.account.id!,
-          fromDate: _fromIso,
-          toDate: _toIso,
-        ),
-        _ledgerService.getSummary(
-          accountId: widget.account.id!,
-          fromDate: _fromIso,
-          toDate: _toIso,
-        ),
+        _ledgerService.getLedger(accountId: widget.account.id!),
+        _ledgerService.getSummary(accountId: widget.account.id!),
       ]);
 
       if (!mounted) return;
@@ -327,49 +196,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AccountLedgerPreviewScreen(
-          account: widget.account,
-          fromDate: _fromIso,
-          toDate: _toIso,
-        ),
-      ),
-    );
-  }
-
-  // ============================================================
-  // DATE FILTER
-  // ============================================================
-
-  Widget _buildDateFilter() {
-    return Center(
-      child: SizedBox(
-        width: _ledgerWidth,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ..._dateFilters.map(
-                (filter) => ChoiceChip(
-                  label: Text(filter),
-                  selected: _dateFilter == filter,
-                  onSelected: (_) => _selectDateFilter(filter),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                _rangeLabel,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
+        builder: (_) => AccountLedgerPreviewScreen(account: widget.account),
       ),
     );
   }
@@ -526,18 +353,10 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
   Widget _buildOpeningLedgerRow() {
     return Row(
       children: [
+        _ledgerCell(_formatDate(widget.account.openingDate), width: _dateWidth),
+        _ledgerCell('OB', width: _voucherWidth, weight: FontWeight.w600),
         _ledgerCell(
-          _fromDate != null ? 'B/F' : _formatDate(widget.account.openingDate),
-          width: _dateWidth,
-          weight: FontWeight.w600,
-        ),
-        _ledgerCell(
-          _fromDate != null ? 'B/F' : 'OB',
-          width: _voucherWidth,
-          weight: FontWeight.w600,
-        ),
-        _ledgerCell(
-          _fromDate != null ? 'Balance Brought Forward' : 'Opening Balance',
+          'Opening Balance',
           width: _particularWidth,
           weight: FontWeight.w500,
         ),
@@ -763,7 +582,6 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
-                  _buildDateFilter(),
                   _buildSummary(),
                   _buildLedgerTable(),
                   _buildTotals(),

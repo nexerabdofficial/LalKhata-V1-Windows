@@ -8,15 +8,8 @@ import '../../pdf/account_ledger_pdf.dart';
 
 class AccountLedgerPreviewScreen extends StatefulWidget {
   final Account account;
-  final String? fromDate;
-  final String? toDate;
 
-  const AccountLedgerPreviewScreen({
-    super.key,
-    required this.account,
-    this.fromDate,
-    this.toDate,
-  });
+  const AccountLedgerPreviewScreen({super.key, required this.account});
 
   @override
   State<AccountLedgerPreviewScreen> createState() =>
@@ -29,11 +22,7 @@ class _AccountLedgerPreviewScreenState
   bool _printing = false;
 
   Future<Uint8List> _buildPdf() {
-    return AccountLedgerPdf.generate(
-      account: widget.account,
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-    );
+    return AccountLedgerPdf.generate(account: widget.account);
   }
 
   Future<void> _savePdf() async {
@@ -42,11 +31,7 @@ class _AccountLedgerPreviewScreenState
     setState(() => _saving = true);
 
     try {
-      final file = await AccountLedgerPdf.savePdf(
-        account: widget.account,
-        fromDate: widget.fromDate,
-        toDate: widget.toDate,
-      );
+      final file = await AccountLedgerPdf.savePdf(account: widget.account);
 
       if (!mounted) return;
 

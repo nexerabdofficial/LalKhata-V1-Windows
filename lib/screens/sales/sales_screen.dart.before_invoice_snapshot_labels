@@ -1,33 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
-import '../../models/purchase/purchase_history.dart';
-import '../../services/purchase_repository.dart';
-import 'purchase_details_screen.dart';
+import '../../services/sale_repository.dart';
+import 'sale_details_screen.dart';
 
-enum PurchaseDateFilter { all, today, yesterday, thisWeek, thisMonth, custom }
+enum SalesDateFilter { all, today, yesterday, thisWeek, thisMonth, custom }
 
-class PurchaseHistoryScreen extends StatefulWidget {
-  final PurchaseDateFilter initialFilter;
+class SalesScreen extends StatefulWidget {
+  final SalesDateFilter initialFilter;
 
-  const PurchaseHistoryScreen({
-    super.key,
-    this.initialFilter = PurchaseDateFilter.all,
-  });
+  const SalesScreen({super.key, this.initialFilter = SalesDateFilter.all});
 
   @override
-  State<PurchaseHistoryScreen> createState() => _PurchaseHistoryScreenState();
+  State<SalesScreen> createState() => _SalesScreenState();
 }
 
-class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
-  final PurchaseRepository _purchaseRepository = PurchaseRepository();
+class _SalesScreenState extends State<SalesScreen> {
+  final SaleRepository _repository = SaleRepository();
 
-  List<PurchaseHistory> _purchases = [];
+  List<Map<String, dynamic>> _sales = [];
 
-  bool _isLoading = true;
+  bool _loading = true;
   String _search = "";
 
-  late PurchaseDateFilter _dateFilter;
+  late SalesDateFilter _dateFilter;
 
   DateTime? _customFromDate;
   DateTime? _customToDate;
@@ -36,124 +31,107 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
   void initState() {
     super.initState();
     _dateFilter = widget.initialFilter;
-    _loadPurchases();
+    _loadSales();
   }
 
   // ============================================================
-  // LOAD PURCHASES
+  // LOAD SALES
   // ============================================================
 
-  Future<void> _loadPurchases() async {
+  Future<void> _loadSales() async {
     if (mounted) {
       setState(() {
-        _isLoading = true;
+        _loading = true;
       });
     }
 
-    List<PurchaseHistory> purchases;
+    try {
+      List<Map<String, dynamic>> sales;
 
-    if (_dateFilter == PurchaseDateFilter.all) {
-      purchases = await _purchaseRepository.getPurchases();
-    } else if (_dateFilter == PurchaseDateFilter.custom) {
-      if (_customFromDate == null || _customToDate == null) {
-        purchases = await _purchaseRepository.getPurchases();
-      } else {
-        purchases = await _purchaseRepository.getPurchasesByDateRange(
-          fromDate: _dateOnly(_customFromDate!),
-          toDate: _dateOnly(_customToDate!),
-        );
+      switch (_dateFilter) {
+        case SalesDateFilter.all:
+          sales = await _repository.getSales();
+          break;
+
+        case SalesDateFilter.today:
+          final today = DateTime.now();
+
+          sales = await _repository.getSalesByDateRange(
+            fromDate: _formatDate(today),
+            toDate: _formatDate(today),
+          );
+          break;
+
+        case SalesDateFilter.yesterday:
+          final yesterday = DateTime.now().subtract(const Duration(days: 1));
+
+          sales = await _repository.getSalesByDateRange(
+            fromDate: _formatDate(yesterday),
+            toDate: _formatDate(yesterday),
+          );
+          break;
+
+        case SalesDateFilter.thisWeek:
+          final now = DateTime.now();
+
+          // Bangladesh business week: Saturday -> Today
+          final daysSinceSaturday = (now.weekday + 1) % 7;
+          final from = now.subtract(Duration(days: daysSinceSaturday));
+
+          sales = await _repository.getSalesByDateRange(
+            fromDate: _formatDate(from),
+            toDate: _formatDate(now),
+          );
+          break;
+
+        case SalesDateFilter.thisMonth:
+          final now = DateTime.now();
+
+          final from = DateTime(now.year, now.month, 1);
+
+          sales = await _repository.getSalesByDateRange(
+            fromDate: _formatDate(from),
+            toDate: _formatDate(now),
+          );
+          break;
+
+        case SalesDateFilter.custom:
+          if (_customFromDate == null || _customToDate == null) {
+            sales = await _repository.getSales();
+          } else {
+            sales = await _repository.getSalesByDateRange(
+              fromDate: _formatDate(_customFromDate!),
+              toDate: _formatDate(_customToDate!),
+            );
+          }
+          break;
       }
-    } else {
-      final range = _getDateRange(_dateFilter);
 
-      purchases = await _purchaseRepository.getPurchasesByDateRange(
-        fromDate: _dateOnly(range.start),
-        toDate: _dateOnly(range.end),
-      );
-    }
+      if (!mounted) return;
 
-    if (!mounted) return;
+      setState(() {
+        _sales = sales;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
 
-    setState(() {
-      _purchases = purchases;
-      _isLoading = false;
-    });
-  }
+      setState(() {
+        _loading = false;
+      });
 
-  // ============================================================
-  // DATE HELPERS
-  // ============================================================
-
-  String _dateOnly(DateTime date) {
-    return DateFormat('yyyy-MM-dd').format(date);
-  }
-
-  DateTimeRange _getDateRange(PurchaseDateFilter filter) {
-    final now = DateTime.now();
-
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (filter) {
-      case PurchaseDateFilter.today:
-        return DateTimeRange(start: today, end: today);
-
-      case PurchaseDateFilter.yesterday:
-        final yesterday = today.subtract(const Duration(days: 1));
-
-        return DateTimeRange(start: yesterday, end: yesterday);
-
-      case PurchaseDateFilter.thisWeek:
-        // Bangladesh business week: Saturday -> Today
-        final daysSinceSaturday = (today.weekday + 1) % 7;
-        final start = today.subtract(Duration(days: daysSinceSaturday));
-
-        return DateTimeRange(start: start, end: today);
-
-      case PurchaseDateFilter.thisMonth:
-        final start = DateTime(today.year, today.month, 1);
-
-        return DateTimeRange(start: start, end: today);
-
-      case PurchaseDateFilter.all:
-      case PurchaseDateFilter.custom:
-        return DateTimeRange(start: today, end: today);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to load sales: $e")));
     }
   }
 
-  String _formatDate(String date) {
-    return DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(date));
-  }
-
   // ============================================================
-  // KPI
+  // DATE FORMAT
   // ============================================================
 
-  double get totalPurchase =>
-      _filteredPurchases.fold(0, (sum, item) => sum + item.purchase.grandTotal);
-
-  double get totalPaid =>
-      _filteredPurchases.fold(0, (sum, item) => sum + item.purchase.paid);
-
-  double get totalDue =>
-      _filteredPurchases.fold(0, (sum, item) => sum + item.purchase.due);
-
-  int get totalTransactions => _filteredPurchases.length;
-
-  // ============================================================
-  // SEARCH
-  // ============================================================
-
-  List<PurchaseHistory> get _filteredPurchases {
-    if (_search.trim().isEmpty) {
-      return _purchases;
-    }
-
-    final query = _search.trim().toLowerCase();
-
-    return _purchases.where((item) {
-      return item.supplierName.toLowerCase().contains(query) ||
-          item.purchase.id.toString().contains(_search.trim());
-    }).toList();
+  String _formatDate(DateTime date) {
+    return date.toIso8601String().split('T').first;
   }
 
   // ============================================================
@@ -162,58 +140,44 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
 
   String get _dateFilterLabel {
     switch (_dateFilter) {
-      case PurchaseDateFilter.all:
+      case SalesDateFilter.all:
         return "All";
 
-      case PurchaseDateFilter.today:
+      case SalesDateFilter.today:
         return "Today";
 
-      case PurchaseDateFilter.yesterday:
+      case SalesDateFilter.yesterday:
         return "Yesterday";
 
-      case PurchaseDateFilter.thisWeek:
+      case SalesDateFilter.thisWeek:
         return "This Week";
 
-      case PurchaseDateFilter.thisMonth:
+      case SalesDateFilter.thisMonth:
         return "This Month";
 
-      case PurchaseDateFilter.custom:
-        if (_customFromDate != null && _customToDate != null) {
-          return "${DateFormat('dd MMM').format(_customFromDate!)}"
-              " - "
-              "${DateFormat('dd MMM').format(_customToDate!)}";
+      case SalesDateFilter.custom:
+        if (_customFromDate == null || _customToDate == null) {
+          return "Custom";
         }
 
-        return "Custom";
+        return "${_displayDate(_customFromDate!)} - "
+            "${_displayDate(_customToDate!)}";
     }
+  }
+
+  String _displayDate(DateTime date) {
+    return "${date.day.toString().padLeft(2, '0')}/"
+        "${date.month.toString().padLeft(2, '0')}/"
+        "${date.year}";
   }
 
   // ============================================================
   // CHANGE DATE FILTER
   // ============================================================
 
-  Future<void> _changeDateFilter(PurchaseDateFilter filter) async {
-    if (filter == PurchaseDateFilter.custom) {
-      final now = DateTime.now();
-
-      final picked = await showDateRangePicker(
-        context: context,
-        firstDate: DateTime(2020),
-        lastDate: DateTime(now.year + 1, 12, 31),
-        initialDateRange: _customFromDate != null && _customToDate != null
-            ? DateTimeRange(start: _customFromDate!, end: _customToDate!)
-            : DateTimeRange(start: DateTime(now.year, now.month, 1), end: now),
-      );
-
-      if (picked == null) return;
-
-      setState(() {
-        _dateFilter = PurchaseDateFilter.custom;
-        _customFromDate = picked.start;
-        _customToDate = picked.end;
-      });
-
-      await _loadPurchases();
+  Future<void> _changeDateFilter(SalesDateFilter filter) async {
+    if (filter == SalesDateFilter.custom) {
+      await _selectCustomDateRange();
       return;
     }
 
@@ -221,7 +185,88 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
       _dateFilter = filter;
     });
 
-    await _loadPurchases();
+    await _loadSales();
+  }
+
+  // ============================================================
+  // CUSTOM DATE RANGE
+  // ============================================================
+
+  Future<void> _selectCustomDateRange() async {
+    final now = DateTime.now();
+
+    final initialStart = _customFromDate ?? now;
+
+    final initialEnd = _customToDate ?? now;
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 5),
+      initialDateRange: DateTimeRange(
+        start: initialStart.isBefore(initialEnd) ? initialStart : initialEnd,
+        end: initialEnd.isAfter(initialStart) ? initialEnd : initialStart,
+      ),
+      helpText: "Select Sales Date Range",
+      saveText: "APPLY",
+      cancelText: "CANCEL",
+    );
+
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      _customFromDate = picked.start;
+      _customToDate = picked.end;
+      _dateFilter = SalesDateFilter.custom;
+    });
+
+    await _loadSales();
+  }
+
+  // ============================================================
+  // KPI
+  // ============================================================
+
+  double get totalSales {
+    return _sales.fold(
+      0,
+      (sum, sale) => sum + (sale['grand_total'] as num).toDouble(),
+    );
+  }
+
+  double get totalPaid {
+    return _sales.fold(
+      0,
+      (sum, sale) => sum + (sale['paid'] as num).toDouble(),
+    );
+  }
+
+  double get totalDue {
+    return _sales.fold(0, (sum, sale) => sum + (sale['due'] as num).toDouble());
+  }
+
+  int get totalTransactions => _sales.length;
+
+  // ============================================================
+  // SEARCH
+  // ============================================================
+
+  List<Map<String, dynamic>> get filteredSales {
+    if (_search.trim().isEmpty) {
+      return _sales;
+    }
+
+    final query = _search.trim().toLowerCase();
+
+    return _sales.where((sale) {
+      final customer = (sale['customer_name'] ?? "").toString().toLowerCase();
+
+      final invoice = (sale['invoice_no'] ?? "").toString().toLowerCase();
+
+      return customer.contains(query) || invoice.contains(query);
+    }).toList();
   }
 
   // ============================================================
@@ -231,8 +276,8 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Purchase History")),
-      body: _isLoading
+      appBar: AppBar(title: const Text("Sales History")),
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: LayoutBuilder(
@@ -249,7 +294,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                       Padding(
                         padding: EdgeInsets.fromLTRB(
                           horizontalPadding,
-                          8,
+                          10,
                           horizontalPadding,
                           6,
                         ),
@@ -257,7 +302,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                           height: 44,
                           child: TextField(
                             decoration: InputDecoration(
-                              hintText: "Search supplier or ID...",
+                              hintText: "Search customer or invoice...",
                               prefixIcon: const Icon(Icons.search, size: 21),
                               contentPadding: const EdgeInsets.symmetric(
                                 vertical: 0,
@@ -276,36 +321,56 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                       ),
 
                       // ==================================================
-                      // DATE FILTERS
+                      // DATE FILTER
                       // ==================================================
-                      SizedBox(
-                        height: 40,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          padding: EdgeInsets.symmetric(
-                            horizontal: horizontalPadding,
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          2,
+                          horizontalPadding,
+                          6,
+                        ),
+                        child: SizedBox(
+                          height: 36,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_month, size: 19),
+                              const SizedBox(width: 7),
+
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _dateChip("All", SalesDateFilter.all),
+                                      _dateChip("Today", SalesDateFilter.today),
+                                      _dateChip(
+                                        "Yesterday",
+                                        SalesDateFilter.yesterday,
+                                      ),
+                                      _dateChip(
+                                        "This Week",
+                                        SalesDateFilter.thisWeek,
+                                      ),
+                                      _dateChip(
+                                        "This Month",
+                                        SalesDateFilter.thisMonth,
+                                      ),
+                                      _dateChip(
+                                        "Custom",
+                                        SalesDateFilter.custom,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          children: [
-                            _dateChip("All", PurchaseDateFilter.all),
-                            _dateChip("Today", PurchaseDateFilter.today),
-                            _dateChip(
-                              "Yesterday",
-                              PurchaseDateFilter.yesterday,
-                            ),
-                            _dateChip("This Week", PurchaseDateFilter.thisWeek),
-                            _dateChip(
-                              "This Month",
-                              PurchaseDateFilter.thisMonth,
-                            ),
-                            _dateChip("Custom", PurchaseDateFilter.custom),
-                          ],
                         ),
                       ),
 
-                      const SizedBox(height: 5),
-
                       // ==================================================
-                      // COMPACT KPI CARDS - SALES STYLE
+                      // KPI CARDS
                       // ==================================================
                       Padding(
                         padding: EdgeInsets.symmetric(
@@ -322,19 +387,19 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                     children: [
                                       Expanded(
                                         child: _kpiCard(
-                                          "Purchase",
-                                          "৳${totalPurchase.toStringAsFixed(0)}",
-                                          Icons.shopping_cart,
-                                          Colors.blue,
+                                          "Sales",
+                                          "৳${totalSales.toStringAsFixed(0)}",
+                                          Icons.payments,
+                                          Colors.green,
                                         ),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _kpiCard(
-                                          "Paid at Invoice",
+                                          "Paid",
                                           "৳${totalPaid.toStringAsFixed(0)}",
                                           Icons.check_circle,
-                                          Colors.green,
+                                          Colors.blue,
                                         ),
                                       ),
                                     ],
@@ -344,7 +409,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                                     children: [
                                       Expanded(
                                         child: _kpiCard(
-                                          "Initial Due",
+                                          "Due",
                                           "৳${totalDue.toStringAsFixed(0)}",
                                           Icons.warning,
                                           Colors.red,
@@ -369,25 +434,25 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                               children: [
                                 Expanded(
                                   child: _kpiCard(
-                                    "Purchase",
-                                    "৳${totalPurchase.toStringAsFixed(0)}",
-                                    Icons.shopping_cart,
-                                    Colors.blue,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _kpiCard(
-                                    "Paid at Invoice",
-                                    "৳${totalPaid.toStringAsFixed(0)}",
-                                    Icons.check_circle,
+                                    "Sales",
+                                    "৳${totalSales.toStringAsFixed(0)}",
+                                    Icons.payments,
                                     Colors.green,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _kpiCard(
-                                    "Initial Due",
+                                    "Paid",
+                                    "৳${totalPaid.toStringAsFixed(0)}",
+                                    Icons.check_circle,
+                                    Colors.blue,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _kpiCard(
+                                    "Due",
                                     "৳${totalDue.toStringAsFixed(0)}",
                                     Icons.warning,
                                     Colors.red,
@@ -408,10 +473,10 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                         ),
                       ),
 
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 7),
 
                       // ==================================================
-                      // TITLE
+                      // RECORD HEADER
                       // ==================================================
                       Padding(
                         padding: EdgeInsets.fromLTRB(
@@ -423,28 +488,42 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                         child: Row(
                           children: [
                             const Icon(
-                              Icons.shopping_cart,
-                              color: Colors.blue,
+                              Icons.receipt_long,
                               size: 20,
+                              color: Colors.blue,
                             ),
                             const SizedBox(width: 8),
+
                             Expanded(
                               child: Text(
-                                "Purchase Records • $_dateFilterLabel",
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                "Sales Records",
                                 style: const TextStyle(
-                                  fontSize: 17,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
-                            if (_filteredPurchases.isNotEmpty)
+
+                            // Current date filter
+                            Text(
+                              _dateFilterLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+
+                            const SizedBox(width: 8),
+
+                            if (filteredSales.isNotEmpty)
                               Text(
-                                "${_filteredPurchases.length}",
+                                "${filteredSales.length}",
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
-                                  fontSize: 13,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -453,43 +532,27 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                       ),
 
                       // ==================================================
-                      // PURCHASE LIST
+                      // SALES LIST
                       // ==================================================
                       Expanded(
-                        child: RefreshIndicator(
-                          onRefresh: _loadPurchases,
-                          child: _filteredPurchases.isEmpty
-                              ? ListView(
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  children: const [
-                                    SizedBox(height: 140),
-                                    Center(child: Text("No Purchase Found")),
-                                  ],
-                                )
-                              : ListView.separated(
-                                  padding: EdgeInsets.fromLTRB(
-                                    horizontalPadding,
-                                    0,
-                                    horizontalPadding,
-                                    12,
-                                  ),
-                                  itemCount: _filteredPurchases.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 2),
-                                  itemBuilder: (context, index) {
-                                    final history = _filteredPurchases[index];
-
-                                    final purchase = history.purchase;
-
-                                    return _purchaseCard(
-                                      context,
-                                      history,
-                                      purchase,
-                                    );
-                                  },
+                        child: filteredSales.isEmpty
+                            ? const Center(child: Text("No Sales Found"))
+                            : ListView.separated(
+                                padding: EdgeInsets.fromLTRB(
+                                  horizontalPadding,
+                                  0,
+                                  horizontalPadding,
+                                  12,
                                 ),
-                        ),
+                                itemCount: filteredSales.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 2),
+                                itemBuilder: (context, index) {
+                                  final sale = filteredSales[index];
+
+                                  return _saleCard(context, sale);
+                                },
+                              ),
                       ),
                     ],
                   );
@@ -503,16 +566,16 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
   // DATE CHIP
   // ============================================================
 
-  Widget _dateChip(String label, PurchaseDateFilter filter) {
+  Widget _dateChip(String label, SalesDateFilter filter) {
     final selected = _dateFilter == filter;
 
     return Padding(
-      padding: const EdgeInsets.only(right: 7),
+      padding: const EdgeInsets.only(right: 6),
       child: ChoiceChip(
         label: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: selected ? FontWeight.bold : FontWeight.w500,
           ),
         ),
@@ -520,23 +583,20 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
         onSelected: (_) {
           _changeDateFilter(filter);
         },
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.symmetric(horizontal: 7),
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 0),
       ),
     );
   }
 
   // ============================================================
-  // PURCHASE CARD
+  // SALE CARD
   // ============================================================
 
-  Widget _purchaseCard(
-    BuildContext context,
-    PurchaseHistory history,
-    dynamic purchase,
-  ) {
+  Widget _saleCard(BuildContext context, Map<String, dynamic> sale) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 3),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
@@ -545,79 +605,94 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PurchaseDetailsScreen(purchaseId: purchase.id!),
+              builder: (_) => SaleDetailsScreen(saleId: sale['id']),
             ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.orange.withOpacity(.15),
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    alignment: Alignment.center,
                     child: Text(
-                      purchase.id.toString(),
+                      "${sale['id']}",
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.orange,
+                        fontSize: 12,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+
+                  const SizedBox(width: 9),
+
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          history.supplierName,
+                          sale['customer_name'] ?? "Unknown Customer",
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 1),
                         Text(
-                          _formatDate(purchase.purchaseDate),
+                          "Invoice : ${sale['invoice_no']}",
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: Colors.grey.shade600,
-                            fontSize: 12,
+                            fontSize: 11,
                           ),
                         ),
                       ],
                     ),
                   ),
+
+                  const SizedBox(width: 8),
+
+                  Text(
+                    "৳${sale['grand_total']}",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
+
+              const SizedBox(height: 7),
+
               Row(
                 children: [
                   Expanded(
                     child: _amountColumn(
-                      "Total",
-                      "৳${purchase.grandTotal.toStringAsFixed(0)}",
-                      Colors.blue,
-                    ),
-                  ),
-                  Expanded(
-                    child: _amountColumn(
-                      "Paid at Invoice",
-                      "৳${purchase.paid.toStringAsFixed(0)}",
+                      "Paid",
+                      "৳${sale['paid']}",
                       Colors.green,
                     ),
                   ),
                   Expanded(
+                    child: _amountColumn("Due", "৳${sale['due']}", Colors.red),
+                  ),
+                  Expanded(
                     child: _amountColumn(
-                      "Initial Due",
-                      "৳${purchase.due.toStringAsFixed(0)}",
-                      Colors.red,
+                      "Total",
+                      "৳${sale['grand_total']}",
+                      null,
                     ),
                   ),
                 ],
@@ -633,15 +708,15 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
   // AMOUNT COLUMN
   // ============================================================
 
-  Widget _amountColumn(String title, String value, Color color) {
+  Widget _amountColumn(String title, String value, Color? color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Text(
           value,
           maxLines: 1,
@@ -649,7 +724,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
           style: TextStyle(
             color: color,
             fontWeight: FontWeight.bold,
-            fontSize: 14,
+            fontSize: 13,
           ),
         ),
       ],
@@ -657,7 +732,7 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
   }
 
   // ============================================================
-  // COMPACT KPI CARD
+  // KPI CARD
   // ============================================================
 
   Widget _kpiCard(String title, String value, IconData icon, Color color) {
@@ -666,9 +741,9 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
       child: Card(
         elevation: 1,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
           child: Row(
             children: [
               CircleAvatar(
@@ -676,21 +751,21 @@ class _PurchaseHistoryScreenState extends State<PurchaseHistoryScreen> {
                 backgroundColor: color.withOpacity(.12),
                 child: Icon(icon, color: color, size: 16),
               ),
-              const SizedBox(width: 7),
+
+              const SizedBox(width: 6),
+
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        value,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
                       ),
                     ),
                     const SizedBox(height: 1),

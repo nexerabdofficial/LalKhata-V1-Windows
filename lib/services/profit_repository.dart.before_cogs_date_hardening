@@ -73,26 +73,22 @@ class ProfitRepository {
     }
 
     double operatingExpenses = 0;
+    double journalCogs = 0;
 
     for (final row in expenseRows) {
-      // COGS is intentionally excluded from operating expenses.
-      //
-      // Profit & Loss uses the sale-time cost snapshot stored in
-      // sale_items.purchase_price as its single costing source.
-      // The COGS journal account remains authoritative for the
-      // accounting ledger / Balance Sheet inventory movement.
       if (row.groupCode == 'COST_OF_GOODS_SOLD') {
-        continue;
+        journalCogs += row.amount;
+      } else {
+        operatingExpenses += row.amount;
       }
-
-      operatingExpenses += row.amount;
     }
 
-    // Always use the exact sale-time weighted-average cost snapshot.
-    //
-    // This keeps historical, new and mixed date ranges consistent
-    // and avoids both missing COGS and double-counting journal COGS.
-    final cogs = await _getCogs(db, fromIso, toIso);
+    final snapshotCogs = await _getCogs(db, fromIso, toIso);
+
+    // Historical sales may pre-date COGS journal posting.
+    // The sale-item snapshot remains the costing source of truth.
+    // Once all sales in the period are journal-posted, both values match.
+    final cogs = journalCogs > 0.000001 ? journalCogs : snapshotCogs;
 
     return FFProfitStatement(
       incomeAccounts: incomeRows,

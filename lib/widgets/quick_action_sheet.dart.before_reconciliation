@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../screens/accounts/reconciliation_screen.dart';
-
 import '../screens/accounts/add_account_screen.dart';
 import '../screens/accounts/ff_receive_payment_screen.dart';
 import '../screens/accounts/fund_transfer_screen.dart';
@@ -94,12 +92,6 @@ class QuickActionSheet {
           title: 'Journal',
           subtitle: 'Create a balanced double-entry journal',
           page: const JournalScreen(),
-        ),
-        _QuickSheetItem(
-          icon: Icons.balance_outlined,
-          title: 'Reconciliation',
-          subtitle: 'Reconcile Cash, Bank or MFS balance',
-          page: const ReconciliationScreen(),
         ),
         _QuickSheetItem(
           icon: Icons.factory_outlined,

@@ -327,11 +327,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AccountLedgerPreviewScreen(
-          account: widget.account,
-          fromDate: _fromIso,
-          toDate: _toIso,
-        ),
+        builder: (_) => AccountLedgerPreviewScreen(account: widget.account),
       ),
     );
   }
@@ -527,17 +523,14 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     return Row(
       children: [
         _ledgerCell(
-          _fromDate != null ? 'B/F' : _formatDate(widget.account.openingDate),
+          _fromDate != null
+              ? _dateFormat.format(_fromDate!)
+              : _formatDate(widget.account.openingDate),
           width: _dateWidth,
-          weight: FontWeight.w600,
         ),
+        _ledgerCell('OB', width: _voucherWidth, weight: FontWeight.w600),
         _ledgerCell(
-          _fromDate != null ? 'B/F' : 'OB',
-          width: _voucherWidth,
-          weight: FontWeight.w600,
-        ),
-        _ledgerCell(
-          _fromDate != null ? 'Balance Brought Forward' : 'Opening Balance',
+          'Opening Balance',
           width: _particularWidth,
           weight: FontWeight.w500,
         ),
