@@ -1905,5 +1905,11 @@ class DatabaseHelper {
           ON DELETE CASCADE
       )
     ''');
+
+    // ============================================================
+    // FF PAYMENT ALLOCATIONS
+    // Required on fresh databases for split Sale/Purchase payments.
+    // ============================================================
+    await _createPaymentAllocationTable(db);
   }
 }
