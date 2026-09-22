@@ -181,7 +181,42 @@ class FFPurchasePostingService {
       );
     }
 
+    // ----------------------------------------------------------
+    // FULL PURCHASE TO SUPPLIER
+    //
+    // Always route the full purchase through the individual
+    // supplier account so fully-paid purchases remain visible
+    // in the supplier ledger.
+    // ----------------------------------------------------------
+
+    lines.add(
+      FFJournalLine(
+        accountId: supplierPayableAccountId,
+        entityType: 'SUPPLIER',
+        entityId: purchase.supplierId,
+        credit: purchase.grandTotal,
+        note: 'Purchase invoice',
+      ),
+    );
+
+    // ----------------------------------------------------------
+    // INVOICE-TIME PAYMENTS
+    //
+    // Dr supplier account
+    // Cr money account
+    // ----------------------------------------------------------
+
     for (final allocation in allocations) {
+      lines.add(
+        FFJournalLine(
+          accountId: supplierPayableAccountId,
+          entityType: 'SUPPLIER',
+          entityId: purchase.supplierId,
+          debit: allocation.amount,
+          note: 'Purchase payment',
+        ),
+      );
+
       lines.add(
         FFJournalLine(
           accountId: allocation.accountId,
@@ -189,20 +224,6 @@ class FFPurchasePostingService {
           note: allocation.paymentMethod.trim().isEmpty
               ? 'Purchase payment'
               : 'Purchase payment - ${allocation.paymentMethod}',
-        ),
-      );
-    }
-
-    final due = purchase.grandTotal - allocationTotal;
-
-    if (due > 0.000001) {
-      lines.add(
-        FFJournalLine(
-          accountId: supplierPayableAccountId,
-          entityType: 'SUPPLIER',
-          entityId: purchase.supplierId,
-          credit: due,
-          note: 'Supplier payable',
         ),
       );
     }

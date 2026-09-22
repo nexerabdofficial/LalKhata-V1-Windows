@@ -1,35 +1,28 @@
 import 'package:flutter/material.dart';
 
+import '../../database/database_helper.dart';
+
 import '../../models/account.dart';
 import '../../models/customer.dart';
 import '../../services/customer_repository.dart';
 import '../../services/refresh_service.dart';
 import '../../services/account_repository.dart';
 
-
 class ReceivePaymentScreen extends StatefulWidget {
   final Customer customer;
 
-  const ReceivePaymentScreen({
-    super.key,
-    required this.customer,
-  });
+  const ReceivePaymentScreen({super.key, required this.customer});
 
   @override
-  State<ReceivePaymentScreen> createState() =>
-      _ReceivePaymentScreenState();
+  State<ReceivePaymentScreen> createState() => _ReceivePaymentScreenState();
 }
 
-class _ReceivePaymentScreenState
-    extends State<ReceivePaymentScreen> {
-  final CustomerRepository _repository =
-      CustomerRepository();
+class _ReceivePaymentScreenState extends State<ReceivePaymentScreen> {
+  final CustomerRepository _repository = CustomerRepository();
 
-  final AccountRepository _accountRepository =
-      AccountRepository();
+  final AccountRepository _accountRepository = AccountRepository();
 
-  final TextEditingController _amountController =
-      TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
 
   List<Account> _accounts = [];
 
@@ -37,7 +30,7 @@ class _ReceivePaymentScreenState
 
   bool _loadingAccounts = true;
   bool _isSaving = false;
-  
+
   @override
   void initState() {
     super.initState();
@@ -46,25 +39,63 @@ class _ReceivePaymentScreenState
 
   Future<void> _loadAccounts() async {
     try {
-      final accounts =
-          await _accountRepository.getAccounts();
+      final accounts = await _accountRepository.getAccounts();
+
+      final db = await DatabaseHelper.instance.database;
+
+      final rows = await db.rawQuery('''
+        SELECT DISTINCT a.id
+        FROM accounts a
+        LEFT JOIN ff_account_links l
+          ON l.account_id = a.id
+         AND l.is_primary = 1
+        LEFT JOIN ff_account_groups g
+          ON g.id = l.group_id
+        WHERE UPPER(a.type) IN (
+          'CASH',
+          'BANK',
+          'MFS',
+          'MOBILE_BANKING'
+        )
+        OR UPPER(COALESCE(g.group_code, '')) IN (
+          'CASH',
+          'BANK',
+          'MFS'
+        )
+      ''');
+
+      final moneyIds = <int>{};
+
+      for (final row in rows) {
+        final id = row['id'];
+
+        if (id is num) {
+          moneyIds.add(id.toInt());
+        }
+      }
+
+      final moneyAccounts = accounts
+          .where(
+            (account) => account.id != null && moneyIds.contains(account.id),
+          )
+          .toList();
 
       if (!mounted) return;
 
       setState(() {
-        _accounts = accounts;
+        _accounts = moneyAccounts;
         _loadingAccounts = false;
 
         if (_accounts.isNotEmpty) {
           try {
-            _selectedAccount =
-                _accounts.firstWhere(
-              (account) =>
-                  account.type.toUpperCase() == 'CASH',
+            _selectedAccount = _accounts.firstWhere(
+              (account) => account.type.toUpperCase() == 'CASH',
             );
           } catch (_) {
             _selectedAccount = _accounts.first;
           }
+        } else {
+          _selectedAccount = null;
         }
       });
     } catch (e) {
@@ -74,13 +105,9 @@ class _ReceivePaymentScreenState
         _loadingAccounts = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load accounts: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load accounts: $e')));
     }
   }
 
@@ -99,36 +126,24 @@ class _ReceivePaymentScreenState
       return;
     }
 
-    final amount = double.tryParse(
-          _amountController.text.trim(),
-        ) ??
-        0;
+    final amount = double.tryParse(_amountController.text.trim()) ?? 0;
 
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter a valid payment amount.',
-          ),
-        ),
+        const SnackBar(content: Text('Enter a valid payment amount.')),
       );
       return;
     }
 
     if (_selectedAccount == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please select an account.',
-          ),
-        ),
+        const SnackBar(content: Text('Please select an account.')),
       );
       return;
     }
 
     // Optional safety check.
-    if (amount >
-        widget.customer.balance + 0.000001) {
+    if (amount > widget.customer.balance + 0.000001) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -151,12 +166,9 @@ class _ReceivePaymentScreenState
       // Because _isSaving is already true, another click cannot
       // reach this point while this operation is running.
       // ============================================================
-      final voucherNo =
-          await _repository
-              .getNextCustomerPaymentVoucherNo();
+      final voucherNo = await _repository.getNextCustomerPaymentVoucherNo();
 
-      final accountId =
-          _selectedAccount!.id!;
+      final accountId = _selectedAccount!.id!;
 
       // ============================================================
       // 1. Save customer payment
@@ -166,8 +178,7 @@ class _ReceivePaymentScreenState
         amount: amount,
         voucherNo: voucherNo,
         accountId: accountId,
-        paymentMethod:
-            _selectedAccount!.name,
+        paymentMethod: _selectedAccount!.name,
       );
 
       // ============================================================
@@ -199,13 +210,9 @@ class _ReceivePaymentScreenState
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to receive payment: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to receive payment: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -218,11 +225,7 @@ class _ReceivePaymentScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Receive Payment',
-        ),
-      ),
+      appBar: AppBar(title: const Text('Receive Payment')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -231,18 +234,11 @@ class _ReceivePaymentScreenState
             // CUSTOMER
             // ======================================================
             ListTile(
-              contentPadding:
-                  EdgeInsets.zero,
-              leading: const CircleAvatar(
-                child: Icon(
-                  Icons.person,
-                ),
-              ),
+              contentPadding: EdgeInsets.zero,
+              leading: const CircleAvatar(child: Icon(Icons.person)),
               title: Text(
                 widget.customer.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Text(
                 'Current Due: '
@@ -258,16 +254,13 @@ class _ReceivePaymentScreenState
             TextField(
               controller: _amountController,
               enabled: !_isSaving,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration:
-                  const InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Receive Amount',
                 prefixText: '৳ ',
-                border:
-                    OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
             ),
 
@@ -278,38 +271,23 @@ class _ReceivePaymentScreenState
             // ======================================================
             if (_loadingAccounts)
               const Padding(
-                padding:
-                    EdgeInsets.symmetric(
-                  vertical: 12,
-                ),
-                child:
-                    CircularProgressIndicator(),
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: CircularProgressIndicator(),
               )
             else
               DropdownButtonFormField<Account>(
                 initialValue: _selectedAccount,
-                decoration:
-                    const InputDecoration(
-                  labelText:
-                      'Receive To Account',
-                  border:
-                      OutlineInputBorder(),
-                  prefixIcon: Icon(
-                    Icons
-                        .account_balance_wallet,
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Receive To Account',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.account_balance_wallet),
                 ),
-                items: _accounts.map(
-                  (account) {
-                    return DropdownMenuItem<
-                        Account>(
-                      value: account,
-                      child: Text(
-                        account.name,
-                      ),
-                    );
-                  },
-                ).toList(),
+                items: _accounts.map((account) {
+                  return DropdownMenuItem<Account>(
+                    value: account,
+                    child: Text(account.name),
+                  );
+                }).toList(),
                 onChanged: _isSaving
                     ? null
                     : (value) {
@@ -318,8 +296,7 @@ class _ReceivePaymentScreenState
                         }
 
                         setState(() {
-                          _selectedAccount =
-                              value;
+                          _selectedAccount = value;
                         });
                       },
               ),
@@ -333,26 +310,20 @@ class _ReceivePaymentScreenState
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed:
-                    (_isSaving ||
-                            _loadingAccounts)
-                        ? null
-                        : _receivePayment,
+                onPressed: (_isSaving || _loadingAccounts)
+                    ? null
+                    : _receivePayment,
                 child: _isSaving
                     ? const SizedBox(
                         width: 23,
                         height: 23,
-                        child:
-                            CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text(
                         'Receive Payment',
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight:
-                              FontWeight.bold,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
               ),

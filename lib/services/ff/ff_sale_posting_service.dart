@@ -216,13 +216,46 @@ class FFSalePostingService {
         ? sale.grandTotal
         : totalPaid;
 
-    final currentInvoiceDue = sale.grandTotal - paidAgainstCurrentInvoice;
-
     final previousDueCollection = totalPaid > sale.grandTotal
         ? totalPaid - sale.grandTotal
         : 0.0;
 
     final lines = <FFJournalLine>[];
+
+    // ----------------------------------------------------------
+    // 1. FULL INVOICE TO CUSTOMER
+    //
+    // Always route the full invoice through the individual
+    // customer account so even a fully-paid sale appears in the
+    // customer ledger.
+    // ----------------------------------------------------------
+
+    lines.add(
+      FFJournalLine(
+        accountId: receivableAccountId,
+        entityType: 'CUSTOMER',
+        entityId: sale.customerId,
+        debit: sale.grandTotal,
+        note: 'Sales invoice',
+      ),
+    );
+
+    lines.add(
+      FFJournalLine(
+        accountId: salesIncomeAccountId,
+        credit: sale.grandTotal,
+        note: 'Sales income',
+      ),
+    );
+
+    // ----------------------------------------------------------
+    // 2. INVOICE-TIME RECEIPTS
+    //
+    // Dr money account
+    // Cr customer account
+    // ----------------------------------------------------------
+
+    var remainingCurrentReceipt = paidAgainstCurrentInvoice;
 
     for (final allocation in allocations) {
       if (allocation.amount <= 0) {
@@ -238,28 +271,30 @@ class FFSalePostingService {
               : 'Sale receipt - ${allocation.paymentMethod}',
         ),
       );
+
+      final currentPart = remainingCurrentReceipt <= 0
+          ? 0.0
+          : (allocation.amount < remainingCurrentReceipt
+                ? allocation.amount
+                : remainingCurrentReceipt);
+
+      if (currentPart > 0.000001) {
+        lines.add(
+          FFJournalLine(
+            accountId: receivableAccountId,
+            entityType: 'CUSTOMER',
+            entityId: sale.customerId,
+            credit: currentPart,
+            note: 'Invoice payment',
+          ),
+        );
+
+        remainingCurrentReceipt -= currentPart;
+      }
     }
 
-    if (currentInvoiceDue > 0.000001) {
-      lines.add(
-        FFJournalLine(
-          accountId: receivableAccountId,
-          entityType: 'CUSTOMER',
-          entityId: sale.customerId,
-          debit: currentInvoiceDue,
-          note: 'Current invoice receivable',
-        ),
-      );
-    }
-
-    lines.add(
-      FFJournalLine(
-        accountId: salesIncomeAccountId,
-        credit: sale.grandTotal,
-        note: 'Sales income',
-      ),
-    );
-
+    // Any receipt above the current invoice is collection
+    // against the customer's previous due.
     if (previousDueCollection > 0.000001) {
       lines.add(
         FFJournalLine(
@@ -271,6 +306,10 @@ class FFSalePostingService {
         ),
       );
     }
+
+    // ----------------------------------------------------------
+    // 3. COGS / INVENTORY
+    // ----------------------------------------------------------
 
     if (saleCost > 0.000001) {
       lines.add(

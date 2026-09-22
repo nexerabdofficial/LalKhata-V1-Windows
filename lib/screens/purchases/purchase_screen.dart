@@ -154,13 +154,54 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   Future<void> _loadAccounts() async {
     final accounts = await _accountRepository.getAccounts();
+    final db = await _databaseHelper.database;
+
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT a.id
+      FROM accounts a
+      LEFT JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+      LEFT JOIN ff_account_groups g
+        ON g.id = l.group_id
+      WHERE UPPER(a.type) IN (
+        'CASH',
+        'BANK',
+        'MFS',
+        'MOBILE_BANKING'
+      )
+      OR UPPER(COALESCE(g.group_code, '')) IN (
+        'CASH',
+        'BANK',
+        'MFS'
+      )
+    ''');
+
+    final moneyIds = <int>{};
+
+    for (final row in rows) {
+      final id = row['id'];
+      if (id is num) {
+        moneyIds.add(id.toInt());
+      }
+    }
+
+    final moneyAccounts = accounts
+        .where((account) => account.id != null && moneyIds.contains(account.id))
+        .toList();
 
     if (!mounted) return;
 
     setState(() {
-      _accounts = accounts;
+      _accounts = moneyAccounts;
 
-      if (_accounts.isNotEmpty && _selectedAccount == null) {
+      if (_accounts.isEmpty) {
+        _selectedAccount = null;
+        return;
+      }
+
+      if (_selectedAccount == null ||
+          !_accounts.any((account) => account.id == _selectedAccount?.id)) {
         try {
           _selectedAccount = _accounts.firstWhere(
             (account) => account.type.toUpperCase() == 'CASH',
@@ -168,23 +209,192 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         } catch (_) {
           _selectedAccount = _accounts.first;
         }
+      }
 
-        if (!widget.isEdit &&
-            _paymentRows.isEmpty &&
-            _selectedAccount != null) {
-          final controller = TextEditingController(text: '0');
+      if (!widget.isEdit && _paymentRows.isEmpty && _selectedAccount != null) {
+        final controller = TextEditingController(text: '0');
 
-          _attachPaymentListener(controller);
+        _attachPaymentListener(controller);
 
-          _paymentRows.add(
-            _PurchasePaymentRow(
-              account: _selectedAccount!,
-              controller: controller,
-            ),
-          );
-        }
+        _paymentRows.add(
+          _PurchasePaymentRow(
+            account: _selectedAccount!,
+            controller: controller,
+          ),
+        );
       }
     });
+  }
+
+  Future<void> _pickSupplier() async {
+    if (_suppliers.isEmpty) {
+      _showMessage('No supplier found. Please add a supplier first.');
+      return;
+    }
+
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        var query = '';
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filtered = _suppliers.where((supplier) {
+              return supplier.name.toLowerCase().contains(query.toLowerCase());
+            }).toList();
+
+            return AlertDialog(
+              title: const Text('Select Supplier'),
+              content: SizedBox(
+                width: 520,
+                height: 460,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Search supplier...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          query = value.trim();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No supplier found.'))
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final supplier = filtered[index];
+
+                                return ListTile(
+                                  leading: const Icon(Icons.business),
+                                  title: Text(supplier.name),
+                                  selected:
+                                      supplier.id == _formState.supplierId,
+                                  onTap: () =>
+                                      Navigator.pop(dialogContext, supplier.id),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+
+    setState(() {
+      _formState.supplierId = selected;
+    });
+  }
+
+  Future<void> _pickProduct() async {
+    if (_products.isEmpty) {
+      _showMessage('No product found. Please add a product first.');
+      return;
+    }
+
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        var query = '';
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filtered = _products.where((product) {
+              return product.name.toLowerCase().contains(query.toLowerCase());
+            }).toList();
+
+            return AlertDialog(
+              title: const Text('Select Product'),
+              content: SizedBox(
+                width: 520,
+                height: 460,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Search product...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          query = value.trim();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No product found.'))
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final product = filtered[index];
+
+                                return ListTile(
+                                  leading: const Icon(Icons.inventory_2),
+                                  title: Text(product.name),
+                                  selected: product.id == _formState.productId,
+                                  onTap: () =>
+                                      Navigator.pop(dialogContext, product.id),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+
+    setState(() {
+      _formState.productId = selected;
+    });
+  }
+
+  String _selectedSupplierName() {
+    final id = _formState.supplierId;
+    if (id == null) return 'Select Supplier';
+
+    for (final supplier in _suppliers) {
+      if (supplier.id == id) {
+        return supplier.name;
+      }
+    }
+
+    return 'Select Supplier';
+  }
+
+  String _selectedProductName() {
+    final id = _formState.productId;
+    if (id == null) return 'Select Product';
+
+    for (final product in _products) {
+      if (product.id == id) {
+        return product.name;
+      }
+    }
+
+    return 'Select Product';
   }
 
   String _formatDateTime(DateTime date) {
@@ -823,29 +1033,21 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: DropdownButtonFormField<int>(
-                          decoration: const InputDecoration(
-                            labelText: 'Supplier',
-                            prefixIcon: Icon(Icons.person_search),
-                            border: OutlineInputBorder(),
-                            isDense: true,
+                        child: InkWell(
+                          onTap: _pickSupplier,
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Supplier',
+                              prefixIcon: Icon(Icons.person_search),
+                              suffixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            child: Text(
+                              _selectedSupplierName(),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          value: _formState.supplierId,
-                          isExpanded: true,
-                          items: _suppliers.map((supplier) {
-                            return DropdownMenuItem<int>(
-                              value: supplier.id,
-                              child: Text(
-                                supplier.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _formState.supplierId = value;
-                            });
-                          },
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -890,29 +1092,21 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               children: [
                 Expanded(
                   flex: 5,
-                  child: DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(
-                      labelText: 'Product',
-                      prefixIcon: Icon(Icons.inventory_2),
-                      border: OutlineInputBorder(),
-                      isDense: true,
+                  child: InkWell(
+                    onTap: _pickProduct,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Product',
+                        prefixIcon: Icon(Icons.inventory_2),
+                        suffixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      child: Text(
+                        _selectedProductName(),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    value: _formState.productId,
-                    isExpanded: true,
-                    items: _products.map((product) {
-                      return DropdownMenuItem<int>(
-                        value: product.id,
-                        child: Text(
-                          product.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _formState.productId = value;
-                      });
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1485,28 +1679,20 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(
-                      labelText: 'Supplier',
-                      prefixIcon: Icon(Icons.person_search),
-                      border: OutlineInputBorder(),
+                  child: InkWell(
+                    onTap: _pickSupplier,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Supplier',
+                        prefixIcon: Icon(Icons.person_search),
+                        suffixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        _selectedSupplierName(),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    value: _formState.supplierId,
-                    isExpanded: true,
-                    items: _suppliers.map((supplier) {
-                      return DropdownMenuItem<int>(
-                        value: supplier.id,
-                        child: Text(
-                          supplier.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _formState.supplierId = value;
-                      });
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1536,28 +1722,20 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    decoration: const InputDecoration(
-                      labelText: 'Product',
-                      prefixIcon: Icon(Icons.inventory_2),
-                      border: OutlineInputBorder(),
+                  child: InkWell(
+                    onTap: _pickProduct,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Product',
+                        prefixIcon: Icon(Icons.inventory_2),
+                        suffixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        _selectedProductName(),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    value: _formState.productId,
-                    isExpanded: true,
-                    items: _products.map((product) {
-                      return DropdownMenuItem<int>(
-                        value: product.id,
-                        child: Text(
-                          product.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _formState.productId = value;
-                      });
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),

@@ -96,7 +96,12 @@ class FFBalanceSheetReport {
   }
 
   double get totalEquity {
-    return ledgerEquity + currentProfit;
+    // Opening balances are stored directly on ledger accounts.
+    // Their balancing side is represented by the opening control
+    // difference, matching the Trial Balance opening-equity treatment.
+    //
+    // No journal is created here and no database value is changed.
+    return ledgerEquity + openingDifference + currentProfit;
   }
 
   double get liabilitiesAndEquity {
