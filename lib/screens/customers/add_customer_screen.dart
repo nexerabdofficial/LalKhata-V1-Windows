@@ -6,14 +6,10 @@ import '../../services/customer_repository.dart';
 class AddCustomerScreen extends StatefulWidget {
   final Customer? customer;
 
-  const AddCustomerScreen({
-    super.key,
-    this.customer,
-  });
+  const AddCustomerScreen({super.key, this.customer});
 
   @override
-  State<AddCustomerScreen> createState() =>
-      _AddCustomerScreenState();
+  State<AddCustomerScreen> createState() => _AddCustomerScreenState();
 }
 
 class _AddCustomerScreenState extends State<AddCustomerScreen> {
@@ -30,6 +26,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   DateTime _openingDate = DateTime.now();
 
+  String _openingType = 'RECEIVABLE';
+
   bool get _isEdit => widget.customer != null;
 
   @override
@@ -41,8 +39,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       _phoneController.text = widget.customer!.phone ?? "";
       _addressController.text = widget.customer!.address ?? "";
 
-      _openingBalanceController.text =
-          widget.customer!.openingBalance.toStringAsFixed(2);
+      final opening = widget.customer!.openingBalance;
+
+      _openingType = opening < 0 ? 'PAYABLE' : 'RECEIVABLE';
+
+      _openingBalanceController.text = opening.abs().toStringAsFixed(2);
 
       if (widget.customer!.openingDate != null) {
         _openingDate = widget.customer!.openingDate!;
@@ -95,11 +96,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     if (picked == null) return;
 
     setState(() {
-      _openingDate = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
-      );
+      _openingDate = DateTime(picked.year, picked.month, picked.day);
     });
   }
 
@@ -118,20 +115,19 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     if (exists) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Customer already exists."),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Customer already exists.")));
 
       return;
     }
 
-    final openingBalance =
-        double.tryParse(
-              _openingBalanceController.text.trim(),
-            ) ??
-            0;
+    final openingAmount =
+        double.tryParse(_openingBalanceController.text.trim()) ?? 0;
+
+    final openingBalance = _openingType == 'PAYABLE'
+        ? -openingAmount.abs()
+        : openingAmount.abs();
 
     setState(() {
       _isSaving = true;
@@ -191,24 +187,16 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Customer added successfully.',
-          ),
-        ),
+        const SnackBar(content: Text('Customer added successfully.')),
       );
 
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to save customer: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save customer: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -221,11 +209,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _isEdit ? "Edit Customer" : "Add Customer",
-        ),
-      ),
+      appBar: AppBar(title: Text(_isEdit ? "Edit Customer" : "Add Customer")),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -234,10 +218,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
             children: [
               const Text(
                 "Customer Information",
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 16),
@@ -249,8 +230,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null ||
-                      value.trim().isEmpty) {
+                  if (value == null || value.trim().isEmpty) {
                     return 'Please enter customer name';
                   }
 
@@ -284,8 +264,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
               TextFormField(
                 controller: _openingBalanceController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
+                keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
@@ -295,13 +274,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if (value == null ||
-                      value.trim().isEmpty) {
+                  if (value == null || value.trim().isEmpty) {
                     return 'Please enter opening balance';
                   }
 
-                  final amount =
-                      double.tryParse(value.trim());
+                  final amount = double.tryParse(value.trim());
 
                   if (amount == null) {
                     return 'Please enter a valid amount';
@@ -317,6 +294,33 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
               const SizedBox(height: 16),
 
+              DropdownButtonFormField<String>(
+                value: _openingType,
+                decoration: const InputDecoration(
+                  labelText: 'Opening Balance Type',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'RECEIVABLE',
+                    child: Text('Receivable — Customer owes us'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'PAYABLE',
+                    child: Text('Payable — We owe customer'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+
+                  setState(() {
+                    _openingType = value;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 16),
+
               InkWell(
                 onTap: _selectOpeningDate,
                 borderRadius: BorderRadius.circular(4),
@@ -324,15 +328,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Opening Date',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(
-                      Icons.calendar_today,
-                    ),
+                    prefixIcon: Icon(Icons.calendar_today),
                   ),
                   child: Text(
                     _formatDate(_openingDate),
-                    style: const TextStyle(
-                      fontSize: 16,
-                    ),
+                    style: const TextStyle(fontSize: 16),
                   ),
                 ),
               ),
@@ -342,23 +342,16 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
               SizedBox(
                 height: 50,
                 child: ElevatedButton(
-                  onPressed:
-                      _isSaving ? null : _saveCustomer,
+                  onPressed: _isSaving ? null : _saveCustomer,
                   child: _isSaving
                       ? const SizedBox(
                           height: 22,
                           width: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(
-                          _isEdit
-                              ? 'Update Customer'
-                              : 'Save Customer',
-                          style: const TextStyle(
-                            fontSize: 18,
-                          ),
+                          _isEdit ? 'Update Customer' : 'Save Customer',
+                          style: const TextStyle(fontSize: 18),
                         ),
                 ),
               ),

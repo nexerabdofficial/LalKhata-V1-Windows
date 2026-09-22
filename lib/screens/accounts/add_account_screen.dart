@@ -38,6 +38,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
   String _type = "BANK";
 
+  // New account starts with no type selected.
+  // Edit mode continues to use the account's existing type.
+  String? _newAccountType;
+
   bool _isSaving = false;
 
   bool get isEdit => widget.account != null;
@@ -137,10 +141,55 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
   }
 
+  bool get _isPartyCreation =>
+      !isEdit &&
+      (_newAccountType == "CUSTOMER" || _newAccountType == "SUPPLIER");
+
+  bool get _showAccountDetails =>
+      isEdit || (_newAccountType != null && !_isPartyCreation);
+
+  Future<void> _handleTypeChange(String value) async {
+    if (isEdit) {
+      setState(() {
+        _type = value;
+      });
+      return;
+    }
+
+    setState(() {
+      _newAccountType = value;
+      _type = value;
+
+      if (_isPartyCreation) {
+        _selectedGroup = null;
+      }
+    });
+
+    if (_isPartyCreation) {
+      await _openPartyCreator(value);
+
+      // If party creation was cancelled, return Add Account
+      // to its initial "Account Type only" state.
+      if (mounted) {
+        setState(() {
+          _newAccountType = null;
+          _type = "BANK";
+        });
+      }
+    }
+  }
+
   Future<void> _saveAccount() async {
     if (_isSaving) return;
 
-    if (!isEdit && (_type == "CUSTOMER" || _type == "SUPPLIER")) {
+    if (!isEdit && _newAccountType == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Select account type.")));
+      return;
+    }
+
+    if (!isEdit && _isPartyCreation) {
       await _openPartyCreator(_type);
       return;
     }
@@ -247,88 +296,16 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: "Account Name",
-                  hintText: "Example: bKash Personal",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return "Enter account name";
-                  }
-
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _openingBalanceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: "Opening Balance",
-                  prefixText: "৳ ",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return "Enter opening balance";
-                  }
-
-                  final amount = double.tryParse(value.trim());
-
-                  if (amount == null) {
-                    return "Enter a valid amount";
-                  }
-
-                  if (amount < 0) {
-                    return "Opening balance cannot be negative";
-                  }
-
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.calendar_today),
-                title: const Text("Opening Date"),
-                subtitle: Text(
-                  "${_openingDate.day}/"
-                  "${_openingDate.month}/"
-                  "${_openingDate.year}",
-                ),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _openingDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
-
-                  if (picked != null) {
-                    setState(() {
-                      _openingDate = picked;
-                    });
-                  }
-                },
-              ),
-
-              const SizedBox(height: 16),
-
+              // ==================================================
+              // ACCOUNT TYPE FIRST
+              // ==================================================
               DropdownButtonFormField<String>(
-                value: _type,
+                value: isEdit ? _type : _newAccountType,
                 decoration: const InputDecoration(
                   labelText: "Account Type",
+                  hintText: "Select account type",
                   border: OutlineInputBorder(),
                 ),
                 items: _accountTypes.entries.map((entry) {
@@ -344,84 +321,155 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     ? null
                     : (value) {
                         if (value == null) return;
-
-                        setState(() {
-                          _type = value;
-
-                          if (_type == "CUSTOMER" || _type == "SUPPLIER") {
-                            _selectedGroup = null;
-                          }
-                        });
+                        _handleTypeChange(value);
                       },
               ),
 
-              const SizedBox(height: 16),
+              // Customer/Supplier never use the generic
+              // account-detail fields during creation.
+              if (_showAccountDetails) ...[
+                const SizedBox(height: 16),
 
-              DropdownButtonFormField<FFAccountGroupOption>(
-                initialValue: _selectedGroup,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: "Custom Group (Optional)",
-                  hintText: "Use standard account classification",
-                  border: OutlineInputBorder(),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: "Account Name",
+                    hintText: "Example: bKash Personal",
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (_isPartyCreation) return null;
+
+                    if (value == null || value.trim().isEmpty) {
+                      return "Enter account name";
+                    }
+
+                    return null;
+                  },
                 ),
-                items: _groups.map((group) {
-                  return DropdownMenuItem<FFAccountGroupOption>(
-                    value: group,
-                    child: Text(
-                      '${group.name} • ${group.groupKind}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                }).toList(),
-                onChanged: isEdit || _type == "CUSTOMER" || _type == "SUPPLIER"
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _selectedGroup = value;
-                        });
-                      },
-              ),
 
-              const SizedBox(height: 8),
+                const SizedBox(height: 16),
 
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: isEdit ? null : _createGroup,
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  label: const Text("Create Custom Group"),
+                TextFormField(
+                  controller: _openingBalanceController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: "Opening Balance",
+                    prefixText: "৳ ",
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (_isPartyCreation) return null;
+
+                    if (value == null || value.trim().isEmpty) {
+                      return "Enter opening balance";
+                    }
+
+                    final amount = double.tryParse(value.trim());
+
+                    if (amount == null) {
+                      return "Enter a valid amount";
+                    }
+
+                    if (amount < 0) {
+                      return "Opening balance cannot be negative";
+                    }
+
+                    return null;
+                  },
                 ),
-              ),
 
-              const Spacer(),
+                const SizedBox(height: 16),
 
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveAccount,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          !isEdit && _type == "CUSTOMER"
-                              ? "Continue to Customer"
-                              : !isEdit && _type == "SUPPLIER"
-                              ? "Continue to Supplier"
-                              : isEdit
-                              ? "Update Account"
-                              : "Save Account",
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.calendar_today),
+                  title: const Text("Opening Date"),
+                  subtitle: Text(
+                    "${_openingDate.day}/"
+                    "${_openingDate.month}/"
+                    "${_openingDate.year}",
+                  ),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _openingDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2100),
+                    );
+
+                    if (picked != null) {
+                      setState(() {
+                        _openingDate = picked;
+                      });
+                    }
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                DropdownButtonFormField<FFAccountGroupOption>(
+                  initialValue: _selectedGroup,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: "Custom Group (Optional)",
+                    hintText: "Use standard account classification",
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _groups.map((group) {
+                    return DropdownMenuItem<FFAccountGroupOption>(
+                      value: group,
+                      child: Text(
+                        '${group.name} • ${group.groupKind}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: isEdit
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _selectedGroup = value;
+                          });
+                        },
+                ),
+
+                const SizedBox(height: 8),
+
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: isEdit ? null : _createGroup,
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    label: const Text("Create Custom Group"),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveAccount,
+                    child: _isSaving
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            isEdit ? "Update Account" : "Save Account",
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

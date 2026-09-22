@@ -398,8 +398,16 @@ class CustomerRepository {
         opening_date AS date,
         'Opening Balance' AS particular,
         'OPENING' AS reference,
-        opening_balance AS debit,
-        0.0 AS credit,
+        CASE
+          WHEN COALESCE(opening_balance, 0) >= 0
+            THEN COALESCE(opening_balance, 0)
+          ELSE 0.0
+        END AS debit,
+        CASE
+          WHEN COALESCE(opening_balance, 0) < 0
+            THEN ABS(opening_balance)
+          ELSE 0.0
+        END AS credit,
         0 AS sort_order
       FROM customers
       WHERE id = ?

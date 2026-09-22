@@ -208,7 +208,12 @@ class FFTrialBalanceService {
           closingDebit.abs() > 0.000001 ||
           closingCredit.abs() > 0.000001;
 
-      if (!hasValue) {
+      // Opening Balance Equity must remain available even when its
+      // stored opening and journal movement are zero. A later opening
+      // control adjustment may need this row to balance master openings.
+      final isOpeningBalanceEquity = accountType == 'OPENING_BALANCE_EQUITY';
+
+      if (!hasValue && !isOpeningBalanceEquity) {
         continue;
       }
 
