@@ -249,7 +249,7 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
         .where((e) => _visible(e.balance))
         .toList();
 
-    final capitalValue = report.ledgerEquity + report.currentProfit;
+    final capitalValue = report.totalEquity;
 
     return _erpPanel(
       heading: 'CAPITAL & LIABILITIES',
@@ -258,6 +258,9 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
         _groupTitle('Capital & Reserves', capitalValue),
 
         _rows(capitalRows),
+
+        if (_visible(report.openingDifference))
+          _ledgerRow('Opening Balance Equity', report.openingDifference),
 
         if (_visible(report.currentProfit))
           _ledgerRow(
@@ -534,7 +537,7 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
         .where((e) => _visible(e.balance))
         .toList();
 
-    final capitalValue = report.ledgerEquity + report.currentProfit;
+    final capitalValue = report.totalEquity;
 
     return _mobileErpPanel(
       heading: 'CAPITAL & LIABILITIES',
@@ -543,6 +546,9 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
         _groupTitle('Capital & Reserves', capitalValue),
 
         _rows(capitalRows),
+
+        if (_visible(report.openingDifference))
+          _ledgerRow('Opening Balance Equity', report.openingDifference),
 
         if (_visible(report.currentProfit))
           _ledgerRow(
