@@ -361,56 +361,17 @@ class SaleRepository {
 
     final result = await db.rawQuery(
       '''
-    SELECT
-      sales.*,
-      customers.name AS customer_name,
-      customers.phone AS customer_phone,
-      customers.address AS customer_address,
-
-      (
-        COALESCE(
-          (
-            SELECT opening_balance
-            FROM customers
-            WHERE id = sales.customer_id
-          ),
-          0
-        )
-        +
-        COALESCE(
-          (
-            SELECT SUM(grand_total)
-            FROM sales s
-            WHERE s.customer_id = sales.customer_id
-              AND (
-                s.sale_date < sales.sale_date
-                OR (
-                  s.sale_date = sales.sale_date
-                  AND s.id < sales.id
-                )
-              )
-          ),
-          0
-        )
-        -
-        COALESCE(
-          (
-            SELECT SUM(amount)
-            FROM customer_payments cp
-            WHERE cp.customer_id = sales.customer_id
-              AND cp.created_at < sales.sale_date
-          ),
-          0
-        )
-      ) AS previous_due
-
-    FROM sales
-    LEFT JOIN customers
-      ON customers.id = sales.customer_id
-
-    WHERE sales.id = ?
-    LIMIT 1
-    ''',
+      SELECT
+        sales.*,
+        customers.name AS customer_name,
+        customers.phone AS customer_phone,
+        customers.address AS customer_address
+      FROM sales
+      LEFT JOIN customers
+        ON customers.id = sales.customer_id
+      WHERE sales.id = ?
+      LIMIT 1
+      ''',
       [id],
     );
 
@@ -418,7 +379,97 @@ class SaleRepository {
       return null;
     }
 
-    return result.first;
+    final saleInfo = Map<String, dynamic>.from(result.first);
+    final customerId = (saleInfo['customer_id'] as num?)?.toInt();
+
+    double previousDue = 0.0;
+
+    if (customerId != null && customerId > 0) {
+      final accountRows = await db.rawQuery(
+        '''
+        SELECT account_id
+        FROM ff_party_account_links
+        WHERE UPPER(party_type) = 'CUSTOMER'
+          AND party_id = ?
+        LIMIT 1
+        ''',
+        [customerId],
+      );
+
+      if (accountRows.isNotEmpty) {
+        final accountId = (accountRows.first['account_id'] as num).toInt();
+
+        final openingRows = await db.query(
+          'customers',
+          columns: ['opening_balance'],
+          where: 'id = ?',
+          whereArgs: [customerId],
+          limit: 1,
+        );
+
+        if (openingRows.isNotEmpty) {
+          previousDue = ((openingRows.first['opening_balance'] ?? 0) as num)
+              .toDouble();
+        }
+
+        final journalRows = await db.rawQuery(
+          '''
+          SELECT id
+          FROM journal_entries
+          WHERE UPPER(COALESCE(reference_type, '')) = 'SALE'
+            AND reference_id = ?
+          ORDER BY id ASC
+          LIMIT 1
+          ''',
+          [id],
+        );
+
+        if (journalRows.isNotEmpty) {
+          final currentJournalId = (journalRows.first['id'] as num).toInt();
+
+          final movementRows = await db.rawQuery(
+            '''
+            SELECT
+              COALESCE(SUM(jl.debit), 0) AS total_debit,
+              COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = ?
+              AND je.id < ?
+            ''',
+            [accountId, currentJournalId],
+          );
+
+          previousDue +=
+              ((movementRows.first['total_debit'] ?? 0) as num).toDouble() -
+              ((movementRows.first['total_credit'] ?? 0) as num).toDouble();
+        } else {
+          final saleDate = saleInfo['sale_date']?.toString() ?? '';
+
+          final movementRows = await db.rawQuery(
+            '''
+            SELECT
+              COALESCE(SUM(jl.debit), 0) AS total_debit,
+              COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = ?
+              AND je.transaction_date < ?
+            ''',
+            [accountId, saleDate],
+          );
+
+          previousDue +=
+              ((movementRows.first['total_debit'] ?? 0) as num).toDouble() -
+              ((movementRows.first['total_credit'] ?? 0) as num).toDouble();
+        }
+      }
+    }
+
+    saleInfo['previous_due'] = previousDue;
+    return saleInfo;
   }
 
   Future<double> getTotalSales() async {

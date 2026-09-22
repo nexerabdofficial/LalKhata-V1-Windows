@@ -7,6 +7,7 @@ import '../models/supplier_ledger.dart';
 import 'ff/ff_journal_service.dart';
 import 'ff/ff_party_payment_posting_service.dart';
 import 'ff/ff_party_account_service.dart';
+import 'ff/ff_universal_ledger_service.dart';
 
 class SupplierRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
@@ -16,6 +17,9 @@ class SupplierRepository {
 
   final FFPartyAccountService _ffPartyAccountService =
       FFPartyAccountService.instance;
+
+  final FFUniversalLedgerService _ffUniversalLedgerService =
+      FFUniversalLedgerService.instance;
 
   final FFJournalService _ffJournalService = FFJournalService.instance;
 
@@ -179,54 +183,18 @@ class SupplierRepository {
   // ============================================================
 
   Future<double> getSupplierBalance(int supplierId) async {
-    final db = await _databaseHelper.database;
-
-    final result = await db.rawQuery(
-      '''
-      SELECT
-        COALESCE(
-          (
-            SELECT opening_balance
-            FROM suppliers
-            WHERE id = ?
-          ),
-          0
-        )
-
-        +
-
-        COALESCE(
-          (
-            SELECT SUM(grand_total)
-            FROM purchases
-            WHERE supplier_id = ?
-          ),
-          0
-        )
-
-        -
-
-        COALESCE(
-          (
-            SELECT SUM(amount)
-            FROM supplier_payments
-            WHERE supplier_id = ?
-          ),
-          0
-        )
-
-        AS balance
-      ''',
-      [supplierId, supplierId, supplierId],
+    final accountId = await _ffPartyAccountService.getSupplierAccountId(
+      supplierId,
     );
 
-    final value = result.first['balance'];
-
-    if (value == null) {
+    if (accountId == null) {
       return 0.0;
     }
 
-    return (value as num).toDouble();
+    return _ffUniversalLedgerService.getClosingBalance(
+      accountId: accountId,
+      normalBalance: 'CREDIT',
+    );
   }
 
   // ============================================================
@@ -236,55 +204,23 @@ class SupplierRepository {
   Future<double> getTotalDue() async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery('''
-      SELECT
-        COALESCE(
-          SUM(
-            COALESCE(
-              (
-                SELECT opening_balance
-                FROM suppliers s2
-                WHERE s2.id = suppliers.id
-              ),
-              0
-            )
+    final rows = await db.query('suppliers', columns: ['id']);
 
-            +
+    double total = 0.0;
 
-            COALESCE(
-              (
-                SELECT SUM(grand_total)
-                FROM purchases
-                WHERE supplier_id =
-                      suppliers.id
-              ),
-              0
-            )
+    for (final row in rows) {
+      final supplierId = (row['id'] as num).toInt();
+      final balance = await getSupplierBalance(supplierId);
 
-            -
-
-            COALESCE(
-              (
-                SELECT SUM(amount)
-                FROM supplier_payments
-                WHERE supplier_id =
-                      suppliers.id
-              ),
-              0
-            )
-          ),
-          0
-        ) AS total
-      FROM suppliers
-      ''');
-
-    final value = result.first['total'];
-
-    if (value == null) {
-      return 0.0;
+      // Supplier Due = payable only.
+      // Negative balance means supplier advance/receivable,
+      // so it must not reduce another supplier's payable.
+      if (balance > 0) {
+        total += balance;
+      }
     }
 
-    return (value as num).toDouble();
+    return total;
   }
 
   // ============================================================

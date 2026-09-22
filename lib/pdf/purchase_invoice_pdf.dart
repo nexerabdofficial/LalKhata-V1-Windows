@@ -82,12 +82,12 @@ class PurchaseInvoicePdf {
     String supplierName = 'Supplier';
     String supplierPhone = '';
     String supplierAddress = '';
-    double supplierBalance = 0;
+    double previousDue = 0.0;
 
     try {
       final rows = await db.query(
         'suppliers',
-        columns: ['name', 'phone', 'address', 'balance'],
+        columns: ['name', 'phone', 'address', 'opening_balance'],
         where: 'id = ?',
         whereArgs: [purchase.supplierId],
         limit: 1,
@@ -95,22 +95,89 @@ class PurchaseInvoicePdf {
 
       if (rows.isNotEmpty) {
         final row = rows.first;
-
         final name = row['name']?.toString().trim() ?? '';
 
         supplierName = name.isEmpty ? 'Supplier' : name;
         supplierPhone = row['phone']?.toString() ?? '';
         supplierAddress = row['address']?.toString() ?? '';
-        supplierBalance = ((row['balance'] ?? 0) as num).toDouble();
+        previousDue = ((row['opening_balance'] ?? 0) as num).toDouble();
+      }
+
+      final accountRows = await db.rawQuery(
+        '''
+        SELECT account_id
+        FROM ff_party_account_links
+        WHERE UPPER(party_type) = 'SUPPLIER'
+          AND party_id = ?
+        LIMIT 1
+        ''',
+        [purchase.supplierId],
+      );
+
+      if (accountRows.isNotEmpty) {
+        final accountId = (accountRows.first['account_id'] as num).toInt();
+
+        int? currentJournalId;
+
+        if (purchase.id != null && purchase.id! > 0) {
+          final journalRows = await db.rawQuery(
+            '''
+            SELECT id
+            FROM journal_entries
+            WHERE UPPER(COALESCE(reference_type, '')) = 'PURCHASE'
+              AND reference_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            ''',
+            [purchase.id],
+          );
+
+          if (journalRows.isNotEmpty) {
+            currentJournalId = (journalRows.first['id'] as num).toInt();
+          }
+        }
+
+        List<Map<String, Object?>> movementRows;
+
+        if (currentJournalId != null) {
+          movementRows = await db.rawQuery(
+            '''
+            SELECT
+              COALESCE(SUM(jl.debit), 0) AS total_debit,
+              COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = ?
+              AND je.id < ?
+            ''',
+            [accountId, currentJournalId],
+          );
+        } else {
+          movementRows = await db.rawQuery(
+            '''
+            SELECT
+              COALESCE(SUM(jl.debit), 0) AS total_debit,
+              COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM journal_lines jl
+            INNER JOIN journal_entries je
+              ON je.id = jl.journal_id
+            WHERE jl.account_id = ?
+              AND je.transaction_date < ?
+            ''',
+            [accountId, purchase.purchaseDate],
+          );
+        }
+
+        if (movementRows.isNotEmpty) {
+          previousDue +=
+              ((movementRows.first['total_credit'] ?? 0) as num).toDouble() -
+              ((movementRows.first['total_debit'] ?? 0) as num).toDouble();
+        }
       }
     } catch (_) {
-      // Supplier lookup must not block invoice generation.
+      // Supplier/accounting lookup must not block invoice generation.
     }
-
-    // Current supplier balance already contains current invoice due.
-    final previousDue = (supplierBalance - purchase.due)
-        .clamp(0, double.infinity)
-        .toDouble();
 
     // ==========================================================
     // PAYMENT ALLOCATIONS

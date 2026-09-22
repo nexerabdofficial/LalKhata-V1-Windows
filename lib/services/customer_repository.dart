@@ -7,6 +7,7 @@ import '../models/account_transaction.dart';
 import 'refresh_service.dart';
 import 'ff/ff_party_payment_posting_service.dart';
 import 'ff/ff_party_account_service.dart';
+import 'ff/ff_universal_ledger_service.dart';
 
 class CustomerRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
@@ -16,6 +17,9 @@ class CustomerRepository {
 
   final FFPartyAccountService _ffPartyAccountService =
       FFPartyAccountService.instance;
+
+  final FFUniversalLedgerService _ffUniversalLedgerService =
+      FFUniversalLedgerService.instance;
 
   Future<int> insertCustomer(Customer customer) async {
     final Database db = await _databaseHelper.database;
@@ -67,42 +71,18 @@ class CustomerRepository {
   }
 
   Future<double> getCustomerBalance(int customerId) async {
-    final db = await _databaseHelper.database;
-
-    final result = await db.rawQuery(
-      '''
-      SELECT
-        COALESCE(
-          (
-            SELECT opening_balance
-            FROM customers
-            WHERE id = ?
-          ),
-          0
-        )
-        +
-        COALESCE(
-          (
-            SELECT SUM(grand_total)
-            FROM sales
-            WHERE customer_id = ?
-          ),
-          0
-        )
-        -
-        COALESCE(
-          (
-            SELECT SUM(amount)
-            FROM customer_payments
-            WHERE customer_id = ?
-          ),
-          0
-        ) AS balance
-      ''',
-      [customerId, customerId, customerId],
+    final accountId = await _ffPartyAccountService.getCustomerAccountId(
+      customerId,
     );
 
-    return ((result.first['balance'] ?? 0) as num).toDouble();
+    if (accountId == null) {
+      return 0.0;
+    }
+
+    return _ffUniversalLedgerService.getClosingBalance(
+      accountId: accountId,
+      normalBalance: 'DEBIT',
+    );
   }
 
   Future<int> updateCustomer(Customer customer) async {
@@ -353,36 +333,23 @@ class CustomerRepository {
   Future<double> getTotalDue() async {
     final db = await _databaseHelper.database;
 
-    final result = await db.rawQuery('''
-      SELECT
-        COALESCE(
-          SUM(
-            COALESCE(c.opening_balance, 0)
-            +
-            COALESCE(
-              (
-                SELECT SUM(s.grand_total)
-                FROM sales s
-                WHERE s.customer_id = c.id
-              ),
-              0
-            )
-            -
-            COALESCE(
-              (
-                SELECT SUM(cp.amount)
-                FROM customer_payments cp
-                WHERE cp.customer_id = c.id
-              ),
-              0
-            )
-          ),
-          0
-        ) AS total
-      FROM customers c
-      ''');
+    final rows = await db.query('customers', columns: ['id']);
 
-    return ((result.first['total'] ?? 0) as num).toDouble();
+    double total = 0.0;
+
+    for (final row in rows) {
+      final customerId = (row['id'] as num).toInt();
+      final balance = await getCustomerBalance(customerId);
+
+      // Customer Due = receivable only.
+      // Negative balance means customer advance/payable,
+      // so it must not reduce another customer's receivable.
+      if (balance > 0) {
+        total += balance;
+      }
+    }
+
+    return total;
   }
 
   // ============================================================
