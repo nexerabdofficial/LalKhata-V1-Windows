@@ -466,6 +466,217 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
   }
 
   // ============================================================
+  // MOBILE-ONLY HEADER
+  // Desktop _header() is intentionally untouched.
+  // ============================================================
+
+  Widget _mobileHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            GABBranding.businessName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xff173f35),
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Profit & Loss Statement',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _pickFrom,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('From', style: TextStyle(fontSize: 11)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _date(_fromDate),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _pickTo,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('To', style: TextStyle(fontSize: 11)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _date(_toDate),
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileReportTitle() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      color: const Color(0xff173f35),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'PROFIT & LOSS ACCOUNT',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${_date(_fromDate)}  to  ${_date(_toDate)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileIncomePanel(FFProfitStatement report) {
+    final salesAccounts = report.incomeAccounts
+        .where((e) => e.groupCode == 'SALES_INCOME' && _visible(e.amount))
+        .toList();
+
+    final otherIncomeAccounts = report.incomeAccounts
+        .where((e) => e.groupCode != 'SALES_INCOME' && _visible(e.amount))
+        .toList();
+
+    return _panel(
+      title: 'INCOME / REVENUE',
+      total: report.totalIncome,
+      children: [
+        _groupRow('Sales / Operating Revenue', report.salesIncome),
+        if (salesAccounts.isEmpty)
+          _accountRow('Sales Income', report.salesIncome)
+        else
+          ...salesAccounts.map(
+            (row) => _accountRow(row.accountName, row.amount),
+          ),
+        if (_visible(report.otherIncome) || otherIncomeAccounts.isNotEmpty) ...[
+          _groupRow('Other Income', report.otherIncome),
+          if (otherIncomeAccounts.isEmpty)
+            _accountRow('Other Income', report.otherIncome)
+          else
+            ...otherIncomeAccounts.map(
+              (row) => _accountRow(row.accountName, row.amount),
+            ),
+        ],
+        _groupRow('Total Revenue', report.totalIncome),
+        const SizedBox(height: 8),
+        _groupRow('Gross Profit', report.grossProfit),
+        _accountRow('Sales Revenue', report.salesIncome),
+        _accountRow('Less: Cost of Goods Sold', -report.cogs),
+        const SizedBox(height: 8),
+        _resultRow(
+          report.netProfit >= 0 ? 'NET PROFIT' : 'NET LOSS',
+          report.netProfit,
+        ),
+      ],
+    );
+  }
+
+  Widget _mobileExpensePanel(FFProfitStatement report) {
+    final expenses = report.expenseAccounts
+        .where((e) => _visible(e.amount))
+        .toList();
+
+    return _panel(
+      title: 'COST & EXPENSES',
+      total: report.cogs + report.operatingExpenses,
+      children: [
+        _groupRow('Cost of Sales', report.cogs),
+        _accountRow('Cost of Goods Sold', report.cogs),
+        _groupRow('Operating Expenses', report.operatingExpenses),
+        if (expenses.isEmpty)
+          _accountRow('Operating Expenses', report.operatingExpenses)
+        else
+          ...expenses.map((row) => _accountRow(row.accountName, row.amount)),
+        _groupRow(
+          'Total Cost & Expenses',
+          report.cogs + report.operatingExpenses,
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xfff3f5ef),
+            border: Border(top: BorderSide(color: Colors.grey.shade400)),
+          ),
+          child: Column(
+            children: [
+              _miniSummary('Gross Profit', report.grossProfit),
+              const SizedBox(height: 5),
+              _miniSummary('Other Income', report.otherIncome),
+              const SizedBox(height: 5),
+              _miniSummary('Operating Expenses', report.operatingExpenses),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _mobileProfitLoss(FFProfitStatement report) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _mobileHeader(),
+        const SizedBox(height: 8),
+        _mobileReportTitle(),
+        const SizedBox(height: 2),
+        _mobileIncomePanel(report),
+        const SizedBox(height: 8),
+        _mobileExpensePanel(report),
+      ],
+    );
+  }
+
+  // ============================================================
   // BUILD
   // ============================================================
 
@@ -512,6 +723,60 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
           ? const Center(child: Text('No Profit & Loss data.'))
           : LayoutBuilder(
               builder: (context, constraints) {
+                if (constraints.maxWidth < 700) {
+                  return RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      children: [
+                        _mobileProfitLoss(report),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: report.netProfit >= 0
+                                ? const Color(0xffedf7ef)
+                                : const Color(0xffffeeee),
+                            border: Border.all(color: Colors.grey.shade400),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                report.netProfit >= 0
+                                    ? 'Net Profit for the selected period'
+                                    : 'Net Loss for the selected period',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  _money(report.netProfit),
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  );
+                }
+
+                // DESKTOP / PC:
+                // Original layout below is intentionally unchanged.
                 return RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(

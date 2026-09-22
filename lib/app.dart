@@ -20,6 +20,11 @@ class NexeraInventoryApp extends StatelessWidget {
 
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.green),
 
+      // Desktop keyboard + mouse scrolling support.
+      // Arrow keys, Page Up/Down, Home/End work with focused scroll views.
+      // Text fields keep their normal editing/backspace behavior.
+      scrollBehavior: const MaterialScrollBehavior().copyWith(scrollbars: true),
+
       home: const LicenseGate(),
     );
   }

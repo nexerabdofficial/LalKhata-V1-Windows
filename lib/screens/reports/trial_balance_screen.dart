@@ -174,6 +174,174 @@ class _TrialBalanceScreenState extends State<TrialBalanceScreen> {
     );
   }
 
+  // ============================================================
+  // MOBILE-ONLY TRIAL BALANCE
+  // Desktop DataTable is intentionally untouched.
+  // ============================================================
+
+  Widget _mobileAmountPair(String title, double debit, double credit) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 92,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text(
+                  'Debit',
+                  style: TextStyle(fontSize: 9.5, color: Colors.black54),
+                ),
+                Text(
+                  debit.abs() < 0.000001 ? '-' : '৳${_format(debit)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 92,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text(
+                  'Credit',
+                  style: TextStyle(fontSize: 9.5, color: Colors.black54),
+                ),
+                Text(
+                  credit.abs() < 0.000001 ? '-' : '৳${_format(credit)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileAccountCard(FFTrialBalanceRow row) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              row.accountName,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              row.groupName.isEmpty ? '-' : row.groupName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, color: Colors.grey.shade700),
+            ),
+            const Divider(height: 16),
+            _mobileAmountPair('Opening', row.openingDebit, row.openingCredit),
+            _mobileAmountPair('Period', row.periodDebit, row.periodCredit),
+            _mobileAmountPair('Closing', row.closingDebit, row.closingCredit),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileTotals(FFTrialBalanceReport report) {
+    return Card(
+      margin: const EdgeInsets.only(top: 2),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xfff3f5ef),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'TOTAL',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const Divider(height: 16),
+            _mobileAmountPair(
+              'Opening',
+              report.openingDebit,
+              report.openingCredit,
+            ),
+            _mobileAmountPair(
+              'Period',
+              report.periodDebit,
+              report.periodCredit,
+            ),
+            _mobileAmountPair(
+              'Closing',
+              report.closingDebit,
+              report.closingCredit,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileTrialBalance(FFTrialBalanceReport report) {
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: [
+          _summaryCard(
+            'Opening Position',
+            report.openingDebit,
+            report.openingCredit,
+          ),
+          _summaryCard(
+            'Period Movement',
+            report.periodDebit,
+            report.periodCredit,
+          ),
+          _summaryCard(
+            'Closing Position',
+            report.closingDebit,
+            report.closingCredit,
+          ),
+          const SizedBox(height: 8),
+          ...report.rows.map(_mobileAccountCard),
+          _mobileTotals(report),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final report = _report;
@@ -193,36 +361,46 @@ class _TrialBalanceScreenState extends State<TrialBalanceScreen> {
           ? const Center(child: CircularProgressIndicator())
           : report == null
           ? const Center(child: Text('No Trial Balance data.'))
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                children: [
-                  _summaryCard(
-                    'Opening Position',
-                    report.openingDebit,
-                    report.openingCredit,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 700) {
+                  return _mobileTrialBalance(report);
+                }
+
+                // DESKTOP / PC:
+                // Original Trial Balance layout is unchanged.
+                return RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(12),
+                    children: [
+                      _summaryCard(
+                        'Opening Position',
+                        report.openingDebit,
+                        report.openingCredit,
+                      ),
+                      _summaryCard(
+                        'Period Movement',
+                        report.periodDebit,
+                        report.periodCredit,
+                      ),
+                      _summaryCard(
+                        'Closing Position',
+                        report.closingDebit,
+                        report.closingCredit,
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: _table(report),
+                        ),
+                      ),
+                    ],
                   ),
-                  _summaryCard(
-                    'Period Movement',
-                    report.periodDebit,
-                    report.periodCredit,
-                  ),
-                  _summaryCard(
-                    'Closing Position',
-                    report.closingDebit,
-                    report.closingCredit,
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: _table(report),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
     );
   }

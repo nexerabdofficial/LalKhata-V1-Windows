@@ -457,6 +457,287 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
   }
 
   // ============================================================
+  // MOBILE-ONLY BALANCE SHEET
+  // Desktop widgets/layout are intentionally untouched.
+  // ============================================================
+
+  Widget _mobileErpPanel({
+    required String heading,
+    required double total,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            color: const Color(0xff173f35),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    heading,
+                    maxLines: 2,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _money(total),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...children,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xfff3f5ef),
+              border: Border(top: BorderSide(color: Colors.grey.shade400)),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'TOTAL',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  _money(total),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileLiabilitySide(FFBalanceSheetReport report) {
+    final capitalRows = report.equity
+        .where((e) => _visible(e.balance))
+        .toList();
+
+    final capitalValue = report.ledgerEquity + report.currentProfit;
+
+    return _mobileErpPanel(
+      heading: 'CAPITAL & LIABILITIES',
+      total: report.liabilitiesAndEquity,
+      children: [
+        _groupTitle('Capital & Reserves', capitalValue),
+
+        _rows(capitalRows),
+
+        if (_visible(report.currentProfit))
+          _ledgerRow(
+            report.currentProfit >= 0 ? 'Current Profit' : 'Current Loss',
+            report.currentProfit,
+          ),
+
+        if (_loanPayables.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Loans', _sum(_loanPayables)),
+          _rows(_loanPayables),
+        ],
+
+        if (_supplierPayables.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Sundry Creditors / Payables', _sum(_supplierPayables)),
+          _rows(_supplierPayables),
+        ],
+
+        if (_otherLiabilities.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Other Current Liabilities', _sum(_otherLiabilities)),
+          _rows(_otherLiabilities),
+        ],
+      ],
+    );
+  }
+
+  Widget _mobileAssetSide(FFBalanceSheetReport report) {
+    return _mobileErpPanel(
+      heading: 'ASSETS',
+      total: report.totalAssets,
+      children: [
+        if (_fixedAssets.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Fixed Assets', _sum(_fixedAssets)),
+          _rows(_fixedAssets),
+        ],
+
+        _groupTitle('Current Assets', report.totalAssets - _sum(_fixedAssets)),
+
+        if (_cashBankMfs.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Cash / Bank / MFS', _sum(_cashBankMfs)),
+          _rows(_cashBankMfs),
+        ],
+
+        if (_receivables.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Sundry Debtors / Receivables', _sum(_receivables)),
+          _rows(_receivables),
+        ],
+
+        if (_loanReceivables.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Loans & Advances', _sum(_loanReceivables)),
+          _rows(_loanReceivables),
+        ],
+
+        _groupTitle('Closing Stock', report.inventoryValue),
+
+        _ledgerRow('Inventory / Stock', report.inventoryValue),
+
+        if (_otherAssets.any((e) => _visible(e.balance))) ...[
+          _groupTitle('Other Current Assets', _sum(_otherAssets)),
+          _rows(_otherAssets),
+        ],
+      ],
+    );
+  }
+
+  Widget _mobileBalanceSheetHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            GABBranding.businessName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xff173f35),
+            ),
+          ),
+          const SizedBox(height: 3),
+          const Text(
+            'Balance Sheet',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Statement of Financial Position',
+            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileControlBar(FFBalanceSheetReport report) {
+    final difference = report.accountingDifference;
+    final balanced = difference.abs() < 0.005;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: balanced ? const Color(0xffedf7ef) : const Color(0xfffff7e6),
+        border: Border.all(
+          color: balanced ? Colors.green.shade300 : Colors.orange.shade300,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                balanced ? Icons.check_circle_outline : Icons.info_outline,
+                size: 19,
+                color: balanced
+                    ? Colors.green.shade700
+                    : Colors.orange.shade800,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  balanced
+                      ? 'Balance Sheet is balanced.'
+                      : 'Opening / accounting difference: '
+                            '${_money(difference)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: balanced
+                        ? Colors.green.shade800
+                        : Colors.orange.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _mobileSummaryLine('Assets', report.totalAssets),
+          const SizedBox(height: 5),
+          _mobileSummaryLine(
+            'Capital & Liabilities',
+            report.liabilitiesAndEquity,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileSummaryLine(String label, double amount) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _money(amount),
+          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  Widget _mobileBalanceSheet(FFBalanceSheetReport report) {
+    return RefreshIndicator(
+      onRefresh: _loadBalanceSheet,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(12),
+        children: [
+          _mobileBalanceSheetHeader(),
+          const SizedBox(height: 8),
+          _mobileLiabilitySide(report),
+          const SizedBox(height: 8),
+          _mobileAssetSide(report),
+          const SizedBox(height: 8),
+          _mobileControlBar(report),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
   // BUILD
   // ============================================================
 
@@ -501,6 +782,12 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
           ? const Center(child: Text('No Balance Sheet data.'))
           : LayoutBuilder(
               builder: (context, constraints) {
+                if (constraints.maxWidth < 700) {
+                  return _mobileBalanceSheet(report);
+                }
+
+                // DESKTOP / PC:
+                // Original layout below is intentionally unchanged.
                 return RefreshIndicator(
                   onRefresh: _loadBalanceSheet,
                   child: ListView(

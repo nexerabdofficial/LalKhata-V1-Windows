@@ -538,136 +538,242 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     );
   }
 
+  // ============================================================
+  // MOBILE-ONLY ACCOUNT ACTIONS
+  // Desktop AppBar actions remain unchanged.
+  // ============================================================
+
+  Future<void> _handleMobileAction(String value) async {
+    switch (value) {
+      case 'cash_flow':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CashFlowScreen()),
+        );
+        await _loadAccounts();
+        break;
+
+      case 'contra':
+        final refresh = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FundTransferScreen()),
+        );
+
+        if (refresh == true) {
+          await _loadAccounts();
+        }
+        break;
+
+      case 'reconciliation':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ReconciliationScreen()),
+        );
+        await _loadAccounts();
+        break;
+
+      case 'journal':
+        final refresh = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const JournalScreen()),
+        );
+
+        if (refresh == true) {
+          await _loadAccounts();
+        }
+        break;
+    }
+  }
+
+  Widget _mobileActionsMenu() {
+    return PopupMenuButton<String>(
+      tooltip: 'Account Actions',
+      icon: const Icon(Icons.more_vert),
+      onSelected: _handleMobileAction,
+      itemBuilder: (_) => const [
+        PopupMenuItem<String>(
+          value: 'cash_flow',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.account_balance_wallet_outlined),
+            title: Text('Cash Flow'),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'contra',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.swap_horiz),
+            title: Text('Contra'),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'reconciliation',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.fact_check_outlined),
+            title: Text('Reconciliation'),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'journal',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.menu_book_outlined),
+            title: Text('Journal'),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Accounts"),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const CashFlowScreen()),
-                );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 700;
 
-                await _loadAccounts();
-              },
-              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-              label: const Text('Cash Flow'),
-            ),
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text("Accounts"),
+            actions: isMobile
+                ? [_mobileActionsMenu(), const SizedBox(width: 6)]
+                : [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const CashFlowScreen(),
+                            ),
+                          );
+
+                          await _loadAccounts();
+                        },
+                        icon: const Icon(
+                          Icons.account_balance_wallet_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Cash Flow'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final refresh = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const FundTransferScreen(),
+                            ),
+                          );
+
+                          if (refresh == true) {
+                            await _loadAccounts();
+                          }
+                        },
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text('Contra'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ReconciliationScreen(),
+                            ),
+                          );
+
+                          await _loadAccounts();
+                        },
+                        icon: const Icon(Icons.fact_check_outlined, size: 18),
+                        label: const Text('Reconciliation'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final refresh = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const JournalScreen(),
+                          ),
+                        );
+
+                        if (refresh == true) {
+                          await _loadAccounts();
+                        }
+                      },
+                      icon: const Icon(Icons.menu_book_outlined, size: 18),
+                      label: const Text('Journal'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
           ),
-          const SizedBox(width: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final refresh = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const FundTransferScreen()),
-                );
 
-                if (refresh == true) {
-                  await _loadAccounts();
-                }
-              },
-              icon: const Icon(Icons.swap_horiz, size: 18),
-              label: const Text('Contra'),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ReconciliationScreen(),
-                  ),
-                );
-
-                await _loadAccounts();
-              },
-              icon: const Icon(Icons.fact_check_outlined, size: 18),
-              label: const Text('Reconciliation'),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          OutlinedButton.icon(
+          floatingActionButton: FloatingActionButton(
+            child: const Icon(Icons.add),
             onPressed: () async {
-              final refresh = await Navigator.push(
+              await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const JournalScreen()),
+                MaterialPageRoute(builder: (_) => const AddAccountScreen()),
               );
 
-              if (refresh == true) {
-                await _loadAccounts();
-              }
+              await _loadAccounts();
             },
-            icon: const Icon(Icons.menu_book_outlined, size: 18),
-            label: const Text('Journal'),
           ),
-          const SizedBox(width: 8),
-        ],
-      ),
 
-      floatingActionButton: FloatingActionButton(
-        child: const Icon(Icons.add),
-        onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddAccountScreen()),
-          );
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _loadAccounts,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: "Search account...",
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
 
-          await _loadAccounts();
-        },
-      ),
-
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadAccounts,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: "Search account...",
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: _searchController.text.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  _searchController.clear();
-
-                                  setState(() {
-                                    _search = "";
-                                  });
-                                },
-                              ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                                      setState(() {
+                                        _search = "";
+                                      });
+                                    },
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _search = value;
+                            });
+                          },
                         ),
                       ),
-                      onChanged: (value) {
-                        setState(() {
-                          _search = value;
-                        });
-                      },
-                    ),
-                  ),
 
-                  Expanded(child: _buildHierarchy()),
-                ],
-              ),
-            ),
+                      Expanded(child: _buildHierarchy()),
+                    ],
+                  ),
+                ),
+        );
+      },
     );
   }
 }

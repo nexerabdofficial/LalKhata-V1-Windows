@@ -739,6 +739,211 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
   }
 
   // ============================================================
+  // MOBILE-ONLY LEDGER
+  // Desktop ledger table/totals are intentionally untouched.
+  // ============================================================
+
+  Widget _mobileOpeningCard() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _fromDate != null
+                        ? 'Balance Brought Forward'
+                        : 'Opening Balance',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '৳${_formatMoney(_openingBalance)}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _fromDate != null
+                  ? 'B/F'
+                  : '${_formatDate(widget.account.openingDate)}  •  OB',
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileTransactionCard(Map<String, dynamic> transaction) {
+    final debit = _toDouble(transaction['debit']);
+    final credit = _toDouble(transaction['credit']);
+    final balance = _toDouble(transaction['running_balance']);
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    _formatDate(_transactionDate(transaction)),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _voucher(transaction),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              _description(transaction),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+
+            const Divider(height: 20),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _amountText(transaction),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: _amountColor(transaction),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Balance',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '৳${_formatMoney(balance)}',
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            if (debit > 0 || credit > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      debit > 0 ? 'Debit: ৳${_formatMoney(debit)}' : 'Debit: -',
+                      style: const TextStyle(fontSize: 10.5),
+                    ),
+                  ),
+                  Text(
+                    credit > 0
+                        ? 'Credit: ৳${_formatMoney(credit)}'
+                        : 'Credit: -',
+                    style: const TextStyle(fontSize: 10.5),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileLedgerEntries() {
+    if (_openingBalance == 0 && _transactions.isEmpty) {
+      return const Card(
+        margin: EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Center(
+            child: Text(
+              'No transactions yet.',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        if (_openingBalance != 0) _mobileOpeningCard(),
+        ..._transactions.map(_mobileTransactionCard),
+      ],
+    );
+  }
+
+  Widget _mobileTotals() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Column(
+          children: [
+            _compactSummaryLine('Total Debit', _totalDebit),
+            const Divider(height: 1),
+            _compactSummaryLine('Total Credit', _totalCredit),
+            const Divider(height: 1),
+            _compactSummaryLine('Balance', _currentBalance, bold: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
   // BUILD
   // ============================================================
 
@@ -765,8 +970,14 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                 children: [
                   _buildDateFilter(),
                   _buildSummary(),
-                  _buildLedgerTable(),
-                  _buildTotals(),
+                  if (MediaQuery.sizeOf(context).width < 700)
+                    _mobileLedgerEntries()
+                  else
+                    _buildLedgerTable(),
+                  if (MediaQuery.sizeOf(context).width < 700)
+                    _mobileTotals()
+                  else
+                    _buildTotals(),
                 ],
               ),
             ),
