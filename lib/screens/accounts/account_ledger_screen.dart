@@ -295,23 +295,14 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
   String _secondaryDescription(Map<String, dynamic> row) {
     final counterparty = row['counterparty']?.toString().trim() ?? '';
 
-    if (counterparty.isEmpty) {
+    // When a real counterparty exists, the primary particulars already
+    // show a clean "Received from ..." / "Paid to ..." description.
+    // Do not expose internal accounting counterpart ledgers underneath.
+    if (counterparty.isNotEmpty) {
       return '';
     }
 
-    final note = row['note']?.toString().trim() ?? '';
-
-    if (note.isNotEmpty) {
-      return note;
-    }
-
-    final description = row['description']?.toString().trim() ?? '';
-
-    if (description.isNotEmpty) {
-      return description;
-    }
-
-    return row['transaction_type']?.toString().trim() ?? '';
+    return '';
   }
 
   String _transactionDate(Map<String, dynamic> row) {

@@ -1,3 +1,5 @@
+import '../../database/database_helper.dart';
+import '../dashboard/dashboard_screen.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +12,7 @@ import 'about_screen.dart';
 import 'backup_restore_screen.dart';
 import 'currency_screen.dart';
 import 'license_screen.dart';
+import 'keyboard_shortcuts_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -435,6 +438,165 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // BUILD
   // ============================================================
 
+  Future<void> _resetBusinessData() async {
+    final firstConfirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded),
+              SizedBox(width: 10),
+              Expanded(child: Text('Reset Business Data')),
+            ],
+          ),
+          content: const Text(
+            'This will permanently delete all business data for the '
+            'currently active company.\n\n'
+            'Sales, purchases, products, customers, suppliers, accounts, '
+            'journal entries, stock, production and other business records '
+            'will be deleted.\n\n'
+            'License activation and app preferences will not be deleted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (firstConfirmed != true || !mounted) return;
+
+    final controller = TextEditingController();
+
+    final finalConfirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        bool canReset = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Final Confirmation'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'This action cannot be undone.\n\n'
+                    'Type RESET below to permanently delete all business data.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Type RESET',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        canReset = value.trim().toUpperCase() == 'RESET';
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: canReset
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  child: const Text('Delete All Data'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (finalConfirmed != true || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Expanded(child: Text('Resetting business data...')),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      await DatabaseHelper.instance.resetBusinessDatabase();
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Reset Complete'),
+            content: const Text(
+              'All business data has been deleted successfully. '
+              'A fresh database is ready.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Database reset failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final aboutName = _businessName.isEmpty ? 'About' : 'About $_businessName';
@@ -648,6 +810,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 20),
 
                 // ==================================================
+                // KEYBOARD SHORTCUTS
+                // ==================================================
+                const Text(
+                  'Keyboard',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 8),
+
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.keyboard_alt_outlined),
+                    title: const Text(
+                      'Keyboard Shortcuts',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const Text(
+                      'View and customize desktop shortcuts',
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const KeyboardShortcutsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ==================================================
                 // CUSTOMIZATION
                 // ==================================================
                 const Text(
@@ -781,6 +977,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : _editWeatherLocation,
                       ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ==================================================
+                // DATA MANAGEMENT
+                // ==================================================
+                const Text(
+                  'Data Management',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 8),
+
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.delete_forever_outlined),
+                    title: const Text(
+                      'Reset Business Data',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const Text(
+                      'Delete all business records and start with a fresh database',
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
+                    onTap: _resetBusinessData,
                   ),
                 ),
 

@@ -337,6 +337,50 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
   }
 
   // ============================================================
+  // COLLAPSIBLE BALANCE SHEET GROUP
+  // ============================================================
+
+  Widget _expandableGroup(
+    String title,
+    double amount,
+    List<FFBalanceSheetRow> rows,
+  ) {
+    final visibleRows = rows.where((row) => _visible(row.balance)).toList();
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+        childrenPadding: EdgeInsets.zero,
+        minTileHeight: 38,
+        dense: true,
+        initiallyExpanded: false,
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _money(amount),
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 5),
+            const Icon(Icons.keyboard_arrow_down, size: 19),
+          ],
+        ),
+        children: visibleRows
+            .map((row) => _ledgerRow(row.accountName, row.balance))
+            .toList(),
+      ),
+    );
+  }
+
+  // ============================================================
   // LEFT SIDE
   // ============================================================
 
@@ -351,33 +395,43 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
       heading: 'CAPITAL & LIABILITIES',
       total: report.liabilitiesAndEquity,
       children: [
-        _groupTitle('Capital & Reserves', capitalValue),
-
-        _rows(capitalRows),
+        if (capitalRows.isNotEmpty)
+          _expandableGroup('Capital & Reserves', capitalValue, capitalRows)
+        else
+          _groupTitle('Capital & Reserves', capitalValue),
 
         if (_visible(report.openingDifference))
-          _ledgerRow('Opening Balance Equity', report.openingDifference),
+          _ledgerRow(
+            'Opening Balance Equity',
+            report.openingDifference,
+            strong: true,
+            indent: false,
+          ),
 
         if (_visible(report.currentProfit))
           _ledgerRow(
             report.currentProfit >= 0 ? 'Current Profit' : 'Current Loss',
             report.currentProfit,
+            strong: true,
+            indent: false,
           ),
 
-        if (_loanPayables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Loans', _sum(_loanPayables)),
-          _rows(_loanPayables),
-        ],
+        if (_loanPayables.any((e) => _visible(e.balance)))
+          _expandableGroup('Loans', _sum(_loanPayables), _loanPayables),
 
-        if (_supplierPayables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Sundry Creditors / Payables', _sum(_supplierPayables)),
-          _rows(_supplierPayables),
-        ],
+        if (_supplierPayables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Sundry Creditors / Payables',
+            _sum(_supplierPayables),
+            _supplierPayables,
+          ),
 
-        if (_otherLiabilities.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Other Current Liabilities', _sum(_otherLiabilities)),
-          _rows(_otherLiabilities),
-        ],
+        if (_otherLiabilities.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Other Current Liabilities',
+            _sum(_otherLiabilities),
+            _otherLiabilities,
+          ),
       ],
     );
   }
@@ -391,36 +445,40 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
       heading: 'ASSETS',
       total: report.totalAssets,
       children: [
-        if (_fixedAssets.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Fixed Assets', _sum(_fixedAssets)),
-          _rows(_fixedAssets),
-        ],
+        if (_fixedAssets.any((e) => _visible(e.balance)))
+          _expandableGroup('Fixed Assets', _sum(_fixedAssets), _fixedAssets),
 
         _groupTitle('Current Assets', report.totalAssets - _sum(_fixedAssets)),
 
-        if (_cashBankMfs.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Cash / Bank / MFS', _sum(_cashBankMfs)),
-          _rows(_cashBankMfs),
-        ],
+        if (_cashBankMfs.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Cash / Bank / MFS',
+            _sum(_cashBankMfs),
+            _cashBankMfs,
+          ),
 
-        if (_receivables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Sundry Debtors / Receivables', _sum(_receivables)),
-          _rows(_receivables),
-        ],
+        if (_receivables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Sundry Debtors / Receivables',
+            _sum(_receivables),
+            _receivables,
+          ),
 
-        if (_loanReceivables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Loans & Advances', _sum(_loanReceivables)),
-          _rows(_loanReceivables),
-        ],
+        if (_loanReceivables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Loans & Advances',
+            _sum(_loanReceivables),
+            _loanReceivables,
+          ),
 
         _groupTitle('Closing Stock', report.inventoryValue),
 
-        _ledgerRow('Inventory / Stock', report.inventoryValue),
-
-        if (_otherAssets.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Other Current Assets', _sum(_otherAssets)),
-          _rows(_otherAssets),
-        ],
+        if (_otherAssets.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Other Current Assets',
+            _sum(_otherAssets),
+            _otherAssets,
+          ),
       ],
     );
   }
@@ -639,33 +697,43 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
       heading: 'CAPITAL & LIABILITIES',
       total: report.liabilitiesAndEquity,
       children: [
-        _groupTitle('Capital & Reserves', capitalValue),
-
-        _rows(capitalRows),
+        if (capitalRows.isNotEmpty)
+          _expandableGroup('Capital & Reserves', capitalValue, capitalRows)
+        else
+          _groupTitle('Capital & Reserves', capitalValue),
 
         if (_visible(report.openingDifference))
-          _ledgerRow('Opening Balance Equity', report.openingDifference),
+          _ledgerRow(
+            'Opening Balance Equity',
+            report.openingDifference,
+            strong: true,
+            indent: false,
+          ),
 
         if (_visible(report.currentProfit))
           _ledgerRow(
             report.currentProfit >= 0 ? 'Current Profit' : 'Current Loss',
             report.currentProfit,
+            strong: true,
+            indent: false,
           ),
 
-        if (_loanPayables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Loans', _sum(_loanPayables)),
-          _rows(_loanPayables),
-        ],
+        if (_loanPayables.any((e) => _visible(e.balance)))
+          _expandableGroup('Loans', _sum(_loanPayables), _loanPayables),
 
-        if (_supplierPayables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Sundry Creditors / Payables', _sum(_supplierPayables)),
-          _rows(_supplierPayables),
-        ],
+        if (_supplierPayables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Sundry Creditors / Payables',
+            _sum(_supplierPayables),
+            _supplierPayables,
+          ),
 
-        if (_otherLiabilities.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Other Current Liabilities', _sum(_otherLiabilities)),
-          _rows(_otherLiabilities),
-        ],
+        if (_otherLiabilities.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Other Current Liabilities',
+            _sum(_otherLiabilities),
+            _otherLiabilities,
+          ),
       ],
     );
   }
@@ -675,36 +743,40 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
       heading: 'ASSETS',
       total: report.totalAssets,
       children: [
-        if (_fixedAssets.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Fixed Assets', _sum(_fixedAssets)),
-          _rows(_fixedAssets),
-        ],
+        if (_fixedAssets.any((e) => _visible(e.balance)))
+          _expandableGroup('Fixed Assets', _sum(_fixedAssets), _fixedAssets),
 
         _groupTitle('Current Assets', report.totalAssets - _sum(_fixedAssets)),
 
-        if (_cashBankMfs.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Cash / Bank / MFS', _sum(_cashBankMfs)),
-          _rows(_cashBankMfs),
-        ],
+        if (_cashBankMfs.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Cash / Bank / MFS',
+            _sum(_cashBankMfs),
+            _cashBankMfs,
+          ),
 
-        if (_receivables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Sundry Debtors / Receivables', _sum(_receivables)),
-          _rows(_receivables),
-        ],
+        if (_receivables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Sundry Debtors / Receivables',
+            _sum(_receivables),
+            _receivables,
+          ),
 
-        if (_loanReceivables.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Loans & Advances', _sum(_loanReceivables)),
-          _rows(_loanReceivables),
-        ],
+        if (_loanReceivables.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Loans & Advances',
+            _sum(_loanReceivables),
+            _loanReceivables,
+          ),
 
         _groupTitle('Closing Stock', report.inventoryValue),
 
-        _ledgerRow('Inventory / Stock', report.inventoryValue),
-
-        if (_otherAssets.any((e) => _visible(e.balance))) ...[
-          _groupTitle('Other Current Assets', _sum(_otherAssets)),
-          _rows(_otherAssets),
-        ],
+        if (_otherAssets.any((e) => _visible(e.balance)))
+          _expandableGroup(
+            'Other Current Assets',
+            _sum(_otherAssets),
+            _otherAssets,
+          ),
       ],
     );
   }

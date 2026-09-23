@@ -91,6 +91,51 @@ class DatabaseHelper {
   }
 
   // ============================================================
+  // RESET ACTIVE BUSINESS DATABASE
+  //
+  // Deletes ONLY the database belonging to the currently active
+  // license/customer and immediately recreates a fresh schema.
+  //
+  // SharedPreferences are intentionally untouched, therefore:
+  // - License / activation remains
+  // - Branding/settings remain
+  // - Backup folder remains
+  // - Keyboard shortcuts remain
+  // ============================================================
+
+  Future<void> resetBusinessDatabase() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedCode = prefs.getString(_customerCodeKey);
+
+    if (savedCode == null || savedCode.trim().isEmpty) {
+      throw Exception(
+        'Cannot reset database: no active license/customer code found.',
+      );
+    }
+
+    final normalizedCode = _normalizeCustomerCode(savedCode);
+
+    final databaseDirectory = await _getDatabaseDirectory();
+
+    final dbKey = _databaseKey(normalizedCode);
+
+    final path = join(databaseDirectory, 'lalkhata_$dbKey.db');
+
+    // Release all SQLite handles before deleting the file.
+    await closeDatabase();
+
+    if (await databaseExists(path)) {
+      await deleteDatabase(path);
+    }
+
+    // Recreate the active license database through the normal
+    // database initialization path. This runs the current schema's
+    // onCreate logic instead of manually clearing tables.
+    _database = await _initDatabase(customerCode: normalizedCode);
+  }
+
+  // ============================================================
   // NORMALIZE CUSTOMER CODE
   // ============================================================
 

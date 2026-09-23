@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'main.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'services/license_service.dart';
+import 'widgets/global_keyboard_shortcuts.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 class NexeraInventoryApp extends StatelessWidget {
   const NexeraInventoryApp({super.key});
@@ -12,6 +15,7 @@ class NexeraInventoryApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
 
       title: 'LalKhata',
@@ -24,6 +28,10 @@ class NexeraInventoryApp extends StatelessWidget {
       // Arrow keys, Page Up/Down, Home/End work with focused scroll views.
       // Text fields keep their normal editing/backspace behavior.
       scrollBehavior: const MaterialScrollBehavior().copyWith(scrollbars: true),
+
+      builder: (context, child) {
+        return GlobalKeyboardShortcuts(child: child ?? const SizedBox.shrink());
+      },
 
       home: const LicenseGate(),
     );

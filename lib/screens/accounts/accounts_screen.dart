@@ -186,8 +186,7 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
     final keyword = _search.trim().toLowerCase();
 
     return accounts.where((account) {
-      return account.name.toLowerCase().contains(keyword) ||
-          account.type.toLowerCase().contains(keyword);
+      return account.name.toLowerCase().contains(keyword);
     }).toList();
   }
 
