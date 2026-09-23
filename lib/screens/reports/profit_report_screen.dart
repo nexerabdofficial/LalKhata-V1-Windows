@@ -253,10 +253,10 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
         .toList();
 
     return _panel(
-      title: 'INCOME / REVENUE',
-      total: report.totalIncome,
+      title: 'CREDIT',
+      total: report.salesIncome + report.closingStock + report.otherIncome,
       children: [
-        _groupRow('Sales / Operating Revenue', report.salesIncome),
+        _groupRow('Sales Accounts', report.salesIncome),
 
         if (salesAccounts.isEmpty)
           _accountRow('Sales Income', report.salesIncome)
@@ -265,9 +265,15 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
             (row) => _accountRow(row.accountName, row.amount),
           ),
 
+        _groupRow('Closing Stock', report.closingStock),
+        _accountRow('Inventory / Stock', report.closingStock),
+
+        const SizedBox(height: 8),
+
+        _groupRow('Gross Profit b/f', report.grossProfit),
+
         if (_visible(report.otherIncome) || otherIncomeAccounts.isNotEmpty) ...[
           _groupRow('Other Income', report.otherIncome),
-
           if (otherIncomeAccounts.isEmpty)
             _accountRow('Other Income', report.otherIncome)
           else
@@ -276,22 +282,10 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
             ),
         ],
 
-        _groupRow('Total Revenue', report.totalIncome),
-
-        const SizedBox(height: 8),
-
-        _groupRow('Gross Profit', report.grossProfit),
-
-        _accountRow('Sales Revenue', report.salesIncome),
-
-        _accountRow('Less: Cost of Goods Sold', -report.cogs),
-
         const Spacer(),
 
-        _resultRow(
-          report.netProfit >= 0 ? 'NET PROFIT' : 'NET LOSS',
-          report.netProfit,
-        ),
+        if (report.netProfit < 0)
+          _resultRow('NET LOSS', report.netProfit.abs()),
       ],
     );
   }
@@ -302,47 +296,39 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
 
   Widget _expensePanel(FFProfitStatement report) {
     final expenses = report.expenseAccounts
-        .where((e) => _visible(e.amount))
+        .where((e) => e.groupCode != 'COST_OF_GOODS_SOLD' && _visible(e.amount))
         .toList();
 
     return _panel(
-      title: 'COST & EXPENSES',
-      total: report.cogs + report.operatingExpenses,
+      title: 'DEBIT',
+      total:
+          report.openingStock +
+          report.purchaseAccounts +
+          report.operatingExpenses,
       children: [
-        _groupRow('Cost of Sales', report.cogs),
+        _groupRow('Opening Stock', report.openingStock),
+        _accountRow('Inventory / Stock', report.openingStock),
 
-        _accountRow('Cost of Goods Sold', report.cogs),
+        _groupRow('Purchase Accounts', report.purchaseAccounts),
+        _accountRow('Purchases', report.purchaseAccounts),
 
-        _groupRow('Operating Expenses', report.operatingExpenses),
+        const SizedBox(height: 8),
+
+        _groupRow('Gross Profit c/o', report.grossProfit),
+
+        _groupRow(
+          'Office / Administrative & Other Expenses',
+          report.operatingExpenses,
+        ),
 
         if (expenses.isEmpty)
           _accountRow('Operating Expenses', report.operatingExpenses)
         else
           ...expenses.map((row) => _accountRow(row.accountName, row.amount)),
 
-        _groupRow(
-          'Total Cost & Expenses',
-          report.cogs + report.operatingExpenses,
-        ),
-
         const Spacer(),
 
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xfff3f5ef),
-            border: Border(top: BorderSide(color: Colors.grey.shade400)),
-          ),
-          child: Column(
-            children: [
-              _miniSummary('Gross Profit', report.grossProfit),
-              const SizedBox(height: 5),
-              _miniSummary('Other Income', report.otherIncome),
-              const SizedBox(height: 5),
-              _miniSummary('Operating Expenses', report.operatingExpenses),
-            ],
-          ),
-        ),
+        if (report.netProfit >= 0) _resultRow('NET PROFIT', report.netProfit),
       ],
     );
   }
@@ -409,6 +395,217 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
           ),
           ...children,
         ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // TALLY-STYLE TRADING + PROFIT & LOSS
+  // ============================================================
+
+  Widget _tallySide({
+    required String heading,
+    required List<Widget> children,
+    required double total,
+    bool mobile = false,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            color: const Color(0xff173f35),
+            child: Text(
+              heading,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ...children,
+          if (!mobile) const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xfff3f5ef),
+              border: Border(top: BorderSide(color: Colors.grey.shade400)),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'TOTAL',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  _money(total),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tradingDebit(FFProfitStatement report, {bool mobile = false}) {
+    final tradingTotal = report.salesIncome + report.closingStock;
+
+    return _tallySide(
+      heading: 'DEBIT',
+      total: tradingTotal,
+      mobile: mobile,
+      children: [
+        _groupRow('Opening Stock', report.openingStock),
+        if (_visible(report.openingStock))
+          _accountRow('Inventory / Stock', report.openingStock),
+
+        _groupRow('Purchase Accounts', report.purchaseAccounts),
+        if (_visible(report.purchaseAccounts))
+          _accountRow('Purchases', report.purchaseAccounts),
+
+        if (report.grossProfit >= 0)
+          _groupRow('Gross Profit c/o', report.grossProfit)
+        else
+          _groupRow('Gross Loss c/o', report.grossProfit.abs()),
+      ],
+    );
+  }
+
+  Widget _tradingCredit(FFProfitStatement report, {bool mobile = false}) {
+    final salesAccounts = report.incomeAccounts
+        .where((e) => e.groupCode == 'SALES_INCOME' && _visible(e.amount))
+        .toList();
+
+    final tradingTotal = report.salesIncome + report.closingStock;
+
+    return _tallySide(
+      heading: 'CREDIT',
+      total: tradingTotal,
+      mobile: mobile,
+      children: [
+        _groupRow('Sales Accounts', report.salesIncome),
+
+        if (salesAccounts.isEmpty)
+          _accountRow('Sales Income', report.salesIncome)
+        else
+          ...salesAccounts.map(
+            (row) => _accountRow(row.accountName, row.amount),
+          ),
+
+        _groupRow('Closing Stock', report.closingStock),
+        if (_visible(report.closingStock))
+          _accountRow('Inventory / Stock', report.closingStock),
+
+        if (report.grossProfit < 0)
+          _groupRow('Gross Loss c/o', report.grossProfit.abs()),
+      ],
+    );
+  }
+
+  Widget _profitLossDebit(FFProfitStatement report, {bool mobile = false}) {
+    final expenses = report.expenseAccounts
+        .where((e) => e.groupCode != 'COST_OF_GOODS_SOLD' && _visible(e.amount))
+        .toList();
+
+    final creditBase =
+        (report.grossProfit > 0 ? report.grossProfit : 0) + report.otherIncome;
+
+    final debitBase =
+        report.operatingExpenses +
+        (report.grossProfit < 0 ? report.grossProfit.abs() : 0);
+
+    final netProfit = creditBase > debitBase ? creditBase - debitBase : 0.0;
+
+    final sectionTotal = creditBase > debitBase ? creditBase : debitBase;
+
+    return _tallySide(
+      heading: 'DEBIT',
+      total: sectionTotal,
+      mobile: mobile,
+      children: [
+        if (report.grossProfit < 0)
+          _groupRow('Gross Loss b/f', report.grossProfit.abs()),
+
+        _groupRow(
+          'Office / Administrative & Other Expenses',
+          report.operatingExpenses,
+        ),
+
+        if (expenses.isEmpty && _visible(report.operatingExpenses))
+          _accountRow('Operating Expenses', report.operatingExpenses)
+        else
+          ...expenses.map((row) => _accountRow(row.accountName, row.amount)),
+
+        if (_visible(netProfit)) _resultRow('NET PROFIT', netProfit),
+      ],
+    );
+  }
+
+  Widget _profitLossCredit(FFProfitStatement report, {bool mobile = false}) {
+    final otherIncomeAccounts = report.incomeAccounts
+        .where((e) => e.groupCode != 'SALES_INCOME' && _visible(e.amount))
+        .toList();
+
+    final creditBase =
+        (report.grossProfit > 0 ? report.grossProfit : 0) + report.otherIncome;
+
+    final debitBase =
+        report.operatingExpenses +
+        (report.grossProfit < 0 ? report.grossProfit.abs() : 0);
+
+    final netLoss = debitBase > creditBase ? debitBase - creditBase : 0.0;
+
+    final sectionTotal = creditBase > debitBase ? creditBase : debitBase;
+
+    return _tallySide(
+      heading: 'CREDIT',
+      total: sectionTotal,
+      mobile: mobile,
+      children: [
+        if (report.grossProfit > 0)
+          _groupRow('Gross Profit b/f', report.grossProfit),
+
+        if (_visible(report.otherIncome) || otherIncomeAccounts.isNotEmpty) ...[
+          _groupRow('Other Income', report.otherIncome),
+
+          if (otherIncomeAccounts.isEmpty)
+            _accountRow('Other Income', report.otherIncome)
+          else
+            ...otherIncomeAccounts.map(
+              (row) => _accountRow(row.accountName, row.amount),
+            ),
+        ],
+
+        if (_visible(netLoss)) _resultRow('NET LOSS', netLoss),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: const Color(0xff173f35),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -587,16 +784,25 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
         .toList();
 
     return _panel(
-      title: 'INCOME / REVENUE',
-      total: report.totalIncome,
+      title: 'CREDIT',
+      total: report.salesIncome + report.closingStock + report.otherIncome,
       children: [
-        _groupRow('Sales / Operating Revenue', report.salesIncome),
+        _groupRow('Sales Accounts', report.salesIncome),
+
         if (salesAccounts.isEmpty)
           _accountRow('Sales Income', report.salesIncome)
         else
           ...salesAccounts.map(
             (row) => _accountRow(row.accountName, row.amount),
           ),
+
+        _groupRow('Closing Stock', report.closingStock),
+        _accountRow('Inventory / Stock', report.closingStock),
+
+        const SizedBox(height: 8),
+
+        _groupRow('Gross Profit b/f', report.grossProfit),
+
         if (_visible(report.otherIncome) || otherIncomeAccounts.isNotEmpty) ...[
           _groupRow('Other Income', report.otherIncome),
           if (otherIncomeAccounts.isEmpty)
@@ -606,57 +812,46 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
               (row) => _accountRow(row.accountName, row.amount),
             ),
         ],
-        _groupRow('Total Revenue', report.totalIncome),
-        const SizedBox(height: 8),
-        _groupRow('Gross Profit', report.grossProfit),
-        _accountRow('Sales Revenue', report.salesIncome),
-        _accountRow('Less: Cost of Goods Sold', -report.cogs),
-        const SizedBox(height: 8),
-        _resultRow(
-          report.netProfit >= 0 ? 'NET PROFIT' : 'NET LOSS',
-          report.netProfit,
-        ),
+
+        if (report.netProfit < 0)
+          _resultRow('NET LOSS', report.netProfit.abs()),
       ],
     );
   }
 
   Widget _mobileExpensePanel(FFProfitStatement report) {
     final expenses = report.expenseAccounts
-        .where((e) => _visible(e.amount))
+        .where((e) => e.groupCode != 'COST_OF_GOODS_SOLD' && _visible(e.amount))
         .toList();
 
     return _panel(
-      title: 'COST & EXPENSES',
-      total: report.cogs + report.operatingExpenses,
+      title: 'DEBIT',
+      total:
+          report.openingStock +
+          report.purchaseAccounts +
+          report.operatingExpenses,
       children: [
-        _groupRow('Cost of Sales', report.cogs),
-        _accountRow('Cost of Goods Sold', report.cogs),
-        _groupRow('Operating Expenses', report.operatingExpenses),
+        _groupRow('Opening Stock', report.openingStock),
+        _accountRow('Inventory / Stock', report.openingStock),
+
+        _groupRow('Purchase Accounts', report.purchaseAccounts),
+        _accountRow('Purchases', report.purchaseAccounts),
+
+        const SizedBox(height: 8),
+
+        _groupRow('Gross Profit c/o', report.grossProfit),
+
+        _groupRow(
+          'Office / Administrative & Other Expenses',
+          report.operatingExpenses,
+        ),
+
         if (expenses.isEmpty)
           _accountRow('Operating Expenses', report.operatingExpenses)
         else
           ...expenses.map((row) => _accountRow(row.accountName, row.amount)),
-        _groupRow(
-          'Total Cost & Expenses',
-          report.cogs + report.operatingExpenses,
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xfff3f5ef),
-            border: Border(top: BorderSide(color: Colors.grey.shade400)),
-          ),
-          child: Column(
-            children: [
-              _miniSummary('Gross Profit', report.grossProfit),
-              const SizedBox(height: 5),
-              _miniSummary('Other Income', report.otherIncome),
-              const SizedBox(height: 5),
-              _miniSummary('Operating Expenses', report.operatingExpenses),
-            ],
-          ),
-        ),
+
+        if (report.netProfit >= 0) _resultRow('NET PROFIT', report.netProfit),
       ],
     );
   }
@@ -667,11 +862,20 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
       children: [
         _mobileHeader(),
         const SizedBox(height: 8),
-        _mobileReportTitle(),
+
+        _sectionTitle('TRADING ACCOUNT'),
         const SizedBox(height: 2),
-        _mobileIncomePanel(report),
-        const SizedBox(height: 8),
-        _mobileExpensePanel(report),
+        _tradingDebit(report, mobile: true),
+        const SizedBox(height: 4),
+        _tradingCredit(report, mobile: true),
+
+        const SizedBox(height: 10),
+
+        _sectionTitle('PROFIT & LOSS ACCOUNT'),
+        const SizedBox(height: 2),
+        _profitLossDebit(report, mobile: true),
+        const SizedBox(height: 4),
+        _profitLossCredit(report, mobile: true),
       ],
     );
   }
@@ -820,16 +1024,36 @@ class _ProfitReportScreenState extends State<ProfitReportScreen> {
 
                       const SizedBox(height: 2),
 
+                      _sectionTitle('TRADING ACCOUNT'),
+
+                      const SizedBox(height: 2),
+
                       SizedBox(
-                        height: constraints.maxHeight > 650
-                            ? constraints.maxHeight - 180
-                            : 620,
+                        height: 280,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(child: _incomePanel(report)),
+                            Expanded(child: _tradingDebit(report)),
                             const SizedBox(width: 2),
-                            Expanded(child: _expensePanel(report)),
+                            Expanded(child: _tradingCredit(report)),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      _sectionTitle('PROFIT & LOSS ACCOUNT'),
+
+                      const SizedBox(height: 2),
+
+                      SizedBox(
+                        height: 280,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: _profitLossDebit(report)),
+                            const SizedBox(width: 2),
+                            Expanded(child: _profitLossCredit(report)),
                           ],
                         ),
                       ),

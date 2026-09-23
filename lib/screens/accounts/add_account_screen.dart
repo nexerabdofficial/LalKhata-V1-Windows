@@ -10,8 +10,9 @@ import '../suppliers/add_supplier_screen.dart';
 
 class AddAccountScreen extends StatefulWidget {
   final Account? account;
+  final bool stayAfterSave;
 
-  const AddAccountScreen({super.key, this.account});
+  const AddAccountScreen({super.key, this.account, this.stayAfterSave = false});
 
   @override
   State<AddAccountScreen> createState() => _AddAccountScreenState();
@@ -137,6 +138,16 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     if (!mounted) return;
 
     if (result == true) {
+      if (widget.stayAfterSave) {
+        setState(() {
+          _newAccountType = null;
+          _type = "BANK";
+          _selectedGroup = null;
+        });
+
+        return;
+      }
+
       Navigator.pop(context, true);
     }
   }
@@ -271,6 +282,24 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       }
 
       if (!mounted) return;
+
+      if (!isEdit && widget.stayAfterSave) {
+        _nameController.clear();
+        _openingBalanceController.text = "0";
+
+        setState(() {
+          _openingDate = DateTime.now();
+          _newAccountType = null;
+          _type = "BANK";
+          _selectedGroup = null;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Account saved successfully.")),
+        );
+
+        return;
+      }
 
       Navigator.pop(context, true);
     } catch (e) {

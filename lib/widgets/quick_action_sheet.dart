@@ -30,7 +30,7 @@ class QuickActionSheet {
           icon: Icons.account_balance_outlined,
           title: 'Add Account',
           subtitle: 'Customer, Supplier, Cash, Bank, MFS, Asset, Liability...',
-          page: const AddAccountScreen(),
+          page: const AddAccountScreen(stayAfterSave: true),
         ),
         _QuickSheetItem(
           icon: Icons.account_tree_outlined,

@@ -25,6 +25,10 @@ class FFProfitStatement {
   final double cogs;
   final double operatingExpenses;
 
+  final double openingStock;
+  final double purchaseAccounts;
+  final double closingStock;
+
   const FFProfitStatement({
     required this.incomeAccounts,
     required this.expenseAccounts,
@@ -32,10 +36,14 @@ class FFProfitStatement {
     required this.otherIncome,
     required this.cogs,
     required this.operatingExpenses,
+    required this.openingStock,
+    required this.purchaseAccounts,
+    required this.closingStock,
   });
 
   double get totalIncome => salesIncome + otherIncome;
 
+  // Existing costing remains authoritative.
   double get grossProfit => salesIncome - cogs;
 
   double get netProfit => grossProfit + otherIncome - operatingExpenses;
@@ -94,6 +102,21 @@ class ProfitRepository {
     // and avoids both missing COGS and double-counting journal COGS.
     final cogs = await _getCogs(db, fromIso, toIso);
 
+    final openingStock = await _getInventoryBalanceBefore(db, fromIso);
+
+    final purchaseAccounts = await _getPurchaseInventoryMovement(
+      db,
+      fromIso,
+      toIso,
+    );
+
+    // Trading presentation only.
+    //
+    // Existing sale-time weighted-average COGS remains untouched.
+    // This identity simply exposes the same stock movement in
+    // Opening Stock / Purchases / Closing Stock form.
+    final closingStock = openingStock + purchaseAccounts - cogs;
+
     return FFProfitStatement(
       incomeAccounts: incomeRows,
       expenseAccounts: expenseRows,
@@ -101,6 +124,9 @@ class ProfitRepository {
       otherIncome: otherIncome,
       cogs: cogs,
       operatingExpenses: operatingExpenses,
+      openingStock: openingStock,
+      purchaseAccounts: purchaseAccounts,
+      closingStock: closingStock,
     );
   }
 
@@ -228,6 +254,100 @@ class ProfitRepository {
           ),
         )
         .toList();
+  }
+
+  // ============================================================
+  // TRADING ACCOUNT STOCK FIGURES
+  // ============================================================
+
+  Future<int?> _getInventoryAccountId(DatabaseExecutor db) async {
+    final rows = await db.rawQuery('''
+      SELECT a.id
+      FROM accounts a
+      INNER JOIN ff_account_links l
+        ON l.account_id = a.id
+       AND l.is_primary = 1
+      INNER JOIN ff_account_groups g
+        ON g.id = l.group_id
+      WHERE UPPER(a.type) = 'INVENTORY'
+         OR UPPER(g.group_code) = 'INVENTORY'
+      ORDER BY a.id
+      LIMIT 1
+      ''');
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return (rows.first['id'] as num).toInt();
+  }
+
+  Future<double> _getInventoryBalanceBefore(
+    DatabaseExecutor db,
+    String fromIso,
+  ) async {
+    final inventoryAccountId = await _getInventoryAccountId(db);
+
+    if (inventoryAccountId == null) {
+      return 0;
+    }
+
+    final accountRows = await db.query(
+      'accounts',
+      columns: ['opening_balance'],
+      where: 'id = ?',
+      whereArgs: [inventoryAccountId],
+      limit: 1,
+    );
+
+    final opening = accountRows.isEmpty
+        ? 0.0
+        : _toDouble(accountRows.first['opening_balance']);
+
+    final movementRows = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(jl.debit), 0) -
+        COALESCE(SUM(jl.credit), 0) AS movement
+      FROM journal_lines jl
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+      WHERE jl.account_id = ?
+        AND je.transaction_date < ?
+      ''',
+      [inventoryAccountId, fromIso],
+    );
+
+    return opening + _toDouble(movementRows.first['movement']);
+  }
+
+  Future<double> _getPurchaseInventoryMovement(
+    DatabaseExecutor db,
+    String fromIso,
+    String toIso,
+  ) async {
+    final inventoryAccountId = await _getInventoryAccountId(db);
+
+    if (inventoryAccountId == null) {
+      return 0;
+    }
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(jl.debit), 0) -
+        COALESCE(SUM(jl.credit), 0) AS amount
+      FROM journal_lines jl
+      INNER JOIN journal_entries je
+        ON je.id = jl.journal_id
+      WHERE jl.account_id = ?
+        AND UPPER(je.transaction_type) = 'PURCHASE'
+        AND je.transaction_date BETWEEN ? AND ?
+      ''',
+      [inventoryAccountId, fromIso, toIso],
+    );
+
+    return _toDouble(rows.first['amount']);
   }
 
   // ============================================================

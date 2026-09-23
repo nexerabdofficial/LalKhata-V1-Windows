@@ -198,16 +198,94 @@ class ProfitLossPdf {
     // LEFT
     // ==========================================================
 
+    final tradingTotal = report.salesIncome + report.closingStock;
+
+    final plCredit =
+        (report.grossProfit > 0 ? report.grossProfit : 0) + report.otherIncome;
+
+    final plDebit =
+        report.operatingExpenses +
+        (report.grossProfit < 0 ? report.grossProfit.abs() : 0);
+
+    final plTotal = plCredit > plDebit ? plCredit : plDebit;
+    final netProfit = plCredit > plDebit ? plCredit - plDebit : 0.0;
+    final netLoss = plDebit > plCredit ? plDebit - plCredit : 0.0;
+
     final left = <pw.Widget>[
-      groupRow('Sales / Operating Revenue', report.salesIncome),
+      groupRow('Opening Stock', report.openingStock),
+
+      if (_visible(report.openingStock))
+        accountRow('Inventory / Stock', report.openingStock),
+
+      groupRow('Purchase Accounts', report.purchaseAccounts),
+
+      if (_visible(report.purchaseAccounts))
+        accountRow('Purchases', report.purchaseAccounts),
+
+      if (report.grossProfit >= 0)
+        groupRow('Gross Profit c/o', report.grossProfit)
+      else
+        groupRow('Gross Loss c/o', report.grossProfit.abs()),
+
+      pw.Spacer(),
+
+      groupRow('TOTAL', tradingTotal),
+    ];
+
+    final right = <pw.Widget>[
+      groupRow('Sales Accounts', report.salesIncome),
 
       if (salesAccounts.isEmpty)
         accountRow('Sales Income', report.salesIncome)
       else
         ...salesAccounts.map((e) => accountRow(e.accountName, e.amount)),
 
+      groupRow('Closing Stock', report.closingStock),
+
+      if (_visible(report.closingStock))
+        accountRow('Inventory / Stock', report.closingStock),
+
+      if (report.grossProfit < 0)
+        groupRow('Gross Loss c/o', report.grossProfit.abs()),
+
+      pw.Spacer(),
+
+      groupRow('TOTAL', tradingTotal),
+    ];
+
+    final profitLossLeft = <pw.Widget>[
+      if (report.grossProfit < 0)
+        groupRow('Gross Loss b/f', report.grossProfit.abs()),
+
+      groupRow(
+        'Office / Administrative & Other Expenses',
+        report.operatingExpenses,
+      ),
+
+      if (expenseAccounts
+          .where((e) => e.groupCode != 'COST_OF_GOODS_SOLD')
+          .isEmpty)
+        if (_visible(report.operatingExpenses))
+          accountRow('Operating Expenses', report.operatingExpenses)
+        else
+          ...expenseAccounts
+              .where((e) => e.groupCode != 'COST_OF_GOODS_SOLD')
+              .map((e) => accountRow(e.accountName, e.amount)),
+
+      if (_visible(netProfit)) resultRow('NET PROFIT', netProfit),
+
+      pw.Spacer(),
+
+      groupRow('TOTAL', plTotal),
+    ];
+
+    final profitLossRight = <pw.Widget>[
+      if (report.grossProfit > 0)
+        groupRow('Gross Profit b/f', report.grossProfit),
+
       if (_visible(report.otherIncome) || otherIncomeAccounts.isNotEmpty) ...[
         groupRow('Other Income', report.otherIncome),
+
         if (otherIncomeAccounts.isEmpty)
           accountRow('Other Income', report.otherIncome)
         else
@@ -216,59 +294,11 @@ class ProfitLossPdf {
           ),
       ],
 
-      groupRow('Total Revenue', report.totalIncome),
-
-      pw.SizedBox(height: 8),
-
-      groupRow('Gross Profit', report.grossProfit),
-
-      accountRow('Sales Revenue', report.salesIncome),
-
-      accountRow('Less: Cost of Goods Sold', -report.cogs),
+      if (_visible(netLoss)) resultRow('NET LOSS', netLoss),
 
       pw.Spacer(),
 
-      resultRow(
-        report.netProfit >= 0 ? 'NET PROFIT' : 'NET LOSS',
-        report.netProfit,
-      ),
-    ];
-
-    // ==========================================================
-    // RIGHT
-    // ==========================================================
-
-    final right = <pw.Widget>[
-      groupRow('Cost of Sales', report.cogs),
-
-      accountRow('Cost of Goods Sold', report.cogs),
-
-      groupRow('Operating Expenses', report.operatingExpenses),
-
-      if (expenseAccounts.isEmpty)
-        accountRow('Operating Expenses', report.operatingExpenses)
-      else
-        ...expenseAccounts.map((e) => accountRow(e.accountName, e.amount)),
-
-      groupRow('Total Cost & Expenses', report.cogs + report.operatingExpenses),
-
-      pw.Spacer(),
-
-      pw.Container(
-        padding: const pw.EdgeInsets.all(8),
-        color: const PdfColor.fromInt(0xfff3f5ef),
-        child: pw.Column(
-          children: [
-            accountRow('Gross Profit', report.grossProfit, strong: true),
-            accountRow('Other Income', report.otherIncome, strong: true),
-            accountRow(
-              'Operating Expenses',
-              report.operatingExpenses,
-              strong: true,
-            ),
-          ],
-        ),
-      ),
+      groupRow('TOTAL', plTotal),
     ];
 
     // ==========================================================
@@ -444,29 +474,86 @@ class ProfitLossPdf {
 
               pw.SizedBox(height: 6),
 
-              pw.Expanded(
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    pw.Expanded(
-                      child: panel(
-                        title: 'INCOME / REVENUE',
-                        total: report.totalIncome,
-                        children: left,
-                      ),
-                    ),
-
-                    pw.SizedBox(width: 2),
-
-                    pw.Expanded(
-                      child: panel(
-                        title: 'COST & EXPENSES',
-                        total: report.cogs + report.operatingExpenses,
-                        children: right,
-                      ),
-                    ),
-                  ],
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 5,
                 ),
+                color: const PdfColor.fromInt(0xff173f35),
+                child: pw.Text(
+                  'TRADING ACCOUNT',
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: 9,
+                    color: PdfColors.white,
+                  ),
+                ),
+              ),
+
+              pw.SizedBox(height: 2),
+
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: panel(
+                      title: 'DEBIT',
+                      total: tradingTotal,
+                      children: left,
+                    ),
+                  ),
+                  pw.SizedBox(width: 2),
+                  pw.Expanded(
+                    child: panel(
+                      title: 'CREDIT',
+                      total: tradingTotal,
+                      children: right,
+                    ),
+                  ),
+                ],
+              ),
+
+              pw.SizedBox(height: 8),
+
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 5,
+                ),
+                color: const PdfColor.fromInt(0xff173f35),
+                child: pw.Text(
+                  'PROFIT & LOSS ACCOUNT',
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: 9,
+                    color: PdfColors.white,
+                  ),
+                ),
+              ),
+
+              pw.SizedBox(height: 2),
+
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: panel(
+                      title: 'DEBIT',
+                      total: plTotal,
+                      children: profitLossLeft,
+                    ),
+                  ),
+                  pw.SizedBox(width: 2),
+                  pw.Expanded(
+                    child: panel(
+                      title: 'CREDIT',
+                      total: plTotal,
+                      children: profitLossRight,
+                    ),
+                  ),
+                ],
               ),
 
               pw.SizedBox(height: 6),
