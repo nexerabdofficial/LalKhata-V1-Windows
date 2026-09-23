@@ -423,8 +423,6 @@ class _BusinessOverviewScreenState extends State<BusinessOverviewScreen> {
 
         final type = account.type.toString().trim().toUpperCase();
 
-        totalBalance += balance;
-
         if (type == 'CASH') {
           cashBalance += balance;
           cashAccount ??= account as Account;
@@ -434,6 +432,9 @@ class _BusinessOverviewScreenState extends State<BusinessOverviewScreen> {
           mobileBalance += balance;
         }
       }
+
+      // Balance Summary total must match the three balances shown above.
+      totalBalance = cashBalance + bankBalance + mobileBalance;
 
       final delayedCustomers = await _loadDelayedDueCustomers(customers);
 

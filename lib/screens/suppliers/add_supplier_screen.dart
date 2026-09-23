@@ -120,7 +120,22 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
         ),
       );
 
-      Navigator.pop(context, true);
+      if (widget.supplier != null) {
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // NEW supplier: stay here and prepare for the next supplier.
+      _formKey.currentState?.reset();
+
+      setState(() {
+        _nameController.clear();
+        _phoneController.clear();
+        _addressController.clear();
+        _openingBalanceController.clear();
+        _openingType = 'PAYABLE';
+        _openingDate = DateTime.now();
+      });
     } catch (e) {
       if (!mounted) return;
 

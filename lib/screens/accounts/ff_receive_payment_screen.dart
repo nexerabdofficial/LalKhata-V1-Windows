@@ -223,7 +223,18 @@ class _FFReceivePaymentEntryScreenState
         ),
       );
 
-      Navigator.pop(context, true);
+      // Stay on this entry screen for continuous entry.
+      setState(() {
+        _amountController.clear();
+        _noteController.clear();
+        _transactionDate = DateTime.now();
+        _selectedLedgerAccount = _ledgerAccounts.isEmpty
+            ? null
+            : _ledgerAccounts.first;
+        _selectedMoneyAccount = _moneyAccounts.isEmpty
+            ? null
+            : _moneyAccounts.first;
+      });
     } catch (e) {
       if (!mounted) return;
 

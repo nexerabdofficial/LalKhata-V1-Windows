@@ -242,6 +242,16 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     return NumberFormat('#,##0.##').format(value);
   }
 
+  String _formatBalanceWithDrCr(double value) {
+    if (value.abs() < 0.005) {
+      return '৳${_formatMoney(0)}';
+    }
+
+    final suffix = value > 0 ? 'Dr' : 'Cr';
+
+    return '৳${_formatMoney(value.abs())} $suffix';
+  }
+
   String _formatDate(String value) {
     try {
       return _dateFormat.format(DateTime.parse(value));
@@ -424,7 +434,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '৳${_formatMoney(_openingBalance)}',
+                    _formatBalanceWithDrCr(_openingBalance),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -443,7 +453,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '৳${_formatMoney(_currentBalance)}',
+                    _formatBalanceWithDrCr(_currentBalance),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 17,
@@ -573,7 +583,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
         _ledgerCell('', width: _amountWidth, align: TextAlign.right),
         _ledgerCell('', width: _amountWidth, align: TextAlign.right),
         _ledgerCell(
-          '৳${_formatMoney(_openingBalance)}',
+          _formatBalanceWithDrCr(_openingBalance),
           width: _balanceWidth,
           align: TextAlign.right,
           weight: FontWeight.bold,
@@ -651,7 +661,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
           weight: credit > 0 ? FontWeight.w600 : FontWeight.normal,
         ),
         _ledgerCell(
-          '৳${_formatMoney(balance)}',
+          _formatBalanceWithDrCr(balance),
           width: _balanceWidth,
           align: TextAlign.right,
           weight: FontWeight.bold,
@@ -759,7 +769,12 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                     const Divider(height: 1),
                     _compactSummaryLine('Total Credit', _totalCredit),
                     const Divider(height: 1),
-                    _compactSummaryLine('Balance', _currentBalance, bold: true),
+                    _compactSummaryLine(
+                      'Balance',
+                      _currentBalance,
+                      bold: true,
+                      displayText: _formatBalanceWithDrCr(_currentBalance),
+                    ),
                   ],
                 ),
               ),
@@ -770,7 +785,12 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     );
   }
 
-  Widget _compactSummaryLine(String label, double value, {bool bold = false}) {
+  Widget _compactSummaryLine(
+    String label,
+    double value, {
+    bool bold = false,
+    String? displayText,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -785,7 +805,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
             ),
           ),
           Text(
-            '৳${_formatMoney(value)}',
+            displayText ?? '৳${_formatMoney(value)}',
             style: TextStyle(
               fontSize: 13,
               fontWeight: bold ? FontWeight.bold : FontWeight.w600,
@@ -824,7 +844,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '৳${_formatMoney(_openingBalance)}',
+                  _formatBalanceWithDrCr(_openingBalance),
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -934,7 +954,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '৳${_formatMoney(balance)}',
+                      _formatBalanceWithDrCr(balance),
                       style: const TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.bold,
@@ -1005,7 +1025,12 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
             const Divider(height: 1),
             _compactSummaryLine('Total Credit', _totalCredit),
             const Divider(height: 1),
-            _compactSummaryLine('Balance', _currentBalance, bold: true),
+            _compactSummaryLine(
+              'Balance',
+              _currentBalance,
+              bold: true,
+              displayText: _formatBalanceWithDrCr(_currentBalance),
+            ),
           ],
         ),
       ),

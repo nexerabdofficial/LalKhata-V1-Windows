@@ -492,22 +492,59 @@ class FFUniversalLedgerService {
     required double currentLineDebit,
     required double currentLineCredit,
   }) async {
+    // Only the opposite side of the current ledger line can be a
+    // counterparty. Previously every other line in the journal was
+    // returned, which exposed Sales Income / COGS / Inventory etc.
+    final oppositeCondition = currentLineDebit > 0
+        ? 'jl.credit > 0'
+        : currentLineCredit > 0
+        ? 'jl.debit > 0'
+        : '(jl.debit > 0 OR jl.credit > 0)';
+
     final rows = await db.rawQuery(
       '''
       SELECT DISTINCT
         a.id AS account_id,
-        a.name AS account_name
+        a.name AS account_name,
+        jl.entity_type AS entity_type,
+        jl.entity_id AS entity_id,
+        jl.id AS line_id
       FROM journal_lines jl
       INNER JOIN accounts a
         ON a.id = jl.account_id
       WHERE jl.journal_id = ?
         AND jl.account_id != ?
-        AND (jl.debit > 0 OR jl.credit > 0)
-      ORDER BY jl.id
+        AND $oppositeCondition
+      ORDER BY
+        CASE
+          WHEN jl.entity_type IS NOT NULL
+           AND TRIM(jl.entity_type) != ''
+           AND jl.entity_id IS NOT NULL
+          THEN 0
+          ELSE 1
+        END,
+        jl.id
       ''',
       [journalId, accountId],
     );
 
+    // A party-linked journal line is the meaningful counterparty for
+    // Sale/Purchase receipts and payments. Prefer it over internal
+    // accounting lines such as Sales Income, COGS and Inventory.
+    for (final row in rows) {
+      final entityType = row['entity_type']?.toString().trim() ?? '';
+      final entityId = row['entity_id'];
+
+      if (entityType.isNotEmpty && entityId != null) {
+        final name = row['account_name']?.toString().trim() ?? '';
+        if (name.isNotEmpty) {
+          return name;
+        }
+      }
+    }
+
+    // Generic journals may legitimately have multiple counterpart
+    // accounts, so preserve that behaviour when no party line exists.
     final names = <String>[];
 
     for (final row in rows) {

@@ -1393,15 +1393,22 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                       MediaQuery.sizeOf(context).width >= 900
                                       ? 42
                                       : 52,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal:
+                                        MediaQuery.sizeOf(context).width >= 900
+                                        ? 16
+                                        : 8,
                                   ),
                                   color: Colors.green.shade100,
-                                  child: const Row(
+                                  child: Row(
                                     children: [
                                       SizedBox(
-                                        width: 48,
-                                        child: Text(
+                                        width:
+                                            MediaQuery.sizeOf(context).width >=
+                                                900
+                                            ? 48
+                                            : 28,
+                                        child: const Text(
                                           "SL",
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
@@ -1409,8 +1416,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                         ),
                                       ),
                                       Expanded(
-                                        flex: 5,
-                                        child: Text(
+                                        flex:
+                                            MediaQuery.sizeOf(context).width >=
+                                                900
+                                            ? 5
+                                            : 4,
+                                        child: const Text(
                                           "Product",
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
@@ -1418,8 +1429,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                         ),
                                       ),
                                       Expanded(
-                                        flex: 2,
-                                        child: Text(
+                                        flex:
+                                            MediaQuery.sizeOf(context).width >=
+                                                900
+                                            ? 2
+                                            : 1,
+                                        child: const Text(
                                           "Qty",
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
@@ -1448,8 +1463,12 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                         ),
                                       ),
                                       SizedBox(
-                                        width: 70,
-                                        child: Text(
+                                        width:
+                                            MediaQuery.sizeOf(context).width >=
+                                                900
+                                            ? 70
+                                            : 48,
+                                        child: const Text(
                                           "Action",
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
@@ -1486,14 +1505,26 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                               ? 48
                                               : 58,
                                         ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal:
+                                              MediaQuery.sizeOf(
+                                                    context,
+                                                  ).width >=
+                                                  900
+                                              ? 16
+                                              : 8,
                                           vertical: 6,
                                         ),
                                         child: Row(
                                           children: [
                                             SizedBox(
-                                              width: 48,
+                                              width:
+                                                  MediaQuery.sizeOf(
+                                                        context,
+                                                      ).width >=
+                                                      900
+                                                  ? 48
+                                                  : 28,
                                               child: Text(
                                                 "${index + 1}",
                                                 style: TextStyle(
@@ -1504,7 +1535,13 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                             ),
 
                                             Expanded(
-                                              flex: 5,
+                                              flex:
+                                                  MediaQuery.sizeOf(
+                                                        context,
+                                                      ).width >=
+                                                      900
+                                                  ? 5
+                                                  : 4,
                                               child: Text(
                                                 item.product.name,
                                                 maxLines: 2,
@@ -1516,7 +1553,13 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                             ),
 
                                             Expanded(
-                                              flex: 2,
+                                              flex:
+                                                  MediaQuery.sizeOf(
+                                                        context,
+                                                      ).width >=
+                                                      900
+                                                  ? 2
+                                                  : 1,
                                               child: Text(
                                                 item.quantity.toString(),
                                                 textAlign: TextAlign.center,
@@ -1536,9 +1579,21 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                                       BorderRadius.circular(7),
                                                   child: Container(
                                                     padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 10,
-                                                          vertical: 7,
+                                                        EdgeInsets.symmetric(
+                                                          horizontal:
+                                                              MediaQuery.sizeOf(
+                                                                    context,
+                                                                  ).width >=
+                                                                  900
+                                                              ? 10
+                                                              : 4,
+                                                          vertical:
+                                                              MediaQuery.sizeOf(
+                                                                    context,
+                                                                  ).width >=
+                                                                  900
+                                                              ? 7
+                                                              : 5,
                                                         ),
                                                     decoration: BoxDecoration(
                                                       color:
@@ -1569,12 +1624,24 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                                                         .bold,
                                                               ),
                                                         ),
-                                                        const SizedBox(
-                                                          width: 5,
+                                                        SizedBox(
+                                                          width:
+                                                              MediaQuery.sizeOf(
+                                                                    context,
+                                                                  ).width >=
+                                                                  900
+                                                              ? 5
+                                                              : 2,
                                                         ),
                                                         Icon(
                                                           Icons.edit_outlined,
-                                                          size: 14,
+                                                          size:
+                                                              MediaQuery.sizeOf(
+                                                                    context,
+                                                                  ).width >=
+                                                                  900
+                                                              ? 14
+                                                              : 12,
                                                           color: Colors
                                                               .blue
                                                               .shade700,
@@ -1600,7 +1667,13 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                                             ),
 
                                             SizedBox(
-                                              width: 70,
+                                              width:
+                                                  MediaQuery.sizeOf(
+                                                        context,
+                                                      ).width >=
+                                                      900
+                                                  ? 70
+                                                  : 48,
                                               child: Center(
                                                 child: IconButton(
                                                   tooltip: "Remove Product",

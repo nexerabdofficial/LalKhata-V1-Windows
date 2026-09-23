@@ -322,24 +322,6 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
     return rows.fold<double>(0, (total, row) => total + row.balance);
   }
 
-  Widget _rows(List<FFBalanceSheetRow> rows) {
-    final visible = rows.where((e) => _visible(e.balance)).toList();
-
-    if (visible.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      children: visible
-          .map((row) => _ledgerRow(row.accountName, row.balance))
-          .toList(),
-    );
-  }
-
-  // ============================================================
-  // COLLAPSIBLE BALANCE SHEET GROUP
-  // ============================================================
-
   Widget _expandableGroup(
     String title,
     double amount,
@@ -349,33 +331,36 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-        childrenPadding: EdgeInsets.zero,
-        minTileHeight: 38,
-        dense: true,
-        initiallyExpanded: false,
-        title: Text(
-          title,
-          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _money(amount),
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: EdgeInsets.zero,
+          minTileHeight: 38,
+          dense: true,
+          initiallyExpanded: false,
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _money(amount),
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(width: 5),
-            const Icon(Icons.keyboard_arrow_down, size: 19),
-          ],
+              const SizedBox(width: 5),
+              const Icon(Icons.keyboard_arrow_down, size: 19),
+            ],
+          ),
+          children: visibleRows
+              .map((row) => _ledgerRow(row.accountName, row.balance))
+              .toList(),
         ),
-        children: visibleRows
-            .map((row) => _ledgerRow(row.accountName, row.balance))
-            .toList(),
       ),
     );
   }

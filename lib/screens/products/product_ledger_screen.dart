@@ -23,6 +23,8 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
 
   List<ProductLedger> _ledger = [];
 
+  String _productUnit = '';
+
   bool _loading = true;
 
   DateTime? _fromDate;
@@ -56,11 +58,13 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
 
     try {
       final result = await _repository.getProductLedger(widget.productId);
+      final product = await _repository.getProductById(widget.productId);
 
       if (!mounted) return;
 
       setState(() {
         _ledger = result;
+        _productUnit = product?.unit.trim() ?? '';
         _loading = false;
       });
     } catch (e) {
@@ -525,9 +529,9 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
                                     ),
                                   ),
                                   SizedBox(
-                                    width: 150,
+                                    width: 100,
                                     child: Text(
-                                      'In / Out',
+                                      'IN',
                                       textAlign: TextAlign.right,
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
@@ -535,7 +539,27 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
                                     ),
                                   ),
                                   SizedBox(
-                                    width: 170,
+                                    width: 100,
+                                    child: Text(
+                                      'OUT',
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 100,
+                                    child: Text(
+                                      'Unit',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 130,
                                     child: Text(
                                       'Stock',
                                       textAlign: TextAlign.right,
@@ -604,16 +628,55 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
                                         ),
 
                                         // ==============================
-                                        // IN / OUT
+                                        // STOCK IN
                                         // ==============================
                                         SizedBox(
-                                          width: 150,
+                                          width: 100,
                                           child: Text(
-                                            _stockChangeText(item),
+                                            item.stockIn > 0
+                                                ? '${item.stockIn}'
+                                                : '-',
                                             textAlign: TextAlign.right,
                                             style: TextStyle(
-                                              color: _stockChangeColor(item),
+                                              color: item.stockIn > 0
+                                                  ? Colors.green
+                                                  : Colors.grey,
                                               fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+
+                                        // ==============================
+                                        // STOCK OUT
+                                        // ==============================
+                                        SizedBox(
+                                          width: 100,
+                                          child: Text(
+                                            item.stockOut > 0
+                                                ? '${item.stockOut}'
+                                                : '-',
+                                            textAlign: TextAlign.right,
+                                            style: TextStyle(
+                                              color: item.stockOut > 0
+                                                  ? Colors.red
+                                                  : Colors.grey,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+
+                                        // ==============================
+                                        // UNIT
+                                        // ==============================
+                                        SizedBox(
+                                          width: 100,
+                                          child: Text(
+                                            _productUnit.isEmpty
+                                                ? '-'
+                                                : _productUnit,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ),
@@ -622,7 +685,7 @@ class _ProductLedgerScreenState extends State<ProductLedgerScreen> {
                                         // RUNNING STOCK
                                         // ==============================
                                         SizedBox(
-                                          width: 170,
+                                          width: 130,
                                           child: Text(
                                             '$tableRunningStock',
                                             textAlign: TextAlign.right,

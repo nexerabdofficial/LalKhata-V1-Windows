@@ -278,7 +278,27 @@ class _JournalScreenState extends State<JournalScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Journal saved — $voucherNo')));
 
-      Navigator.pop(context, true);
+      // Stay on Journal for continuous entry.
+      for (final line in _debitLines) {
+        line.amount.dispose();
+      }
+      for (final line in _creditLines) {
+        line.amount.dispose();
+      }
+
+      setState(() {
+        _narrationController.clear();
+        _selectedDate = DateTime.now();
+        _dateController.text = _formatDate(_selectedDate);
+
+        _debitLines
+          ..clear()
+          ..add(_JournalLine());
+
+        _creditLines
+          ..clear()
+          ..add(_JournalLine());
+      });
     } catch (e) {
       if (!mounted) return;
 

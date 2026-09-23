@@ -209,7 +209,11 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
           break;
 
         case 'quick_entry':
-          await QuickActionSheet.showQuickEntry(context);
+          final navigatorContext =
+              appNavigatorKey.currentState?.overlay?.context;
+          if (navigatorContext != null) {
+            await QuickActionSheet.showQuickEntry(navigatorContext);
+          }
           break;
 
         case 'cash_flow':

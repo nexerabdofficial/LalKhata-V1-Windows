@@ -190,7 +190,17 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         const SnackBar(content: Text('Customer added successfully.')),
       );
 
-      Navigator.pop(context, true);
+      // NEW customer: stay here and prepare for the next customer.
+      _formKey.currentState?.reset();
+
+      setState(() {
+        _nameController.clear();
+        _phoneController.clear();
+        _addressController.clear();
+        _openingBalanceController.clear();
+        _openingType = 'RECEIVABLE';
+        _openingDate = DateTime.now();
+      });
     } catch (e) {
       if (!mounted) return;
 

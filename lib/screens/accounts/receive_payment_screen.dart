@@ -205,8 +205,10 @@ class _ReceivePaymentScreenState extends State<ReceivePaymentScreen> {
         ),
       );
 
-      // Return true so previous screen can reload immediately.
-      Navigator.pop(context, true);
+      // Stay on Receive Payment for another entry.
+      setState(() {
+        _amountController.clear();
+      });
     } catch (e) {
       if (!mounted) return;
 

@@ -485,7 +485,10 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
       child: Card(
         elevation: depth == 0 ? 1 : 0,
         child: ExpansionTile(
-          initiallyExpanded: depth == 0,
+          key: ValueKey(
+            'account-group-${group.id}-${_search.trim().isNotEmpty ? 'search' : 'normal'}',
+          ),
+          initiallyExpanded: depth == 0 || _search.trim().isNotEmpty,
           leading: Icon(
             depth == 0 ? Icons.account_tree_outlined : Icons.folder_outlined,
           ),

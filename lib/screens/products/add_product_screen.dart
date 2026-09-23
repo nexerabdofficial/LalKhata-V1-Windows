@@ -5,10 +5,12 @@ import '../../services/product_repository.dart';
 
 class AddProductScreen extends StatefulWidget {
   final Product? product;
+  final bool returnAfterCreate;
 
   const AddProductScreen({
     super.key,
     this.product,
+    this.returnAfterCreate = false,
   });
 
   @override
@@ -35,10 +37,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   //
   // BOTH is kept only when editing an old product that already
   // has BOTH saved in the database.
-  final List<String> _newProductTypes = [
-    'RAW_MATERIAL',
-    'FINISHED_PRODUCT',
-  ];
+  final List<String> _newProductTypes = ['RAW_MATERIAL', 'FINISHED_PRODUCT'];
 
   final List<String> _units = [
     'PCS',
@@ -64,11 +63,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   bool get _isEditMode => widget.product != null;
 
-  bool get _isRawMaterial =>
-      _selectedProductType == 'RAW_MATERIAL';
+  bool get _isRawMaterial => _selectedProductType == 'RAW_MATERIAL';
 
-  bool get _isFinishedProduct =>
-      _selectedProductType == 'FINISHED_PRODUCT';
+  bool get _isFinishedProduct => _selectedProductType == 'FINISHED_PRODUCT';
 
   // ============================================================
   // INIT
@@ -80,14 +77,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     _selectedUnit = widget.product?.unit ?? 'PCS';
 
-    _selectedProductType =
-        widget.product?.productType ?? 'FINISHED_PRODUCT';
+    _selectedProductType = widget.product?.productType ?? 'FINISHED_PRODUCT';
 
     if (_isEditMode) {
       _nameController.text = widget.product!.name;
 
-      _sellingController.text =
-          widget.product!.sellingPrice.toString();
+      _sellingController.text = widget.product!.sellingPrice.toString();
     }
   }
 
@@ -96,17 +91,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // ============================================================
 
   List<String> get _productTypes {
-    final types = <String>[
-      ..._newProductTypes,
-    ];
+    final types = <String>[..._newProductTypes];
 
     // ----------------------------------------------------------
     // Keep legacy BOTH visible when editing an existing BOTH
     // product. It is NOT available for newly created products.
     // ----------------------------------------------------------
 
-    if (_isEditMode &&
-        widget.product?.productType == 'BOTH') {
+    if (_isEditMode && widget.product?.productType == 'BOTH') {
       types.add('BOTH');
     }
 
@@ -128,6 +120,39 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     try {
       // --------------------------------------------------------
+      // DUPLICATE PRODUCT NAME PROTECTION
+      //
+      // Product names are compared case-insensitively and after
+      // trimming whitespace. While editing, the current product
+      // itself is excluded from the duplicate check.
+      // --------------------------------------------------------
+
+      final normalizedName = _nameController.text.trim().toLowerCase();
+      final existingProducts = await _repository.getProducts();
+
+      final duplicateExists = existingProducts.any((existing) {
+        if (_isEditMode && existing.id == widget.product?.id) {
+          return false;
+        }
+
+        return existing.name.trim().toLowerCase() == normalizedName;
+      });
+
+      if (duplicateExists) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'A product named "${_nameController.text.trim()}" already exists.',
+            ),
+          ),
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
       // RAW MATERIAL
       //
       // Raw materials are not sold directly through the product
@@ -136,9 +161,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       final sellingPrice = _isRawMaterial
           ? 0.0
-          : double.parse(
-              _sellingController.text.trim(),
-            );
+          : double.parse(_sellingController.text.trim());
 
       final product = Product(
         id: widget.product?.id,
@@ -146,8 +169,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         name: _nameController.text.trim(),
 
         // Existing purchase price is preserved.
-        purchasePrice:
-            widget.product?.purchasePrice ?? 0,
+        purchasePrice: widget.product?.purchasePrice ?? 0,
 
         sellingPrice: sellingPrice,
 
@@ -157,22 +179,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Existing stock is preserved while editing.
         // New products start with zero stock.
         // ------------------------------------------------------
-
         stock: widget.product?.stock ?? 0,
 
         // Existing stock value is preserved.
-        stockValue:
-            widget.product?.stockValue ?? 0,
+        stockValue: widget.product?.stockValue ?? 0,
 
         unit: _selectedUnit,
 
         productType: _selectedProductType,
       );
 
+      int? createdProductId;
+
       if (_isEditMode) {
         await _repository.updateProduct(product);
       } else {
-        await _repository.insertProduct(product);
+        createdProductId = await _repository.insertProduct(product);
       }
 
       if (!mounted) return;
@@ -187,17 +209,37 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
       );
 
-      Navigator.pop(context, true);
+      // --------------------------------------------------------
+      // EDIT MODE
+      // After updating an existing product, return normally.
+      // --------------------------------------------------------
+
+      if (_isEditMode) {
+        Navigator.pop(context, true);
+        return;
+      }
+
+      if (widget.returnAfterCreate && createdProductId != null) {
+        Navigator.pop(context, createdProductId);
+        return;
+      }
+
+      // --------------------------------------------------------
+      // NEW PRODUCT
+      // Stay on Add Product so multiple products can be entered
+      // one after another without returning to Dashboard.
+      //
+      // Keep Product Type + Unit unchanged for faster entry.
+      // --------------------------------------------------------
+
+      _nameController.clear();
+      _sellingController.clear();
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '❌ Failed to save product: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Failed to save product: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -255,9 +297,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return 'Enter selling price';
     }
 
-    final price = double.tryParse(
-      value.trim(),
-    );
+    final price = double.tryParse(value.trim());
 
     if (price == null || price < 0) {
       return 'Enter a valid selling price';
@@ -285,13 +325,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _isEditMode
-              ? 'Edit Product'
-              : 'Add Product',
-        ),
-      ),
+      appBar: AppBar(title: Text(_isEditMode ? 'Edit Product' : 'Add Product')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -301,14 +335,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // PRODUCT NAME
               // ==================================================
-
               TextFormField(
                 controller: _nameController,
-                decoration:
-                    decoration('Product Name'),
+                decoration: decoration('Product Name'),
                 validator: (value) {
-                  if (value == null ||
-                      value.trim().isEmpty) {
+                  if (value == null || value.trim().isEmpty) {
                     return 'Enter product name';
                   }
 
@@ -321,23 +352,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // PRODUCT TYPE
               // ==================================================
-
               DropdownButtonFormField<String>(
-                initialValue: _productTypes.contains(
-                  _selectedProductType,
-                )
+                initialValue: _productTypes.contains(_selectedProductType)
                     ? _selectedProductType
                     : _productTypes.first,
-                decoration:
-                    decoration('Product Type'),
+                decoration: decoration('Product Type'),
                 items: _productTypes
                     .map(
-                      (type) =>
-                          DropdownMenuItem<String>(
+                      (type) => DropdownMenuItem<String>(
                         value: type,
-                        child: Text(
-                          _productTypeLabel(type),
-                        ),
+                        child: Text(_productTypeLabel(type)),
                       ),
                     )
                     .toList(),
@@ -347,18 +371,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         if (value == null) return;
 
                         setState(() {
-                          _selectedProductType =
-                              value;
+                          _selectedProductType = value;
 
                           // ------------------------------------------------
                           // When switching to Raw Material, force
                           // selling price to zero.
                           // ------------------------------------------------
 
-                          if (value ==
-                              'RAW_MATERIAL') {
-                            _sellingController
-                                .text = '0';
+                          if (value == 'RAW_MATERIAL') {
+                            _sellingController.text = '0';
                           }
                         });
                       },
@@ -369,13 +390,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // SELLING PRICE
               // ==================================================
-
               TextFormField(
                 controller: _sellingController,
-                enabled:
-                    !_isRawMaterial && !_isSaving,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
+                enabled: !_isRawMaterial && !_isSaving,
+                keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: decoration(
@@ -383,8 +401,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       ? 'Selling Price (Not Applicable)'
                       : 'Selling Price',
                 ),
-                validator:
-                    _validateSellingPrice,
+                validator: _validateSellingPrice,
               ),
 
               const SizedBox(height: 16),
@@ -392,15 +409,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // UNIT
               // ==================================================
-
               DropdownButtonFormField<String>(
                 initialValue: _selectedUnit,
-                decoration:
-                    decoration('Unit'),
+                decoration: decoration('Unit'),
                 items: _units
                     .map(
-                      (unit) =>
-                          DropdownMenuItem<String>(
+                      (unit) => DropdownMenuItem<String>(
                         value: unit,
                         child: Text(unit),
                       ),
@@ -422,27 +436,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // SAVE BUTTON
               // ==================================================
-
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
-                  onPressed:
-                      _isSaving
-                          ? null
-                          : _saveProduct,
+                  onPressed: _isSaving ? null : _saveProduct,
                   child: Text(
                     _isSaving
-                        ? (_isEditMode
-                            ? 'Updating...'
-                            : 'Saving...')
-                        : (_isEditMode
-                            ? 'Update Product'
-                            : 'Save Product'),
-                    style:
-                        const TextStyle(
-                      fontSize: 18,
-                    ),
+                        ? (_isEditMode ? 'Updating...' : 'Saving...')
+                        : (_isEditMode ? 'Update Product' : 'Save Product'),
+                    style: const TextStyle(fontSize: 18),
                   ),
                 ),
               ),

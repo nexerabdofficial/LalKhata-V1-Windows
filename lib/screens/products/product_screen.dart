@@ -44,11 +44,7 @@ class _ProductScreenState extends State<ProductScreen> {
   Future<void> _editProduct(Product product) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => AddProductScreen(
-          product: product,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AddProductScreen(product: product)),
     );
 
     if (result == true) {
@@ -62,9 +58,7 @@ class _ProductScreenState extends State<ProductScreen> {
       builder: (_) {
         return AlertDialog(
           title: const Text("Delete Product"),
-          content: Text(
-            'Delete "${product.name}" ?',
-          ),
+          content: Text('Delete "${product.name}" ?'),
           actions: [
             TextButton(
               onPressed: () {
@@ -90,11 +84,7 @@ class _ProductScreenState extends State<ProductScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "Product deleted successfully",
-        ),
-      ),
+      const SnackBar(content: Text("Product deleted successfully")),
     );
 
     _loadProducts();
@@ -107,11 +97,7 @@ class _ProductScreenState extends State<ProductScreen> {
   Future<void> _openOpeningStock(Product product) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => OpeningStockScreen(
-          product: product,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => OpeningStockScreen(product: product)),
     );
 
     if (result == true) {
@@ -141,9 +127,7 @@ class _ProductScreenState extends State<ProductScreen> {
     }
 
     return _allProducts.where((product) {
-      return product.name
-          .toLowerCase()
-          .contains(_search.toLowerCase());
+      return product.name.toLowerCase().contains(_search.toLowerCase());
     }).toList();
   }
 
@@ -162,22 +146,18 @@ class _ProductScreenState extends State<ProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Products"),
-      ),
+      appBar: AppBar(title: const Text("Products")),
 
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final result = await Navigator.push(
+          await Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const AddProductScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const AddProductScreen()),
           );
 
-          if (result == true) {
-            _loadProducts();
-          }
+          if (!mounted) return;
+
+          await _loadProducts();
         },
         child: const Icon(Icons.add),
       ),
@@ -185,11 +165,8 @@ class _ProductScreenState extends State<ProductScreen> {
       body: FutureBuilder<List<Product>>(
         future: _products,
         builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           return Column(
@@ -197,17 +174,14 @@ class _ProductScreenState extends State<ProductScreen> {
               // ==================================================
               // SEARCH
               // ==================================================
-
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: "Search product...",
-                    prefixIcon:
-                        const Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                   onChanged: (value) {
@@ -221,7 +195,6 @@ class _ProductScreenState extends State<ProductScreen> {
               // ==================================================
               // HEADER
               // ==================================================
-
               Container(
                 color: Colors.grey.shade200,
                 padding: const EdgeInsets.symmetric(
@@ -234,9 +207,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       width: 45,
                       child: Text(
                         "ID",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
 
@@ -244,9 +215,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       flex: 4,
                       child: Text(
                         "Product",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
 
@@ -255,9 +224,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       child: Text(
                         "Buy",
                         textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
 
@@ -266,9 +233,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       child: Text(
                         "Sell",
                         textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
 
@@ -277,9 +242,7 @@ class _ProductScreenState extends State<ProductScreen> {
                       child: Text(
                         "Stock",
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
 
@@ -291,46 +254,29 @@ class _ProductScreenState extends State<ProductScreen> {
               // ==================================================
               // PRODUCT LIST
               // ==================================================
-
               Expanded(
                 child: _filteredProducts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          "No Products Found",
-                        ),
-                      )
+                    ? const Center(child: Text("No Products Found"))
                     : ListView.separated(
-                        itemCount:
-                            _filteredProducts.length,
-                        separatorBuilder:
-                            (_, __) => Divider(
-                          height: 1,
-                          color:
-                              Colors.grey.shade300,
-                        ),
-                        itemBuilder:
-                            (context, index) {
-                          final product =
-                              _filteredProducts[index];
+                        itemCount: _filteredProducts.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.grey.shade300),
+                        itemBuilder: (context, index) {
+                          final product = _filteredProducts[index];
 
                           return InkWell(
                             // ====================================
                             // TAP PRODUCT → LEDGER
                             // ====================================
-
                             onTap: () {
-                              _openProductLedger(
-                                product,
-                              );
+                              _openProductLedger(product);
                             },
 
                             child: Container(
                               color: index.isEven
                                   ? Colors.white
                                   : Colors.grey.shade50,
-                              padding:
-                                  const EdgeInsets
-                                      .symmetric(
+                              padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 12,
                               ),
@@ -339,12 +285,9 @@ class _ProductScreenState extends State<ProductScreen> {
                                   SizedBox(
                                     width: 45,
                                     child: Text(
-                                      product.id
-                                          .toString(),
-                                      style:
-                                          const TextStyle(
-                                        fontWeight:
-                                            FontWeight.bold,
+                                      product.id.toString(),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
@@ -354,9 +297,7 @@ class _ProductScreenState extends State<ProductScreen> {
                                     child: Text(
                                       product.name,
                                       maxLines: 1,
-                                      overflow:
-                                          TextOverflow
-                                              .ellipsis,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
 
@@ -364,8 +305,7 @@ class _ProductScreenState extends State<ProductScreen> {
                                     width: 70,
                                     child: Text(
                                       "৳${product.purchasePrice.toStringAsFixed(0)}",
-                                      textAlign:
-                                          TextAlign.right,
+                                      textAlign: TextAlign.right,
                                     ),
                                   ),
 
@@ -373,8 +313,7 @@ class _ProductScreenState extends State<ProductScreen> {
                                     width: 70,
                                     child: Text(
                                       "৳${product.sellingPrice.toStringAsFixed(0)}",
-                                      textAlign:
-                                          TextAlign.right,
+                                      textAlign: TextAlign.right,
                                     ),
                                   ),
 
@@ -391,49 +330,29 @@ class _ProductScreenState extends State<ProductScreen> {
                                   // =================================
                                   // MENU
                                   // =================================
-
                                   PopupMenuButton<String>(
-                                    onSelected:
-                                        (value) {
-                                      if (value ==
-                                          'ledger') {
-                                        _openProductLedger(
-                                          product,
-                                        );
-                                      } else if (value ==
-                                          'opening_stock') {
-                                        _openOpeningStock(
-                                          product,
-                                        );
-                                      } else if (value ==
-                                          'edit') {
-                                        _editProduct(
-                                          product,
-                                        );
-                                      } else if (value ==
-                                          'delete') {
-                                        _deleteProduct(
-                                          product,
-                                        );
+                                    onSelected: (value) {
+                                      if (value == 'ledger') {
+                                        _openProductLedger(product);
+                                      } else if (value == 'opening_stock') {
+                                        _openOpeningStock(product);
+                                      } else if (value == 'edit') {
+                                        _editProduct(product);
+                                      } else if (value == 'delete') {
+                                        _deleteProduct(product);
                                       }
                                     },
-                                    itemBuilder:
-                                        (_) => const [
+                                    itemBuilder: (_) => const [
                                       PopupMenuItem(
                                         value: 'ledger',
                                         child: Row(
                                           children: [
                                             Icon(
-                                              Icons
-                                                  .menu_book_outlined,
+                                              Icons.menu_book_outlined,
                                               size: 20,
                                             ),
-                                            SizedBox(
-                                              width: 10,
-                                            ),
-                                            Text(
-                                              "Product Ledger",
-                                            ),
+                                            SizedBox(width: 10),
+                                            Text("Product Ledger"),
                                           ],
                                         ),
                                       ),
@@ -442,16 +361,11 @@ class _ProductScreenState extends State<ProductScreen> {
                                         child: Row(
                                           children: [
                                             Icon(
-                                              Icons
-                                                  .inventory_2_outlined,
+                                              Icons.inventory_2_outlined,
                                               size: 20,
                                             ),
-                                            SizedBox(
-                                              width: 10,
-                                            ),
-                                            Text(
-                                              "Opening Stock",
-                                            ),
+                                            SizedBox(width: 10),
+                                            Text("Opening Stock"),
                                           ],
                                         ),
                                       ),
@@ -459,16 +373,9 @@ class _ProductScreenState extends State<ProductScreen> {
                                         value: 'edit',
                                         child: Row(
                                           children: [
-                                            Icon(
-                                              Icons.edit,
-                                              size: 20,
-                                            ),
-                                            SizedBox(
-                                              width: 10,
-                                            ),
-                                            Text(
-                                              "Edit",
-                                            ),
+                                            Icon(Icons.edit, size: 20),
+                                            SizedBox(width: 10),
+                                            Text("Edit"),
                                           ],
                                         ),
                                       ),
@@ -476,16 +383,9 @@ class _ProductScreenState extends State<ProductScreen> {
                                         value: 'delete',
                                         child: Row(
                                           children: [
-                                            Icon(
-                                              Icons.delete,
-                                              size: 20,
-                                            ),
-                                            SizedBox(
-                                              width: 10,
-                                            ),
-                                            Text(
-                                              "Delete",
-                                            ),
+                                            Icon(Icons.delete, size: 20),
+                                            SizedBox(width: 10),
+                                            Text("Delete"),
                                           ],
                                         ),
                                       ),
@@ -509,29 +409,17 @@ class _ProductScreenState extends State<ProductScreen> {
   // STOCK CHIP
   // ============================================================
 
-  Widget _statusChip(
-    int stock,
-    String unit,
-  ) {
+  Widget _statusChip(int stock, String unit) {
     return Container(
-      constraints: const BoxConstraints(
-        minWidth: 75,
-      ),
+      constraints: const BoxConstraints(minWidth: 75),
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color:
-            _statusColor(stock).withOpacity(.15),
-        borderRadius:
-            BorderRadius.circular(20),
+        color: _statusColor(stock).withOpacity(.15),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        stock <= 0
-            ? "0 (Out)"
-            : "$stock $unit",
+        stock <= 0 ? "0 (Out)" : "$stock $unit",
         textAlign: TextAlign.center,
         softWrap: false,
         style: TextStyle(

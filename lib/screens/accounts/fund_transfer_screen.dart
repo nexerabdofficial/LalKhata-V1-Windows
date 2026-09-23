@@ -192,7 +192,15 @@ class _FundTransferScreenState extends State<FundTransferScreen> {
         ),
       );
 
-      Navigator.pop(context, true);
+      // Stay on Contra for continuous entry.
+      setState(() {
+        _amountController.clear();
+        _noteController.clear();
+        _selectedDate = DateTime.now();
+        _fromAccount = null;
+        _toAccount = null;
+      });
+      _formKey.currentState?.reset();
     } catch (e) {
       if (!mounted) return;
 

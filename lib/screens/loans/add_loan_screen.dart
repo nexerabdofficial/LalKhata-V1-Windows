@@ -17,20 +17,17 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _personController =
-      TextEditingController();
+  final TextEditingController _personController = TextEditingController();
 
-  final TextEditingController _phoneController =
-      TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
-  final TextEditingController _amountController =
-      TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
 
-  final TextEditingController _interestController =
-      TextEditingController(text: '0');
+  final TextEditingController _interestController = TextEditingController(
+    text: '0',
+  );
 
-  final TextEditingController _noteController =
-      TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
 
   String _loanType = 'GIVEN';
   String _interestType = 'ANNUAL';
@@ -75,10 +72,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     try {
       final db = await _databaseHelper.database;
 
-      final accounts = await db.query(
-        'accounts',
-        orderBy: 'id ASC',
-      );
+      final accounts = await db.query('accounts', orderBy: 'id ASC');
 
       if (!mounted) return;
 
@@ -93,13 +87,9 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         _loadingAccounts = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load accounts: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load accounts: $e')));
     }
   }
 
@@ -117,9 +107,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     if (_accounts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'No account found. Please create an account first.',
-          ),
+          content: Text('No account found. Please create an account first.'),
         ),
       );
       return;
@@ -134,57 +122,40 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             shrinkWrap: true,
             children: [
               const Padding(
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  4,
-                  20,
-                  12,
-                ),
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: Text(
                   'Select Account',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
                 ),
               ),
 
-              ..._accounts.map(
-                (account) {
-                  final id =
-                      (account['id'] as num).toInt();
+              ..._accounts.map((account) {
+                final id = (account['id'] as num).toInt();
 
-                  final name =
-                      account['name']?.toString() ??
-                          account['account_name']
-                              ?.toString() ??
-                          'Account #$id';
+                final name =
+                    account['name']?.toString() ??
+                    account['account_name']?.toString() ??
+                    'Account #$id';
 
-                  return ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(
-                        Icons.account_balance_wallet,
-                      ),
-                    ),
-                    title: Text(name),
-                    selected: _accountId == id,
-                    trailing: _accountId == id
-                        ? const Icon(
-                            Icons.check,
-                            color: Colors.green,
-                          )
-                        : null,
-                    onTap: () {
-                      setState(() {
-                        _accountId = id;
-                        _accountName = name;
-                      });
+                return ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.account_balance_wallet),
+                  ),
+                  title: Text(name),
+                  selected: _accountId == id,
+                  trailing: _accountId == id
+                      ? const Icon(Icons.check, color: Colors.green)
+                      : null,
+                  onTap: () {
+                    setState(() {
+                      _accountId = id;
+                      _accountName = name;
+                    });
 
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
+                    Navigator.pop(context);
+                  },
+                );
+              }),
             ],
           ),
         );
@@ -211,8 +182,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
       // If due date is before new loan date,
       // clear it.
-      if (_dueDate != null &&
-          _dueDate!.isBefore(_loanDate)) {
+      if (_dueDate != null && _dueDate!.isBefore(_loanDate)) {
         _dueDate = null;
       }
     });
@@ -262,23 +232,14 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
     if (_accountId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please select a payment account.',
-          ),
-        ),
+        const SnackBar(content: Text('Please select a payment account.')),
       );
       return;
     }
 
-    final amount = double.tryParse(
-      _amountController.text.trim(),
-    );
+    final amount = double.tryParse(_amountController.text.trim());
 
-    final interestRate = double.tryParse(
-          _interestController.text.trim(),
-        ) ??
-        0;
+    final interestRate = double.tryParse(_interestController.text.trim()) ?? 0;
 
     if (amount == null || amount <= 0) {
       return;
@@ -296,13 +257,11 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
       final loan = Loan(
         loanType: _loanType,
 
-        personName:
-            _personController.text.trim(),
+        personName: _personController.text.trim(),
 
-        phone:
-            _phoneController.text.trim().isEmpty
-                ? null
-                : _phoneController.text.trim(),
+        phone: _phoneController.text.trim().isEmpty
+            ? null
+            : _phoneController.text.trim(),
 
         principalAmount: amount,
 
@@ -312,10 +271,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
         loanDate: _formatDate(_loanDate),
 
-        dueDate:
-            _dueDate == null
-                ? null
-                : _formatDate(_dueDate!),
+        dueDate: _dueDate == null ? null : _formatDate(_dueDate!),
 
         // IMPORTANT:
         // Selected account ID
@@ -326,44 +282,52 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         paidAmount: 0,
 
         interestAmount: 0,
-        
+
         accruedInterest: 0,
 
         status: 'ACTIVE',
 
-        note:
-            _noteController.text.trim().isEmpty
-                ? null
-                : _noteController.text.trim(),
+        note: _noteController.text.trim().isEmpty
+            ? null
+            : _noteController.text.trim(),
 
-        createdAt:
-            DateTime.now().toIso8601String(),
+        createdAt: DateTime.now().toIso8601String(),
       );
 
-      await _loanService.createLoan(
-        loan: loan,
-      );
+      await _loanService.createLoan(loan: loan);
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Loan added successfully.',
-          ),
+          content: Text('Loan added successfully.'),
           backgroundColor: Colors.green,
         ),
       );
 
-      Navigator.pop(context, true);
+      // Stay on Add Loan for continuous entry.
+      _formKey.currentState?.reset();
+
+      setState(() {
+        _personController.clear();
+        _phoneController.clear();
+        _amountController.clear();
+        _interestController.text = '0';
+        _noteController.clear();
+
+        _loanType = 'GIVEN';
+        _interestType = 'ANNUAL';
+        _paymentMethod = 'Cash';
+        _loanDate = DateTime.now();
+        _dueDate = null;
+        _accountId = null;
+      });
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Failed to add loan: $e',
-          ),
+          content: Text('Failed to add loan: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -383,9 +347,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Loan'),
-      ),
+      appBar: AppBar(title: const Text('Add Loan')),
 
       body: Form(
         key: _formKey,
@@ -397,7 +359,6 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // LOAN TYPE
             // ==================================================
-
             DropdownButtonFormField<String>(
               initialValue: _loanType,
 
@@ -407,14 +368,8 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               ),
 
               items: const [
-                DropdownMenuItem(
-                  value: 'GIVEN',
-                  child: Text('Loan Given'),
-                ),
-                DropdownMenuItem(
-                  value: 'TAKEN',
-                  child: Text('Loan Taken'),
-                ),
+                DropdownMenuItem(value: 'GIVEN', child: Text('Loan Given')),
+                DropdownMenuItem(value: 'TAKEN', child: Text('Loan Taken')),
               ],
 
               onChanged: _saving
@@ -433,22 +388,18 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // PERSON
             // ==================================================
-
             TextFormField(
               controller: _personController,
 
-              textInputAction:
-                  TextInputAction.next,
+              textInputAction: TextInputAction.next,
 
               decoration: const InputDecoration(
-                labelText:
-                    'Person / Organization Name',
+                labelText: 'Person / Organization Name',
                 border: OutlineInputBorder(),
               ),
 
               validator: (value) {
-                if (value == null ||
-                    value.trim().isEmpty) {
+                if (value == null || value.trim().isEmpty) {
                   return 'Enter person name';
                 }
 
@@ -461,12 +412,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // PHONE
             // ==================================================
-
             TextFormField(
               controller: _phoneController,
 
-              keyboardType:
-                  TextInputType.phone,
+              keyboardType: TextInputType.phone,
 
               decoration: const InputDecoration(
                 labelText: 'Phone',
@@ -479,12 +428,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // PRINCIPAL
             // ==================================================
-
             TextFormField(
               controller: _amountController,
 
-              keyboardType:
-                  const TextInputType.numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
 
@@ -495,18 +442,13 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               ),
 
               validator: (value) {
-                if (value == null ||
-                    value.trim().isEmpty) {
+                if (value == null || value.trim().isEmpty) {
                   return 'Enter loan amount';
                 }
 
-                final amount =
-                    double.tryParse(
-                  value.trim(),
-                );
+                final amount = double.tryParse(value.trim());
 
-                if (amount == null ||
-                    amount <= 0) {
+                if (amount == null || amount <= 0) {
                   return 'Enter a valid amount';
                 }
 
@@ -519,32 +461,23 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // INTEREST RATE
             // ==================================================
-
             TextFormField(
-              controller:
-                  _interestController,
+              controller: _interestController,
 
-              keyboardType:
-                  const TextInputType.numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
 
               decoration: const InputDecoration(
-                labelText:
-                    'Annual Interest Rate',
+                labelText: 'Annual Interest Rate',
                 suffixText: '%',
-                border:
-                    OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
 
               validator: (value) {
-                final rate =
-                    double.tryParse(
-                  value?.trim() ?? '',
-                );
+                final rate = double.tryParse(value?.trim() ?? '');
 
-                if (rate == null ||
-                    rate < 0) {
+                if (rate == null || rate < 0) {
                   return 'Enter a valid interest rate';
                 }
 
@@ -557,21 +490,16 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // INTEREST TYPE
             // ==================================================
-
             DropdownButtonFormField<String>(
               initialValue: _interestType,
 
               decoration: const InputDecoration(
                 labelText: 'Interest Type',
-                border:
-                    OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
 
               items: const [
-                DropdownMenuItem(
-                  value: 'ANNUAL',
-                  child: Text('Annual'),
-                ),
+                DropdownMenuItem(value: 'ANNUAL', child: Text('Annual')),
               ],
 
               onChanged: _saving
@@ -582,8 +510,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                       }
 
                       setState(() {
-                        _interestType =
-                            value;
+                        _interestType = value;
                       });
                     },
             ),
@@ -593,35 +520,22 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // PAYMENT METHOD
             // ==================================================
-
             DropdownButtonFormField<String>(
               initialValue: _paymentMethod,
 
               decoration: const InputDecoration(
-                labelText:
-                    'Payment Method',
-                border:
-                    OutlineInputBorder(),
+                labelText: 'Payment Method',
+                border: OutlineInputBorder(),
               ),
 
               items: const [
-                DropdownMenuItem(
-                  value: 'Cash',
-                  child: Text('Cash'),
-                ),
-                DropdownMenuItem(
-                  value: 'Bank',
-                  child: Text('Bank'),
-                ),
+                DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                DropdownMenuItem(value: 'Bank', child: Text('Bank')),
                 DropdownMenuItem(
                   value: 'Mobile Banking',
-                  child:
-                      Text('Mobile Banking'),
+                  child: Text('Mobile Banking'),
                 ),
-                DropdownMenuItem(
-                  value: 'Other',
-                  child: Text('Other'),
-                ),
+                DropdownMenuItem(value: 'Other', child: Text('Other')),
               ],
 
               onChanged: _saving
@@ -632,8 +546,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                       }
 
                       setState(() {
-                        _paymentMethod =
-                            value;
+                        _paymentMethod = value;
                       });
                     },
             ),
@@ -643,67 +556,39 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // ACCOUNT
             // ==================================================
-
             InkWell(
-              onTap: _saving
-                  ? null
-                  : _selectAccount,
+              onTap: _saving ? null : _selectAccount,
 
-              borderRadius:
-                  BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(4),
 
               child: InputDecorator(
-                decoration:
-                    const InputDecoration(
-                  labelText:
-                      'Payment Account',
-                  border:
-                      OutlineInputBorder(),
-                  suffixIcon:
-                      Icon(
-                    Icons
-                        .arrow_drop_down,
-                  ),
+                decoration: const InputDecoration(
+                  labelText: 'Payment Account',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.arrow_drop_down),
                 ),
 
                 child: _loadingAccounts
                     ? const SizedBox(
                         height: 20,
-                        child:
-                            Align(
-                          alignment:
-                              Alignment
-                                  .centerLeft,
-                          child:
-                              SizedBox(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: SizedBox(
                             width: 20,
                             height: 20,
-                            child:
-                                CircularProgressIndicator(
-                              strokeWidth:
-                                  2,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         ),
                       )
                     : Text(
-                        _accountName ??
-                            'Select payment account',
+                        _accountName ?? 'Select payment account',
                         style: TextStyle(
-                          color:
-                              _accountName ==
-                                      null
-                                  ? Colors
-                                      .grey
-                                      .shade600
-                                  : null,
-                          fontWeight:
-                              _accountName ==
-                                      null
-                                  ? FontWeight
-                                      .normal
-                                  : FontWeight
-                                      .w600,
+                          color: _accountName == null
+                              ? Colors.grey.shade600
+                              : null,
+                          fontWeight: _accountName == null
+                              ? FontWeight.normal
+                              : FontWeight.w600,
                         ),
                       ),
               ),
@@ -714,33 +599,19 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // LOAN DATE
             // ==================================================
-
             InkWell(
-              onTap: _saving
-                  ? null
-                  : _selectLoanDate,
+              onTap: _saving ? null : _selectLoanDate,
 
-              borderRadius:
-                  BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(4),
 
               child: InputDecorator(
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Loan Date',
-                  border:
-                      OutlineInputBorder(),
-                  suffixIcon:
-                      Icon(
-                    Icons
-                        .calendar_today,
-                  ),
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today),
                 ),
 
-                child: Text(
-                  _formatDate(
-                    _loanDate,
-                  ),
-                ),
+                child: Text(_formatDate(_loanDate)),
               ),
             ),
 
@@ -749,37 +620,22 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // DUE DATE
             // ==================================================
-
             InkWell(
-              onTap: _saving
-                  ? null
-                  : _selectDueDate,
+              onTap: _saving ? null : _selectDueDate,
 
-              borderRadius:
-                  BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(4),
 
               child: InputDecorator(
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Due Date',
-                  border:
-                      OutlineInputBorder(),
-                  suffixIcon:
-                      Icon(
-                    Icons.event,
-                  ),
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.event),
                 ),
 
                 child: Text(
-                  _dueDate == null
-                      ? 'Select due date'
-                      : _formatDate(
-                          _dueDate!,
-                        ),
+                  _dueDate == null ? 'Select due date' : _formatDate(_dueDate!),
                   style: TextStyle(
-                    color: _dueDate == null
-                        ? Colors.grey
-                        : null,
+                    color: _dueDate == null ? Colors.grey : null,
                   ),
                 ),
               ),
@@ -790,19 +646,15 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // NOTE
             // ==================================================
-
             TextFormField(
-              controller:
-                  _noteController,
+              controller: _noteController,
 
               maxLines: 3,
 
-              decoration:
-                  const InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Note',
                 hintText: 'Optional',
-                border:
-                    OutlineInputBorder(),
+                border: OutlineInputBorder(),
               ),
             ),
 
@@ -811,38 +663,25 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             // ==================================================
             // SAVE
             // ==================================================
-
             SizedBox(
               height: 52,
 
               child: FilledButton.icon(
-                onPressed:
-                    _saving
-                        ? null
-                        : _saveLoan,
+                onPressed: _saving ? null : _saveLoan,
 
                 icon: _saving
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child:
-                            CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(
-                        Icons.save,
-                      ),
+                    : const Icon(Icons.save),
 
                 label: Text(
-                  _saving
-                      ? 'Saving...'
-                      : 'Save Loan',
-                  style:
-                      const TextStyle(
+                  _saving ? 'Saving...' : 'Save Loan',
+                  style: const TextStyle(
                     fontSize: 16,
-                    fontWeight:
-                        FontWeight.bold,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),

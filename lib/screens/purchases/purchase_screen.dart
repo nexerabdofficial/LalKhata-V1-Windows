@@ -72,6 +72,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     text: '0',
   );
 
+  final TextEditingController _noteController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -103,23 +105,38 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Future<void> _openAddProduct() async {
-    final result = await Navigator.push(
+    final createdProductId = await Navigator.push<int>(
       context,
-      MaterialPageRoute(builder: (_) => const AddProductScreen()),
+      MaterialPageRoute<int>(
+        builder: (_) => const AddProductScreen(returnAfterCreate: true),
+      ),
     );
 
-    if (result == true) {
-      final products = await _productRepository.getProducts();
+    if (createdProductId == null || !mounted) return;
 
-      if (!mounted) return;
+    final products = await _productRepository.getProducts();
 
-      setState(() {
-        _products = products;
-        _formState.productId = null;
-      });
+    if (!mounted) return;
 
-      _showMessage('Product list updated.');
+    setState(() {
+      _products = products;
+      _formState.productId = createdProductId;
+    });
+
+    Product? createdProduct;
+
+    for (final product in products) {
+      if (product.id == createdProductId) {
+        createdProduct = product;
+        break;
+      }
     }
+
+    _showMessage(
+      createdProduct == null
+          ? 'Product list updated.'
+          : '${createdProduct.name} added and selected.',
+    );
   }
 
   Future<void> _loadSuppliers() async {
@@ -669,6 +686,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
       _discountController.text = purchase.invoiceDiscount.toStringAsFixed(2);
 
+      _noteController.text = purchase.note ?? '';
+
       _selectedAccount = selectedAccount;
 
       for (final row in _paymentRows) {
@@ -871,7 +890,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                         .account
                         .name
                   : 'Cash'),
-        note: null,
+        note: _noteController.text.trim().isEmpty
+            ? null
+            : _noteController.text.trim(),
         createdAt: DateTime.now().toIso8601String(),
       );
 
@@ -960,6 +981,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           _additionalChargeController.text = '0';
           _discountController.text = '0';
+          _noteController.clear();
 
           if (_accounts.isNotEmpty) {
             try {
@@ -994,6 +1016,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     _paidController.dispose();
     _additionalChargeController.dispose();
     _discountController.dispose();
+    _noteController.dispose();
 
     super.dispose();
   }
@@ -1366,75 +1389,91 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                           horizontal: 14,
                           vertical: 10,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Purchase Summary',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Purchase Summary',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 5),
-                            _purchaseSummaryRow(
-                              'Items Subtotal',
-                              _itemsSubtotal(),
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _additionalChargeController,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    decoration: const InputDecoration(
-                                      labelText: 'Additional Charge',
-                                      prefixText: '৳ ',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
+                              const SizedBox(height: 5),
+                              _purchaseSummaryRow(
+                                'Items Subtotal',
+                                _itemsSubtotal(),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _additionalChargeController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Additional Charge',
+                                        prefixText: '৳ ',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      onChanged: (_) => setState(() {}),
                                     ),
-                                    onChanged: (_) => setState(() {}),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _discountController,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    decoration: const InputDecoration(
-                                      labelText: 'Discount',
-                                      prefixText: '৳ ',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _discountController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Discount',
+                                        prefixText: '৳ ',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      onChanged: (_) => setState(() {}),
                                     ),
-                                    onChanged: (_) => setState(() {}),
                                   ),
+                                ],
+                              ),
+                              const SizedBox(height: 7),
+                              TextFormField(
+                                controller: _noteController,
+                                maxLines: 2,
+                                minLines: 1,
+                                decoration: const InputDecoration(
+                                  labelText: 'Note',
+                                  hintText:
+                                      'e.g. Delivery charge, transport, other details',
+                                  prefixIcon: Icon(Icons.note_alt_outlined),
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 7),
-                            _purchaseSummaryRow(
-                              'Grand Total',
-                              _grandTotal(),
-                              bold: true,
-                            ),
-                            const Divider(),
-                            _purchaseSummaryRow('Paid', _paidAmount()),
-                            const SizedBox(height: 5),
-                            _purchaseSummaryRow(
-                              'Due Amount',
-                              _dueAmount(),
-                              bold: true,
-                              due: true,
-                            ),
-                          ],
+                              ),
+                              const SizedBox(height: 7),
+                              _purchaseSummaryRow(
+                                'Grand Total',
+                                _grandTotal(),
+                                bold: true,
+                              ),
+                              const Divider(),
+                              _purchaseSummaryRow('Paid', _paidAmount()),
+                              const SizedBox(height: 5),
+                              _purchaseSummaryRow(
+                                'Due Amount',
+                                _dueAmount(),
+                                bold: true,
+                                due: true,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1802,21 +1841,49 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 final item = _purchaseItems[index];
 
                 return Card(
-                  child: ListTile(
-                    title: Text(item.productName),
-                    subtitle: Text(
-                      'Qty: ${item.qty} × '
-                      '${item.purchasePrice.toStringAsFixed(2)}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.productName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                'Qty: ${item.qty} × '
+                                '৳${item.purchasePrice.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
-                          item.subtotal.toStringAsFixed(2),
+                          '৳${item.subtotal.toStringAsFixed(2)}',
+                          textAlign: TextAlign.right,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Delete Item',
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
                           onPressed: () {
                             setState(() {
                               _purchaseItems.removeAt(index);

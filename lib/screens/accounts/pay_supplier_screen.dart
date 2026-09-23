@@ -221,7 +221,10 @@ class _PaySupplierScreenState extends State<PaySupplierScreen> {
         ),
       );
 
-      Navigator.pop(context, true);
+      // Stay on Pay Supplier for another entry.
+      setState(() {
+        _amountController.clear();
+      });
     } catch (e) {
       if (!mounted) return;
 

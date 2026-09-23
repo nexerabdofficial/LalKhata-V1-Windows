@@ -59,7 +59,7 @@ class AccountService {
   // UPDATE ACCOUNT
   // ============================================================
 
-  Future<void> updateAccount(Account account) async {
+  Future<void> updateAccount(Account account, {int? groupId}) async {
     if (account.id == null) {
       throw ArgumentError('Account ID is required for update.');
     }
@@ -79,23 +79,44 @@ class AccountService {
     await _systemAccounts.ensureFoundation();
 
     // Resolve the target group BEFORE changing the account.
-    // This prevents a partial update if FF classification
-    // is invalid or missing.
-    final groupCode = _groupCodeForAccountType(account.type);
+    // An explicitly selected custom group takes priority.
+    // Otherwise use the standard classification for the type.
+    int targetGroupId;
 
-    final group = await _hierarchyService.getGroupByCode(groupCode);
+    if (groupId != null) {
+      final selectedGroup = await _hierarchyService.getGroupById(groupId);
 
-    if (group == null || group.id == null) {
-      throw StateError('FF account group not found: $groupCode');
+      if (selectedGroup == null || selectedGroup.id == null) {
+        throw StateError('Account group not found: $groupId');
+      }
+
+      targetGroupId = selectedGroup.id!;
+    } else {
+      final groupCode = _groupCodeForAccountType(account.type);
+      final group = await _hierarchyService.getGroupByCode(groupCode);
+
+      if (group == null || group.id == null) {
+        throw StateError('FF account group not found: $groupCode');
+      }
+
+      targetGroupId = group.id!;
     }
 
     await _accountRepository.updateAccount(account);
 
     await _hierarchyService.linkAccount(
       accountId: account.id!,
-      groupId: group.id!,
+      groupId: targetGroupId,
       isPrimary: true,
     );
+  }
+
+  // ============================================================
+  // GET PRIMARY ACCOUNT GROUP
+  // ============================================================
+
+  Future<dynamic> getPrimaryGroupForAccount(int accountId) async {
+    return await _hierarchyService.getPrimaryGroupForAccount(accountId);
   }
 
   // ============================================================

@@ -106,8 +106,35 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
       if (!mounted) return;
 
+      FFAccountGroupOption? selected;
+
+      if (isEdit && widget.account?.id != null) {
+        try {
+          final primaryGroup = await _accountService.getPrimaryGroupForAccount(
+            widget.account!.id!,
+          );
+
+          if (primaryGroup != null) {
+            for (final group in groups) {
+              if (group.id == primaryGroup.id) {
+                selected = group;
+                break;
+              }
+            }
+          }
+        } catch (_) {
+          // Keep standard classification fallback available.
+        }
+      }
+
+      if (!mounted) return;
+
       setState(() {
         _groups = groups;
+
+        if (isEdit) {
+          _selectedGroup = selected;
+        }
       });
     } catch (_) {
       // Account creation can still use the standard type mapping.
@@ -152,6 +179,54 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
   }
 
+  List<FFAccountGroupOption> get _compatibleCustomGroups {
+    // This field is specifically "Custom Group", so never expose
+    // system groups such as Cash, Bank, Inventory, etc.
+    final customGroups = _groups.where((group) => !group.isSystem).toList();
+
+    final type = (isEdit ? _type : _newAccountType)?.trim().toUpperCase();
+
+    if (type == null || type.isEmpty) {
+      return customGroups;
+    }
+
+    String? requiredKind;
+
+    switch (type) {
+      case 'CASH':
+      case 'BANK':
+      case 'MOBILE_BANKING':
+      case 'MFS':
+      case 'OTHER_CURRENT_ASSET':
+      case 'FIXED_ASSET':
+        requiredKind = 'ASSET';
+        break;
+
+      case 'OTHER_LIABILITY':
+        requiredKind = 'LIABILITY';
+        break;
+
+      case 'OWNER_CAPITAL':
+        requiredKind = 'EQUITY';
+        break;
+
+      case 'OTHER_INCOME':
+        requiredKind = 'INCOME';
+        break;
+
+      case 'OPERATING_EXPENSE':
+        requiredKind = 'EXPENSE';
+        break;
+
+      default:
+        return customGroups;
+    }
+
+    return customGroups.where((group) {
+      return group.groupKind.trim().toUpperCase() == requiredKind;
+    }).toList();
+  }
+
   bool get _isPartyCreation =>
       !isEdit &&
       (_newAccountType == "CUSTOMER" || _newAccountType == "SUPPLIER");
@@ -163,6 +238,18 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     if (isEdit) {
       setState(() {
         _type = value;
+
+        final selected = _selectedGroup;
+
+        if (selected != null) {
+          final stillCompatible = _compatibleCustomGroups.any(
+            (group) => group.id == selected.id,
+          );
+
+          if (!stillCompatible) {
+            _selectedGroup = null;
+          }
+        }
       });
       return;
     }
@@ -171,9 +258,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       _newAccountType = value;
       _type = value;
 
-      if (_isPartyCreation) {
-        _selectedGroup = null;
-      }
+      // A custom group belongs to an accounting classification.
+      // Never carry an old selection into another account type.
+      _selectedGroup = null;
     });
 
     if (_isPartyCreation) {
@@ -252,7 +339,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
           createdAt: widget.account!.createdAt,
         );
 
-        await _accountService.updateAccount(account);
+        await _accountService.updateAccount(
+          account,
+          groupId: _selectedGroup?.id,
+        );
       } else {
         final exists = await _repository.accountNameExists(name);
 
@@ -447,22 +537,17 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     hintText: "Use standard account classification",
                     border: OutlineInputBorder(),
                   ),
-                  items: _groups.map((group) {
+                  items: _compatibleCustomGroups.map((group) {
                     return DropdownMenuItem<FFAccountGroupOption>(
                       value: group,
-                      child: Text(
-                        '${group.name} • ${group.groupKind}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(group.name, overflow: TextOverflow.ellipsis),
                     );
                   }).toList(),
-                  onChanged: isEdit
-                      ? null
-                      : (value) {
-                          setState(() {
-                            _selectedGroup = value;
-                          });
-                        },
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedGroup = value;
+                    });
+                  },
                 ),
 
                 const SizedBox(height: 8),
