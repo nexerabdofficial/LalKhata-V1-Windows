@@ -17,6 +17,8 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
   FFBalanceSheetReport? _report;
   bool _loading = true;
 
+  DateTime _asOfDate = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -27,7 +29,17 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
     setState(() => _loading = true);
 
     try {
-      final report = await _service.getReport();
+      final report = await _service.getReport(
+        asOf: DateTime(
+          _asOfDate.year,
+          _asOfDate.month,
+          _asOfDate.day,
+          23,
+          59,
+          59,
+          999,
+        ),
+      );
 
       if (!mounted) return;
 
@@ -44,6 +56,90 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
         SnackBar(content: Text('Failed to load Balance Sheet: $e')),
       );
     }
+  }
+
+  String _dateLabel(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
+  }
+
+  Future<void> _setToday() async {
+    final now = DateTime.now();
+
+    setState(() {
+      _asOfDate = DateTime(now.year, now.month, now.day);
+    });
+
+    await _loadBalanceSheet();
+  }
+
+  Future<void> _setYesterday() async {
+    final now = DateTime.now();
+    final yesterday = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(const Duration(days: 1));
+
+    setState(() {
+      _asOfDate = yesterday;
+    });
+
+    await _loadBalanceSheet();
+  }
+
+  Future<void> _pickAsOfDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _asOfDate,
+      firstDate: DateTime(2000, 1, 1),
+      lastDate: DateTime.now(),
+      helpText: 'Balance Sheet As On',
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _asOfDate = picked;
+    });
+
+    await _loadBalanceSheet();
+  }
+
+  Widget _asOfFilter() {
+    return PopupMenuButton<String>(
+      tooltip: 'As on ${_dateLabel(_asOfDate)}',
+      onSelected: (value) async {
+        if (value == 'TODAY') {
+          await _setToday();
+        } else if (value == 'YESTERDAY') {
+          await _setYesterday();
+        } else if (value == 'CUSTOM') {
+          await _pickAsOfDate();
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'TODAY', child: Text('Today')),
+        PopupMenuItem(value: 'YESTERDAY', child: Text('Yesterday')),
+        PopupMenuItem(value: 'CUSTOM', child: Text('Custom Date')),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.event_outlined, size: 20),
+            const SizedBox(width: 5),
+            Text(
+              'As on ${_dateLabel(_asOfDate)}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const Icon(Icons.arrow_drop_down_rounded),
+          ],
+        ),
+      ),
+    );
   }
 
   String _money(double value) {
@@ -644,6 +740,11 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
             'Statement of Financial Position',
             style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500),
           ),
+          const SizedBox(height: 3),
+          Text(
+            'As on ${_dateLabel(_asOfDate)}',
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -759,6 +860,7 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          _asOfFilter(),
           IconButton(
             tooltip: 'PDF Preview',
             onPressed: _loading || report == null
@@ -834,12 +936,25 @@ class _BalanceSheetScreenState extends State<BalanceSheetScreen> {
                                 ],
                               ),
                             ),
-                            const Text(
-                              'Statement of Financial Position',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  'Statement of Financial Position',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'As on ${_dateLabel(_asOfDate)}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

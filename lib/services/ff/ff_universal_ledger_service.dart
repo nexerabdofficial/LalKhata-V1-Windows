@@ -89,6 +89,8 @@ class FFUniversalLedgerService {
 
     final result = <Map<String, dynamic>>[];
 
+    final Database db = await _databaseHelper.database;
+
     for (final row in periodRows) {
       final debit = _toDouble(row['debit']);
       final credit = _toDouble(row['credit']);
@@ -99,7 +101,25 @@ class FFUniversalLedgerService {
         normalBalance: direction,
       );
 
-      result.add({...row, 'running_balance': balance});
+      final journalId = _toInt(row['journal_id']);
+
+      String counterparty = '';
+
+      if (journalId != null) {
+        counterparty = await _getCounterpartyNames(
+          db: db,
+          journalId: journalId,
+          accountId: accountId,
+          currentLineDebit: debit,
+          currentLineCredit: credit,
+        );
+      }
+
+      result.add({
+        ...row,
+        'running_balance': balance,
+        'counterparty': counterparty,
+      });
     }
 
     return result;
@@ -451,6 +471,54 @@ class FFUniversalLedgerService {
     }
 
     return credit - debit;
+  }
+
+  // ============================================================
+  // COUNTERPARTY
+  //
+  // For a debit line, counterparties are normally credit lines
+  // from the same journal.
+  //
+  // For a credit line, counterparties are normally debit lines.
+  //
+  // This keeps Cash / Bank / MFS ledgers understandable without
+  // relying on manually typed narration.
+  // ============================================================
+
+  Future<String> _getCounterpartyNames({
+    required DatabaseExecutor db,
+    required int journalId,
+    required int accountId,
+    required double currentLineDebit,
+    required double currentLineCredit,
+  }) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT DISTINCT
+        a.id AS account_id,
+        a.name AS account_name
+      FROM journal_lines jl
+      INNER JOIN accounts a
+        ON a.id = jl.account_id
+      WHERE jl.journal_id = ?
+        AND jl.account_id != ?
+        AND (jl.debit > 0 OR jl.credit > 0)
+      ORDER BY jl.id
+      ''',
+      [journalId, accountId],
+    );
+
+    final names = <String>[];
+
+    for (final row in rows) {
+      final name = row['account_name']?.toString().trim() ?? '';
+
+      if (name.isNotEmpty && !names.contains(name)) {
+        names.add(name);
+      }
+    }
+
+    return names.join(', ');
   }
 
   // ============================================================

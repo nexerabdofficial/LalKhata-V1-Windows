@@ -261,6 +261,44 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
   }
 
   String _description(Map<String, dynamic> row) {
+    final counterparty = row['counterparty']?.toString().trim() ?? '';
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    if (counterparty.isNotEmpty) {
+      if (debit > 0) {
+        return 'Received from $counterparty';
+      }
+
+      if (credit > 0) {
+        return 'Paid to $counterparty';
+      }
+
+      return counterparty;
+    }
+
+    final note = row['note']?.toString().trim() ?? '';
+
+    if (note.isNotEmpty) {
+      return note;
+    }
+
+    final description = row['description']?.toString().trim() ?? '';
+
+    if (description.isNotEmpty) {
+      return description;
+    }
+
+    return row['transaction_type']?.toString().trim() ?? '';
+  }
+
+  String _secondaryDescription(Map<String, dynamic> row) {
+    final counterparty = row['counterparty']?.toString().trim() ?? '';
+
+    if (counterparty.isEmpty) {
+      return '';
+    }
+
     final note = row['note']?.toString().trim() ?? '';
 
     if (note.isNotEmpty) {
@@ -573,11 +611,40 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
           ),
         ),
         Tooltip(
-          message: _description(transaction),
-          child: _ledgerCell(
+          message: [
             _description(transaction),
+            _secondaryDescription(transaction),
+          ].where((e) => e.isNotEmpty).join(' • '),
+          child: SizedBox(
             width: _particularWidth,
-            maxLines: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _description(transaction),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_secondaryDescription(transaction).isNotEmpty)
+                    Text(
+                      _secondaryDescription(transaction),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
         _ledgerCell(
@@ -835,8 +902,19 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 
             Text(
               _description(transaction),
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
+
+            if (_secondaryDescription(transaction).isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                _secondaryDescription(transaction),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
 
             const Divider(height: 20),
 

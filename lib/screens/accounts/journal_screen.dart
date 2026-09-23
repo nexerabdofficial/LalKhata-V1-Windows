@@ -122,6 +122,38 @@ class _JournalScreenState extends State<JournalScreen> {
     });
   }
 
+  void _autoBalanceAmount({required bool changedDebit}) {
+    final sourceLines = changedDebit ? _debitLines : _creditLines;
+    final targetLines = changedDebit ? _creditLines : _debitLines;
+
+    // Auto-fill is only for the simple 1 Debit <-> 1 Credit case.
+    // Multi-line journals remain fully manual.
+    if (sourceLines.length != 1 || targetLines.length != 1) {
+      return;
+    }
+
+    final sourceAmount =
+        double.tryParse(sourceLines.first.amount.text.trim()) ?? 0;
+
+    final target = targetLines.first;
+
+    if (sourceAmount <= 0) {
+      if (target.amount.text.isNotEmpty) {
+        target.amount.clear();
+      }
+      return;
+    }
+
+    final formatted = _formatMoney(sourceAmount);
+
+    if (target.amount.text != formatted) {
+      target.amount.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+  }
+
   void _addDebitLine() {
     setState(() {
       _debitLines.add(_JournalLine());
@@ -328,7 +360,10 @@ class _JournalScreenState extends State<JournalScreen> {
                 labelText: debit ? 'Debit' : 'Credit',
                 border: const OutlineInputBorder(),
               ),
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) {
+                _autoBalanceAmount(changedDebit: debit);
+                setState(() {});
+              },
               validator: (value) {
                 final amount = double.tryParse(value?.trim() ?? '');
 

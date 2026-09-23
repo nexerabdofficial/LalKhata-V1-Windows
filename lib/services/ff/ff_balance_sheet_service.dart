@@ -146,7 +146,10 @@ class FFBalanceSheetService {
       to: effectiveAsOf,
     );
 
-    final openingDifference = await _calculateOpeningDifference(db);
+    final openingDifference = await _calculateOpeningDifference(
+      db,
+      effectiveAsOf.toIso8601String(),
+    );
 
     return FFBalanceSheetReport(
       assets: rows.where((row) => row.groupKind == 'ASSET').toList(),
@@ -187,7 +190,13 @@ class FFBalanceSheetService {
         COALESCE(g.group_kind, '') AS group_kind,
         COALESCE(g.account_nature, '') AS account_nature,
 
-        COALESCE(a.opening_balance, 0) AS opening_balance,
+        CASE
+          WHEN a.opening_date IS NULL
+            OR TRIM(a.opening_date) = ''
+            OR a.opening_date <= ?
+          THEN COALESCE(a.opening_balance, 0)
+          ELSE 0
+        END AS opening_balance,
 
         COALESCE(
           SUM(
@@ -246,7 +255,7 @@ class FFBalanceSheetService {
         g.group_code,
         a.name
       ''',
-      [asOfIso, asOfIso],
+      [asOfIso, asOfIso, asOfIso],
     );
 
     final result = <FFBalanceSheetRow>[];
@@ -297,10 +306,20 @@ class FFBalanceSheetService {
   // It does NOT force the Balance Sheet to balance.
   // ==========================================================
 
-  Future<double> _calculateOpeningDifference(DatabaseExecutor db) async {
-    final rows = await db.rawQuery('''
+  Future<double> _calculateOpeningDifference(
+    DatabaseExecutor db,
+    String asOfIso,
+  ) async {
+    final rows = await db.rawQuery(
+      '''
       SELECT
-        COALESCE(a.opening_balance, 0) AS opening_balance,
+        CASE
+          WHEN a.opening_date IS NULL
+            OR TRIM(a.opening_date) = ''
+            OR a.opening_date <= ?
+          THEN COALESCE(a.opening_balance, 0)
+          ELSE 0
+        END AS opening_balance,
         COALESCE(g.account_nature, '') AS account_nature
       FROM accounts a
 
@@ -316,7 +335,9 @@ class FFBalanceSheetService {
         'LIABILITY',
         'EQUITY'
       )
-    ''');
+      ''',
+      [asOfIso],
+    );
 
     double debitOpening = 0;
     double creditOpening = 0;
