@@ -17,8 +17,13 @@ import 'reconciliation_screen.dart';
 
 class AccountsScreen extends StatefulWidget {
   final String? initialType;
+  final bool autofocusSearch;
 
-  const AccountsScreen({super.key, this.initialType});
+  const AccountsScreen({
+    super.key,
+    this.initialType,
+    this.autofocusSearch = false,
+  });
 
   @override
   State<AccountsScreen> createState() => _AccountsScreenState();
@@ -35,6 +40,7 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
       FFUniversalLedgerService.instance;
 
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   bool _loading = true;
 
@@ -73,6 +79,14 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   void initState() {
     super.initState();
     _loadAccounts();
+
+    if (widget.autofocusSearch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _searchFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   @override
@@ -95,6 +109,7 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
   void dispose() {
     routeObserver.unsubscribe(this);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -743,6 +758,7 @@ class _AccountsScreenState extends State<AccountsScreen> with RouteAware {
                         padding: const EdgeInsets.all(12),
                         child: TextField(
                           controller: _searchController,
+                          focusNode: _searchFocusNode,
                           decoration: InputDecoration(
                             hintText: "Search account...",
                             prefixIcon: const Icon(Icons.search),

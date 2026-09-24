@@ -5,8 +5,13 @@ import '../../services/supplier_repository.dart';
 
 class AddSupplierScreen extends StatefulWidget {
   final Supplier? supplier;
+  final bool returnAfterCreate;
 
-  const AddSupplierScreen({super.key, this.supplier});
+  const AddSupplierScreen({
+    super.key,
+    this.supplier,
+    this.returnAfterCreate = false,
+  });
 
   @override
   State<AddSupplierScreen> createState() => _AddSupplierScreenState();
@@ -121,6 +126,11 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
       );
 
       if (widget.supplier != null) {
+        Navigator.pop(context, true);
+        return;
+      }
+
+      if (widget.returnAfterCreate) {
         Navigator.pop(context, true);
         return;
       }

@@ -152,7 +152,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   Future<void> _openAddSupplier() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AddSupplierScreen()),
+      MaterialPageRoute(
+        builder: (_) => const AddSupplierScreen(returnAfterCreate: true),
+      ),
     );
 
     if (result == true) {

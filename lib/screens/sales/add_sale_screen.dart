@@ -337,7 +337,9 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   Future<void> _openAddCustomer() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AddCustomerScreen()),
+      MaterialPageRoute(
+        builder: (_) => const AddCustomerScreen(returnAfterCreate: true),
+      ),
     );
 
     if (result == true) {
@@ -362,27 +364,44 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   // ============================================================
 
   Future<void> _openAddProduct() async {
-    final result = await Navigator.push(
+    final createdProductId = await Navigator.push<int>(
       context,
-      MaterialPageRoute(builder: (_) => const AddProductScreen()),
+      MaterialPageRoute<int>(
+        builder: (_) => const AddProductScreen(returnAfterCreate: true),
+      ),
     );
 
-    if (result == true) {
-      final products = await _productRepository.getProducts();
+    if (createdProductId == null || !mounted) return;
 
-      if (!mounted) return;
+    final products = await _productRepository.getProducts();
 
-      setState(() {
-        _products = products;
-        _productController.clear();
-        _selectedProduct = null;
-        _showProductSuggestions = false;
-      });
+    if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Product list updated.")));
+    Product? createdProduct;
+
+    for (final product in products) {
+      if (product.id == createdProductId) {
+        createdProduct = product;
+        break;
+      }
     }
+
+    setState(() {
+      _products = products;
+      _selectedProduct = createdProduct;
+      _productController.text = createdProduct?.name ?? '';
+      _showProductSuggestions = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          createdProduct == null
+              ? 'Product list updated.'
+              : '${createdProduct.name} added and selected.',
+        ),
+      ),
+    );
   }
 
   // ============================================================
@@ -648,6 +667,76 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
   }
 
   // ============================================================
+  // RESET AFTER SUCCESSFUL SALE
+  // ============================================================
+
+  void _resetAfterSuccessfulSale() {
+    // Dispose old split-payment controllers before clearing them.
+    for (final row in _paymentRows) {
+      row.controller.dispose();
+    }
+
+    _paymentRows.clear();
+
+    // Restore default money account, preferring Cash.
+    Account? defaultAccount;
+
+    if (_accounts.isNotEmpty) {
+      try {
+        defaultAccount = _accounts.firstWhere(
+          (account) => account.type.trim().toUpperCase() == 'CASH',
+        );
+      } catch (_) {
+        defaultAccount = _accounts.first;
+      }
+    }
+
+    _selectedAccount = defaultAccount;
+
+    if (defaultAccount != null) {
+      final controller = TextEditingController(text: '0');
+
+      controller.addListener(() {
+        _syncPaidController();
+
+        if (mounted) {
+          setState(() {});
+        }
+      });
+
+      _paymentRows.add(
+        _SalePaymentRow(account: defaultAccount, controller: controller),
+      );
+    }
+
+    _selectedCustomer = null;
+    _selectedProduct = null;
+
+    _customerController.clear();
+    _productController.clear();
+    _qtyController.text = '1';
+    _paidController.text = '0.00';
+
+    _additionalChargeController.text = '0';
+    _discountController.text = '0';
+    _noteController.clear();
+
+    _showCustomerSuggestions = false;
+    _showProductSuggestions = false;
+
+    _cart.clear();
+
+    _balanceForward = 0;
+    _additionalCharge = 0;
+    _invoiceDiscount = 0;
+    _grandTotal = 0;
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {});
+  }
+
+  // ============================================================
   // SAVE SALE
   // ============================================================
 
@@ -808,10 +897,6 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
       final savedItems = await _saleRepository.getSaleItems(saleId);
 
-      if (savedSale == null) {
-        throw Exception("Saved sale could not be loaded.");
-      }
-
       // ==========================================================
       // GENERATE PDF
       // ==========================================================
@@ -824,7 +909,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         context,
       ).showSnackBar(const SnackBar(content: Text("Sale saved successfully.")));
 
-      Navigator.pop(context, true);
+      _resetAfterSuccessfulSale();
     } catch (e) {
       if (!mounted) return;
 

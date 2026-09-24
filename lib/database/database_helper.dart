@@ -39,6 +39,24 @@ class DatabaseHelper {
   static const String _customerCodeKey = 'nexera_license_customer_code';
 
   // ============================================================
+  // NEXERA SUPPORT DATABASE
+  //
+  // Used ONLY by the dedicated Support build.
+  //
+  // This is deliberately independent from:
+  // - customer license activation
+  // - customer device registration
+  // - nexera_license_customer_code
+  //
+  // Normal/customer builds never enable this path.
+  // ============================================================
+
+  String? _supportDatabasePath;
+
+  bool get isSupportDatabaseActive =>
+      _supportDatabasePath != null && _supportDatabasePath!.trim().isNotEmpty;
+
+  // ============================================================
   // DATABASE GETTER
   // ============================================================
 
@@ -47,7 +65,11 @@ class DatabaseHelper {
       return _database!;
     }
 
-    _database = await _initDatabase();
+    if (isSupportDatabaseActive) {
+      _database = await _openSupportDatabase(_supportDatabasePath!);
+    } else {
+      _database = await _initDatabase();
+    }
 
     return _database!;
   }
@@ -88,6 +110,144 @@ class DatabaseHelper {
     await closeDatabase();
 
     _database = await _initDatabase(customerCode: normalizedCode);
+  }
+
+  // ============================================================
+  // ACTIVE LICENSE DATABASE FILE
+  //
+  // Single source of truth for Backup / Restore.
+  // Windows, Android, Linux, macOS and iOS must NEVER construct
+  // the active database path independently.
+  // ============================================================
+
+  Future<String> getActiveDatabasePath() async {
+    if (isSupportDatabaseActive) {
+      return _supportDatabasePath!;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedCode = prefs.getString(_customerCodeKey);
+
+    if (savedCode == null || savedCode.trim().isEmpty) {
+      throw Exception(
+        'Cannot resolve database: no active license/customer code found.',
+      );
+    }
+
+    final normalizedCode = _normalizeCustomerCode(savedCode);
+    final databaseDirectory = await _getDatabaseDirectory();
+    final dbKey = _databaseKey(normalizedCode);
+
+    return join(databaseDirectory, 'lalkhata_$dbKey.db');
+  }
+
+  Future<File> getActiveDatabaseFile() async {
+    return File(await getActiveDatabasePath());
+  }
+
+  // ============================================================
+  // REOPEN ACTIVE DATABASE
+  // ============================================================
+
+  Future<Database> reopenActiveDatabase() async {
+    await closeDatabase();
+
+    if (isSupportDatabaseActive) {
+      _database = await _openSupportDatabase(_supportDatabasePath!);
+    } else {
+      _database = await _initDatabase();
+    }
+
+    return _database!;
+  }
+
+  // ============================================================
+  // SUPPORT DATABASE SANDBOX
+  //
+  // A customer backup is COPIED into our own support sandbox.
+  // The source backup is never opened as the live database.
+  //
+  // No LicenseService activation/validation is performed here.
+  // Therefore the customer's device slot is never consumed.
+  // ============================================================
+
+  Future<String> getSupportDatabasePath() async {
+    final databaseDirectory = await _getDatabaseDirectory();
+
+    return join(databaseDirectory, 'nexera_support_workspace.db');
+  }
+
+  Future<Database> openSupportDatabaseFromFile(String sourcePath) async {
+    final sourceFile = File(sourcePath);
+
+    if (!await sourceFile.exists()) {
+      throw Exception('Support database source file does not exist.');
+    }
+
+    final supportPath = await getSupportDatabasePath();
+
+    final sourceAbsolute = sourceFile.absolute.path;
+    final supportAbsolute = File(supportPath).absolute.path;
+
+    await closeDatabase();
+
+    _supportDatabasePath = supportPath;
+
+    // Remove previous support workspace and SQLite side files.
+    for (final path in <String>[
+      supportPath,
+      '$supportPath-wal',
+      '$supportPath-shm',
+      '$supportPath-journal',
+    ]) {
+      final file = File(path);
+
+      if (await file.exists()) {
+        await file.delete();
+      }
+    }
+
+    // If a caller deliberately supplies the existing support workspace,
+    // do not delete/copy it onto itself.
+    if (sourceAbsolute != supportAbsolute) {
+      await sourceFile.copy(supportPath);
+    } else if (!await File(supportPath).exists()) {
+      throw Exception('Support database workspace does not exist.');
+    }
+
+    try {
+      _database = await _openSupportDatabase(supportPath);
+
+      return _database!;
+    } catch (_) {
+      _supportDatabasePath = null;
+      await closeDatabase();
+      rethrow;
+    }
+  }
+
+  Future<Database> _openSupportDatabase(String path) async {
+    return openDatabase(
+      path,
+      version: _databaseVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+      singleInstance: true,
+    );
+  }
+
+  Future<void> closeSupportDatabase() async {
+    await closeDatabase();
+    _supportDatabasePath = null;
+  }
+
+  Future<File?> getSupportDatabaseFile() async {
+    if (!isSupportDatabaseActive) {
+      return null;
+    }
+
+    return File(_supportDatabasePath!);
   }
 
   // ============================================================

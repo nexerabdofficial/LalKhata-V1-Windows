@@ -102,6 +102,19 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
 
     final key = event.logicalKey;
 
+    if (key == LogicalKeyboardKey.backspace) {
+      _clearBuffer();
+
+      final navigator = appNavigatorKey.currentState;
+
+      if (navigator != null && navigator.canPop()) {
+        navigator.pop();
+        return KeyEventResult.handled;
+      }
+
+      return KeyEventResult.ignored;
+    }
+
     if (key == LogicalKeyboardKey.controlLeft ||
         key == LogicalKeyboardKey.controlRight ||
         key == LogicalKeyboardKey.shiftLeft ||
@@ -184,8 +197,9 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
           break;
 
         case 'ledger':
-          // Account Ledger needs a selected Account.
-          await _open(const AccountsScreen());
+          // Open account list and immediately hand keyboard input
+          // to its search field.
+          await _open(const AccountsScreen(autofocusSearch: true));
           break;
 
         case 'journal':

@@ -83,16 +83,88 @@ class AccountLedgerPdf {
     return '-';
   }
 
-  static String _description(Map<String, dynamic> row) {
+  static String _description(Map<String, dynamic> row, Account account) {
+    final accountType = account.type.trim().toUpperCase();
+
+    final debit = _toDouble(row['debit']);
+    final credit = _toDouble(row['credit']);
+
+    final transactionType =
+        row['transaction_type']?.toString().trim().toUpperCase() ?? '';
+
+    final referenceType =
+        row['reference_type']?.toString().trim().toUpperCase() ?? '';
+
+    final voucher = row['voucher_no']?.toString().trim().toUpperCase() ?? '';
+
+    final counterparty = row['counterparty']?.toString().trim() ?? '';
+
+    final note = row['note']?.toString().trim() ?? '';
+
+    if (accountType == 'CUSTOMER') {
+      // A customer debit is normally the sale/receivable creation.
+      if (debit > 0 &&
+          (transactionType.contains('SALE') ||
+              referenceType.contains('SALE') ||
+              voucher.startsWith('INV') ||
+              voucher.startsWith('SALE'))) {
+        return 'Sale';
+      }
+
+      // Customer credit reduces receivable.
+      if (credit > 0) {
+        return 'Received';
+      }
+
+      if (debit > 0) {
+        return 'Payment';
+      }
+    }
+
+    if (accountType == 'SUPPLIER') {
+      // A supplier credit is normally the purchase/payable creation.
+      if (credit > 0 &&
+          (transactionType.contains('PURCHASE') ||
+              referenceType.contains('PURCHASE') ||
+              voucher.startsWith('PUR') ||
+              voucher.startsWith('PI'))) {
+        return 'Purchase';
+      }
+
+      // Supplier debit reduces payable.
+      if (debit > 0) {
+        return 'Payment';
+      }
+
+      if (credit > 0) {
+        return 'Received';
+      }
+    }
+
+    // Cash / Bank / MFS / other account ledgers.
+    if (debit > 0 && counterparty.isNotEmpty) {
+      return 'Received from $counterparty';
+    }
+
+    if (credit > 0 && counterparty.isNotEmpty) {
+      return 'Paid to $counterparty';
+    }
+
+    if (note.isNotEmpty) {
+      return note;
+    }
+
     for (final key in [
       'description',
-      'note',
       'particulars',
       'reference_type',
       'transaction_type',
     ]) {
       final value = row[key]?.toString().trim() ?? '';
-      if (value.isNotEmpty) return value;
+
+      if (value.isNotEmpty) {
+        return value;
+      }
     }
 
     return '-';
@@ -163,6 +235,20 @@ class AccountLedgerPdf {
 
     String taka(double value) => 'Tk ${money.format(value)}';
 
+    String balanceWithDrCr(double value) {
+      if (value.abs() < 0.005) {
+        return taka(0);
+      }
+
+      final isPositive = value > 0;
+
+      final suffix = summary.normalBalance == 'CREDIT'
+          ? (isPositive ? 'Cr' : 'Dr')
+          : (isPositive ? 'Dr' : 'Cr');
+
+      return '${taka(value.abs())} $suffix';
+    }
+
     final companyName = GABBranding.businessName;
     final companyAddress = GABBranding.address;
     final companyPhone = GABBranding.phone;
@@ -197,7 +283,7 @@ class AccountLedgerPdf {
         isFiltered ? 'Balance Brought Forward' : 'Opening Balance',
         '',
         '',
-        taka(summary.openingBalance),
+        balanceWithDrCr(summary.openingBalance),
       ]);
     }
 
@@ -209,10 +295,10 @@ class AccountLedgerPdf {
       rows.add([
         _formatDate(_transactionDate(row)),
         _voucher(row),
-        _description(row),
+        _description(row, account),
         debit > 0 ? taka(debit) : '',
         credit > 0 ? taka(credit) : '',
-        taka(balance),
+        balanceWithDrCr(balance),
       ]);
     }
 
@@ -402,11 +488,11 @@ class AccountLedgerPdf {
                     ),
                     pw.SizedBox(height: 3),
                     pw.Text(
-                      'Opening: ${taka(summary.openingBalance)}',
+                      'Opening: ${balanceWithDrCr(summary.openingBalance)}',
                       style: pw.TextStyle(font: regularFont, fontSize: 8.5),
                     ),
                     pw.Text(
-                      'Closing: ${taka(summary.closingBalance)}',
+                      'Closing: ${balanceWithDrCr(summary.closingBalance)}',
                       style: pw.TextStyle(font: boldFont, fontSize: 8.5),
                     ),
                   ],
@@ -478,7 +564,7 @@ class AccountLedgerPdf {
                   pw.Divider(color: PdfColors.grey300, height: 8),
                   _summaryRow(
                     'Balance',
-                    taka(summary.closingBalance),
+                    balanceWithDrCr(summary.closingBalance),
                     regularFont,
                     boldFont,
                     bold: true,

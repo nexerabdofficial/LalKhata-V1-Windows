@@ -3,11 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
+import 'support/support_launcher_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'services/license_service.dart';
 import 'widgets/global_keyboard_shortcuts.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+const bool kLalKhataSupportBuild = bool.fromEnvironment(
+  'LALKHATA_SUPPORT_BUILD',
+  defaultValue: false,
+);
 
 class NexeraInventoryApp extends StatelessWidget {
   const NexeraInventoryApp({super.key});
@@ -33,7 +39,9 @@ class NexeraInventoryApp extends StatelessWidget {
         return GlobalKeyboardShortcuts(child: child ?? const SizedBox.shrink());
       },
 
-      home: const LicenseGate(),
+      home: kLalKhataSupportBuild
+          ? const SupportLauncherScreen()
+          : const LicenseGate(),
     );
   }
 }

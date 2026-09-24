@@ -8,12 +8,14 @@ class FFUniversalLedgerSummary {
   final double totalDebit;
   final double totalCredit;
   final double closingBalance;
+  final String normalBalance;
 
   const FFUniversalLedgerSummary({
     required this.openingBalance,
     required this.totalDebit,
     required this.totalCredit,
     required this.closingBalance,
+    required this.normalBalance,
   });
 }
 
@@ -196,6 +198,7 @@ class FFUniversalLedgerService {
       totalDebit: periodDebit,
       totalCredit: periodCredit,
       closingBalance: closingBalance,
+      normalBalance: direction,
     );
   }
 

@@ -409,26 +409,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
               // ==================================================
               // UNIT
               // ==================================================
-              DropdownButtonFormField<String>(
-                initialValue: _selectedUnit,
-                decoration: decoration('Unit'),
-                items: _units
+              DropdownMenu<String>(
+                initialSelection: _selectedUnit,
+                enabled: !_isSaving,
+                enableFilter: true,
+                enableSearch: true,
+                requestFocusOnTap: true,
+                expandedInsets: EdgeInsets.zero,
+                label: const Text('Unit'),
+                dropdownMenuEntries: _units
                     .map(
-                      (unit) => DropdownMenuItem<String>(
-                        value: unit,
-                        child: Text(unit),
-                      ),
+                      (unit) =>
+                          DropdownMenuEntry<String>(value: unit, label: unit),
                     )
                     .toList(),
-                onChanged: _isSaving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
+                onSelected: (value) {
+                  if (value == null) return;
 
-                        setState(() {
-                          _selectedUnit = value;
-                        });
-                      },
+                  setState(() {
+                    _selectedUnit = value;
+                  });
+                },
               ),
 
               const SizedBox(height: 30),

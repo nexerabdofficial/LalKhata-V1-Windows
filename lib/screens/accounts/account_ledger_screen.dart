@@ -242,12 +242,32 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     return NumberFormat('#,##0.##').format(value);
   }
 
+  String _balanceLabel({required double value, bool closing = false}) {
+    if (value.abs() < 0.005) {
+      return closing ? 'Closing Balance' : 'Balance';
+    }
+
+    final normalBalance = _summary?.normalBalance ?? 'DEBIT';
+    final isPositive = value > 0;
+
+    final side = normalBalance == 'CREDIT'
+        ? (isPositive ? 'Credit' : 'Debit')
+        : (isPositive ? 'Debit' : 'Credit');
+
+    return closing ? 'Closing $side Balance' : '$side Balance';
+  }
+
   String _formatBalanceWithDrCr(double value) {
     if (value.abs() < 0.005) {
       return '৳${_formatMoney(0)}';
     }
 
-    final suffix = value > 0 ? 'Dr' : 'Cr';
+    final normalBalance = _summary?.normalBalance ?? 'DEBIT';
+    final isPositive = value > 0;
+
+    final suffix = normalBalance == 'CREDIT'
+        ? (isPositive ? 'Cr' : 'Dr')
+        : (isPositive ? 'Dr' : 'Cr');
 
     return '৳${_formatMoney(value.abs())} $suffix';
   }
@@ -275,31 +295,87 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
     final debit = _toDouble(row['debit']);
     final credit = _toDouble(row['credit']);
 
-    if (counterparty.isNotEmpty) {
-      if (debit > 0) {
-        return 'Received from $counterparty';
+    final accountType = widget.account.type.trim().toUpperCase();
+
+    final transactionType =
+        row['transaction_type']?.toString().trim().toUpperCase() ?? '';
+
+    final referenceType =
+        row['reference_type']?.toString().trim().toUpperCase() ?? '';
+
+    final voucher = row['voucher_no']?.toString().trim().toUpperCase() ?? '';
+
+    final note = row['note']?.toString().trim() ?? '';
+
+    // CUSTOMER:
+    // Debit creates/increases receivable.
+    // Credit reduces receivable.
+    if (accountType == 'CUSTOMER') {
+      if (debit > 0 &&
+          (transactionType.contains('SALE') ||
+              referenceType.contains('SALE') ||
+              voucher.startsWith('INV') ||
+              voucher.startsWith('SALE'))) {
+        return 'Sale';
       }
 
       if (credit > 0) {
-        return 'Paid to $counterparty';
+        return 'Received';
       }
 
-      return counterparty;
+      if (debit > 0) {
+        return 'Payment';
+      }
     }
 
-    final note = row['note']?.toString().trim() ?? '';
+    // SUPPLIER:
+    // Credit creates/increases payable.
+    // Debit reduces payable.
+    if (accountType == 'SUPPLIER') {
+      if (credit > 0 &&
+          (transactionType.contains('PURCHASE') ||
+              referenceType.contains('PURCHASE') ||
+              voucher.startsWith('PUR') ||
+              voucher.startsWith('PI'))) {
+        return 'Purchase';
+      }
+
+      if (debit > 0) {
+        return 'Payment';
+      }
+
+      if (credit > 0) {
+        return 'Received';
+      }
+    }
+
+    // Money/general accounts.
+    if (debit > 0 && counterparty.isNotEmpty) {
+      return 'Received from $counterparty';
+    }
+
+    if (credit > 0 && counterparty.isNotEmpty) {
+      return 'Paid to $counterparty';
+    }
 
     if (note.isNotEmpty) {
       return note;
     }
 
-    final description = row['description']?.toString().trim() ?? '';
+    for (final key in [
+      'description',
+      'particulars',
+      'reference_type',
+      'transaction_type',
+    ]) {
+      final value = row[key]?.toString().trim() ?? '';
 
-    if (description.isNotEmpty) {
-      return description;
+      if (value.isNotEmpty) {
+        return value;
+      }
     }
 
-    return row['transaction_type']?.toString().trim() ?? '';
+    return '-';
   }
 
   String _secondaryDescription(Map<String, dynamic> row) {
@@ -447,9 +523,9 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text(
-                    'Closing Balance',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  Text(
+                    _balanceLabel(value: _currentBalance, closing: true),
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -719,33 +795,6 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
   // TOTALS
   // ============================================================
 
-  Widget _summaryLine(String label, double value, {bool bold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-              ),
-            ),
-          ),
-          Text(
-            '৳${_formatMoney(value)}',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: bold ? FontWeight.bold : FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTotals() {
     const double summaryWidth = 330;
 
@@ -770,7 +819,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
                     _compactSummaryLine('Total Credit', _totalCredit),
                     const Divider(height: 1),
                     _compactSummaryLine(
-                      'Balance',
+                      _balanceLabel(value: _currentBalance),
                       _currentBalance,
                       bold: true,
                       displayText: _formatBalanceWithDrCr(_currentBalance),
@@ -1026,7 +1075,7 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
             _compactSummaryLine('Total Credit', _totalCredit),
             const Divider(height: 1),
             _compactSummaryLine(
-              'Balance',
+              _balanceLabel(value: _currentBalance),
               _currentBalance,
               bold: true,
               displayText: _formatBalanceWithDrCr(_currentBalance),

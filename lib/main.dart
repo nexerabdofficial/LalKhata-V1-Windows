@@ -15,6 +15,11 @@ import 'services/ff/ff_opening_stock_accounting_service.dart';
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
 
+const bool kLalKhataSupportStartup = bool.fromEnvironment(
+  'LALKHATA_SUPPORT_BUILD',
+  defaultValue: false,
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -41,30 +46,27 @@ Future<void> main() async {
   }
 
   // ==========================================================
-  // FF ACCOUNTING FOUNDATION
-  // ==========================================================
-
-  await FFSystemAccounts.instance.ensureFoundation();
-
-  // ==========================================================
-  // FF INDIVIDUAL CUSTOMER / SUPPLIER LEDGERS
+  // NORMAL CUSTOMER BUILD DATABASE INITIALIZATION
   //
-  // Idempotent:
-  // Existing links are reused.
-  // Missing party ledgers are created automatically.
+  // Support build intentionally skips this stage because no
+  // customer/license database may be opened before the support
+  // operator selects a customer backup.
   // ==========================================================
 
-  await FFPartyAccountService.instance.backfillAll();
+  if (!kLalKhataSupportStartup) {
+    await FFSystemAccounts.instance.ensureFoundation();
 
-  // Historical databases created before sale COGS journal posting
-  // may be missing Dr COGS / Cr Inventory.
-  // Safe to run repeatedly; already-correct sales are skipped.
-  await FFCogsBackfillService.instance.backfillMissingHistoricalCogs();
+    await FFPartyAccountService.instance.backfillAll();
 
-  // Historical opening-stock entries created before central
-  // accounting posting are converted once and then skipped.
-  await FFOpeningStockAccountingService.instance
-      .backfillMissingHistoricalOpeningStock();
+    // Historical databases created before sale COGS journal posting
+    // may be missing Dr COGS / Cr Inventory.
+    await FFCogsBackfillService.instance.backfillMissingHistoricalCogs();
+
+    // Historical opening-stock entries created before central
+    // accounting posting are converted once and then skipped.
+    await FFOpeningStockAccountingService.instance
+        .backfillMissingHistoricalOpeningStock();
+  }
 
   // ==========================================================
   // RUN APP

@@ -5,8 +5,13 @@ import '../../services/customer_repository.dart';
 
 class AddCustomerScreen extends StatefulWidget {
   final Customer? customer;
+  final bool returnAfterCreate;
 
-  const AddCustomerScreen({super.key, this.customer});
+  const AddCustomerScreen({
+    super.key,
+    this.customer,
+    this.returnAfterCreate = false,
+  });
 
   @override
   State<AddCustomerScreen> createState() => _AddCustomerScreenState();
@@ -189,6 +194,11 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Customer added successfully.')),
       );
+
+      if (widget.returnAfterCreate) {
+        Navigator.pop(context, true);
+        return;
+      }
 
       // NEW customer: stay here and prepare for the next customer.
       _formKey.currentState?.reset();

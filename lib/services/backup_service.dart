@@ -2,51 +2,29 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../database/database_helper.dart';
 import 'storage_service.dart';
 
 class BackupService {
   BackupService();
 
-  static final BackupService instance =
-      BackupService();
+  static final BackupService instance = BackupService();
 
-  final StorageService _storageService =
-      StorageService.instance;
-
-  // ============================================================
-  // DATABASE PATH
-  // ============================================================
-
-  Future<String> getDatabasePath() async {
-    return await getDatabasesPath();
-  }
+  final StorageService _storageService = StorageService.instance;
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   // ============================================================
-  // DATABASE FILE PATH
+  // ACTIVE DATABASE
   // ============================================================
 
   Future<String> getDatabaseFile() async {
-    final dbPath =
-        await getDatabasesPath();
-
-    return p.join(
-      dbPath,
-      'nexera_inventory.db',
-    );
+    return _databaseHelper.getActiveDatabasePath();
   }
 
-  // ============================================================
-  // DATABASE FILE
-  // ============================================================
-
   Future<File> getDatabase() async {
-    final path =
-        await getDatabaseFile();
-
-    return File(path);
+    return _databaseHelper.getActiveDatabaseFile();
   }
 
   // ============================================================
@@ -55,44 +33,32 @@ class BackupService {
 
   Future<bool> backupDatabase() async {
     try {
-      final dbFile =
-          await getDatabase();
+      final dbFile = await getDatabase();
 
       if (!await dbFile.exists()) {
         return false;
       }
 
-      // ----------------------------------------------------------
-      // Get user-selected backup folder
-      // ----------------------------------------------------------
+      final backupFolder = await _storageService.getBackupFolder();
 
-      String? backupFolder =
-          await _storageService
-              .getBackupFolder();
-
-      // ----------------------------------------------------------
-      // If no folder selected, stop.
-      // We no longer silently use another folder.
-      // ----------------------------------------------------------
-
-      if (backupFolder == null ||
-          backupFolder.trim().isEmpty) {
+      if (backupFolder == null || backupFolder.trim().isEmpty) {
         return false;
       }
 
-      final targetDir =
-          Directory(backupFolder);
+      final targetDir = Directory(backupFolder);
 
       if (!await targetDir.exists()) {
         return false;
       }
 
-      // ----------------------------------------------------------
-      // Generate backup filename
-      // ----------------------------------------------------------
+      // Flush WAL into the main SQLite file before copying.
+      final db = await _databaseHelper.database;
 
-      final now =
-          DateTime.now();
+      try {
+        await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+
+      final now = DateTime.now();
 
       final fileName =
           'Nexera_Backup_'
@@ -104,47 +70,23 @@ class BackupService {
           '${_twoDigits(now.second)}'
           '.db';
 
-      final backupPath =
-          p.join(
-        targetDir.path,
-        fileName,
-      );
+      final backupPath = p.join(targetDir.path, fileName);
 
-      // ----------------------------------------------------------
-      // Copy database
-      // ----------------------------------------------------------
+      await dbFile.copy(backupPath);
 
-      await dbFile.copy(
-        backupPath,
-      );
-
-      // ----------------------------------------------------------
-      // Verify backup
-      // ----------------------------------------------------------
-
-      final backupFile =
-          File(backupPath);
+      final backupFile = File(backupPath);
 
       if (!await backupFile.exists()) {
         return false;
       }
 
-      final originalSize =
-          await dbFile.length();
-
-      final backupSize =
-          await backupFile.length();
-
-      if (originalSize != backupSize) {
+      if (await backupFile.length() <= 0) {
         return false;
       }
 
-      return true;
+      return await _validateBackupFile(backupFile);
     } catch (e) {
-      print(
-        'Backup error: $e',
-      );
-
+      print('Backup error: $e');
       return false;
     }
   }
@@ -154,68 +96,248 @@ class BackupService {
   // ============================================================
 
   Future<bool> restoreDatabase() async {
+    File? safetyBackup;
+
     try {
-      final result =
-          await FilePicker.platform.pickFiles(
-        dialogTitle:
-            'Select Nexera Backup',
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Select LalKhata Backup',
         allowMultiple: false,
         type: FileType.custom,
         allowedExtensions: ['db'],
+        withData: false,
       );
 
-      if (result == null) {
+      if (result == null || result.files.isEmpty) {
         return false;
       }
 
-      final backupPath =
-          result.files.single.path;
+      final selectedPath = result.files.single.path;
 
-      if (backupPath == null ||
-          backupPath.trim().isEmpty) {
+      if (selectedPath == null || selectedPath.trim().isEmpty) {
         return false;
       }
 
-      final backupFile =
-          File(backupPath);
+      final backupFile = File(selectedPath);
 
       if (!await backupFile.exists()) {
         return false;
       }
 
-      final dbFile =
-          await getDatabase();
-
       // ----------------------------------------------------------
-      // Close database before replacing file
+      // Validate selected SQLite DB BEFORE touching current DB.
       // ----------------------------------------------------------
 
-      final database =
-          await openDatabase(
-        dbFile.path,
-      );
-
-      await database.close();
-
-      // ----------------------------------------------------------
-      // Replace database
-      // ----------------------------------------------------------
-
-      if (await dbFile.exists()) {
-        await dbFile.delete();
+      if (!await _validateBackupFile(backupFile)) {
+        throw Exception('Selected file is not a valid LalKhata database.');
       }
 
-      await backupFile.copy(
-        dbFile.path,
-      );
+      final activeDbFile = await getDatabase();
+
+      // ----------------------------------------------------------
+      // Flush current database.
+      // ----------------------------------------------------------
+
+      try {
+        final currentDb = await _databaseHelper.database;
+        await currentDb.rawQuery('PRAGMA wal_checkpoint(FULL)');
+      } catch (_) {}
+
+      // ----------------------------------------------------------
+      // Automatic safety copy of CURRENT database.
+      // This remains beside the active DB and can be recovered
+      // manually if restore is interrupted.
+      // ----------------------------------------------------------
+
+      if (await activeDbFile.exists()) {
+        final stamp = DateTime.now().millisecondsSinceEpoch;
+
+        safetyBackup = File('${activeDbFile.path}.before_restore_$stamp');
+
+        await activeDbFile.copy(safetyBackup.path);
+      }
+
+      // ----------------------------------------------------------
+      // IMPORTANT:
+      // Close the REAL DatabaseHelper connection.
+      // ----------------------------------------------------------
+
+      await _databaseHelper.closeDatabase();
+
+      // ----------------------------------------------------------
+      // Remove SQLite side files belonging to previous DB.
+      // ----------------------------------------------------------
+
+      await _deleteIfExists(File('${activeDbFile.path}-wal'));
+
+      await _deleteIfExists(File('${activeDbFile.path}-shm'));
+
+      await _deleteIfExists(File('${activeDbFile.path}-journal'));
+
+      // ----------------------------------------------------------
+      // Restore into CURRENT LICENSE database path.
+      //
+      // Backup filename/license/platform does NOT matter.
+      // Windows -> Android
+      // Android -> Windows
+      // PC -> PC
+      // Mobile -> Mobile
+      // ----------------------------------------------------------
+
+      final tempRestore = File('${activeDbFile.path}.restore_tmp');
+
+      await _deleteIfExists(tempRestore);
+
+      await backupFile.copy(tempRestore.path);
+
+      // Validate copied temp file before replacing active DB.
+      if (!await _validateBackupFile(tempRestore)) {
+        await _deleteIfExists(tempRestore);
+
+        throw Exception('Restore copy validation failed.');
+      }
+
+      await _deleteIfExists(activeDbFile);
+
+      await tempRestore.rename(activeDbFile.path);
+
+      // ----------------------------------------------------------
+      // Reopen through DatabaseHelper.
+      //
+      // If backup is an older supported schema, normal sqflite
+      // migration upgrades it to current DB version.
+      // ----------------------------------------------------------
+
+      await _databaseHelper.reopenActiveDatabase();
+
+      // ----------------------------------------------------------
+      // Final integrity check on ACTIVE database.
+      // ----------------------------------------------------------
+
+      final restoredDb = await _databaseHelper.database;
+
+      final integrity = await restoredDb.rawQuery('PRAGMA integrity_check');
+
+      final integrityValue = integrity.isNotEmpty
+          ? integrity.first.values.first?.toString().toLowerCase()
+          : null;
+
+      if (integrityValue != 'ok') {
+        throw Exception('Restored database integrity check failed.');
+      }
 
       return true;
     } catch (e) {
-      print(
-        'Restore error: $e',
-      );
+      print('Restore error: $e');
+
+      // ----------------------------------------------------------
+      // RECOVERY
+      //
+      // If we had already made a safety backup and active DB is
+      // damaged/missing, restore the previous local database.
+      // ----------------------------------------------------------
+
+      if (safetyBackup != null && await safetyBackup.exists()) {
+        try {
+          await _databaseHelper.closeDatabase();
+
+          final activeDbFile = await getDatabase();
+
+          await _deleteIfExists(File('${activeDbFile.path}-wal'));
+
+          await _deleteIfExists(File('${activeDbFile.path}-shm'));
+
+          await _deleteIfExists(File('${activeDbFile.path}-journal'));
+
+          await _deleteIfExists(activeDbFile);
+
+          await safetyBackup.copy(activeDbFile.path);
+
+          await _databaseHelper.reopenActiveDatabase();
+        } catch (recoveryError) {
+          print('Restore recovery error: $recoveryError');
+        }
+      }
 
       return false;
+    }
+  }
+
+  // ============================================================
+  // VALIDATE LALKHATA DATABASE
+  // ============================================================
+
+  Future<bool> _validateBackupFile(File file) async {
+    Database? db;
+
+    try {
+      if (!await file.exists()) {
+        return false;
+      }
+
+      if (await file.length() <= 0) {
+        return false;
+      }
+
+      db = await openDatabase(file.path, readOnly: true, singleInstance: false);
+
+      final integrity = await db.rawQuery('PRAGMA integrity_check');
+
+      if (integrity.isEmpty) {
+        return false;
+      }
+
+      final integrityValue = integrity.first.values.first
+          ?.toString()
+          .trim()
+          .toLowerCase();
+
+      if (integrityValue != 'ok') {
+        return false;
+      }
+
+      final tables = await db.rawQuery('''
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+      ''');
+
+      final tableNames = tables
+          .map((row) => row['name']?.toString().toLowerCase())
+          .whereType<String>()
+          .toSet();
+
+      // Core tables common to LalKhata business databases.
+      const requiredTables = <String>{
+        'products',
+        'customers',
+        'suppliers',
+        'sales',
+        'purchases',
+        'accounts',
+      };
+
+      if (!requiredTables.every(tableNames.contains)) {
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      print('Backup validation error: $e');
+      return false;
+    } finally {
+      if (db != null && db.isOpen) {
+        await db.close();
+      }
+    }
+  }
+
+  // ============================================================
+  // FILE HELPER
+  // ============================================================
+
+  Future<void> _deleteIfExists(File file) async {
+    if (await file.exists()) {
+      await file.delete();
     }
   }
 
@@ -223,11 +345,7 @@ class BackupService {
   // TIMESTAMP HELPER
   // ============================================================
 
-  String _twoDigits(
-    int value,
-  ) {
-    return value
-        .toString()
-        .padLeft(2, '0');
+  String _twoDigits(int value) {
+    return value.toString().padLeft(2, '0');
   }
 }
