@@ -101,6 +101,27 @@ class AccountLedgerPdf {
 
     final note = row['note']?.toString().trim() ?? '';
 
+    // Loan particulars — PDF display only.
+    final loanPersonName = row['loan_person_name']?.toString().trim() ?? '';
+
+    if (loanPersonName.isNotEmpty) {
+      if (transactionType == 'LOAN_TAKEN') {
+        return 'Received from $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_GIVEN') {
+        return 'Given to $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_REPAYMENT') {
+        return 'Paid to $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_COLLECTION') {
+        return 'Received from $loanPersonName';
+      }
+    }
+
     if (accountType == 'CUSTOMER') {
       // A customer debit is normally the sale/receivable creation.
       if (debit > 0 &&
@@ -109,6 +130,13 @@ class AccountLedgerPdf {
               voucher.startsWith('INV') ||
               voucher.startsWith('SALE'))) {
         return 'Sale';
+      }
+
+      // Sales Discount journal — PDF display label only.
+      if (credit > 0 &&
+          row['discount_counterparty_type']?.toString().trim().toUpperCase() ==
+              'SALES_DISCOUNT') {
+        return 'Discount Given';
       }
 
       // Customer credit reduces receivable.
@@ -134,6 +162,13 @@ class AccountLedgerPdf {
       // Supplier debit reduces payable.
       if (debit > 0) {
         return 'Payment';
+      }
+
+      // Purchase Discount journal — PDF display label only.
+      if (credit > 0 &&
+          row['discount_counterparty_type']?.toString().trim().toUpperCase() ==
+              'PURCHASE_DISCOUNT') {
+        return 'Discount Received';
       }
 
       if (credit > 0) {

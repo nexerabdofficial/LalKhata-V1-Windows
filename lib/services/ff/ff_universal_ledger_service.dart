@@ -117,10 +117,58 @@ class FFUniversalLedgerService {
         );
       }
 
+      String discountCounterpartyType = '';
+
+      if (journalId != null) {
+        final discountRows = await db.rawQuery(
+          '''
+          SELECT a.type
+          FROM journal_lines jl
+          INNER JOIN accounts a ON a.id = jl.account_id
+          WHERE jl.journal_id = ?
+            AND jl.account_id != ?
+            AND (
+              UPPER(TRIM(a.type)) = 'PURCHASE_DISCOUNT'
+              OR UPPER(TRIM(a.type)) = 'SALES_DISCOUNT'
+            )
+          LIMIT 1
+          ''',
+          [journalId, accountId],
+        );
+
+        if (discountRows.isNotEmpty) {
+          discountCounterpartyType =
+              discountRows.first['type']?.toString().trim().toUpperCase() ?? '';
+        }
+      }
+
+      String loanPersonName = '';
+
+      final rowEntityType =
+          row['entity_type']?.toString().trim().toUpperCase() ?? '';
+      final rowEntityId = _toInt(row['entity_id']);
+
+      if (rowEntityType == 'LOAN' && rowEntityId != null) {
+        final loanRows = await db.query(
+          'loans',
+          columns: ['person_name'],
+          where: 'id = ?',
+          whereArgs: [rowEntityId],
+          limit: 1,
+        );
+
+        if (loanRows.isNotEmpty) {
+          loanPersonName =
+              loanRows.first['person_name']?.toString().trim() ?? '';
+        }
+      }
+
       result.add({
         ...row,
         'running_balance': balance,
         'counterparty': counterparty,
+        'discount_counterparty_type': discountCounterpartyType,
+        'loan_person_name': loanPersonName,
       });
     }
 

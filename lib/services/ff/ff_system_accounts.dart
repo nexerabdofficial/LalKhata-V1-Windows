@@ -63,6 +63,7 @@ class FFSystemAccountCodes {
   static const purchaseAdditionalCharge = 'PURCHASE_ADDITIONAL_CHARGE';
 
   static const purchaseDiscount = 'PURCHASE_DISCOUNT';
+  static const salesDiscount = 'SALES_DISCOUNT';
 }
 
 class FFSystemAccounts {
@@ -332,7 +333,7 @@ class FFSystemAccounts {
         nature: 'DEBIT',
       );
 
-      await _ensureGroup(
+      final otherExpenseGroup = await _ensureGroup(
         txn,
         name: 'Other Expense',
         code: FFSystemGroupCodes.otherExpense,
@@ -430,6 +431,13 @@ class FFSystemAccounts {
         name: 'Purchase Discount',
         type: FFSystemAccountCodes.purchaseDiscount,
         groupId: otherIncomeGroup,
+      );
+
+      await _ensureSystemAccount(
+        txn,
+        name: 'Sales Discount',
+        type: FFSystemAccountCodes.salesDiscount,
+        groupId: otherExpenseGroup,
       );
 
       await _linkExistingPaymentAccounts(txn);

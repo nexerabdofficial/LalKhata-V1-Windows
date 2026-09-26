@@ -329,29 +329,136 @@ class _JournalScreenState extends State<JournalScreen> {
   }
 
   Widget _accountDropdown(_JournalLine line) {
-    return DropdownButtonFormField<int>(
-      value: line.accountId,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Account',
-        border: OutlineInputBorder(),
-      ),
-      items: _accounts.map((account) {
-        return DropdownMenuItem<int>(
-          value: account.id,
-          child: Text(account.name),
-        );
-      }).toList(),
-      onChanged: (value) {
-        setState(() {
-          line.accountId = value;
-        });
-      },
-      validator: (value) {
-        if (value == null) {
+    final selectedAccount = line.accountId == null
+        ? null
+        : _accounts.cast<Account?>().firstWhere(
+            (account) => account?.id == line.accountId,
+            orElse: () => null,
+          );
+
+    return FormField<int>(
+      initialValue: line.accountId,
+      validator: (_) {
+        if (line.accountId == null) {
           return 'Select account';
         }
         return null;
+      },
+      builder: (field) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: () async {
+            final selected = await showDialog<Account>(
+              context: context,
+              builder: (dialogContext) {
+                String query = '';
+
+                return StatefulBuilder(
+                  builder: (context, setDialogState) {
+                    final normalizedQuery = query.trim().toLowerCase();
+
+                    final filtered = normalizedQuery.isEmpty
+                        ? _accounts
+                        : _accounts.where((account) {
+                            final name = account.name.toLowerCase();
+                            final type = account.type.toLowerCase();
+
+                            return name.contains(normalizedQuery) ||
+                                type.contains(normalizedQuery);
+                          }).toList();
+
+                    return AlertDialog(
+                      title: const Text('Select Account'),
+                      content: SizedBox(
+                        width: 520,
+                        height: 520,
+                        child: Column(
+                          children: [
+                            TextField(
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                hintText: 'Search account...',
+                                prefixIcon: Icon(Icons.search),
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  query = value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: filtered.isEmpty
+                                  ? const Center(
+                                      child: Text('No account found'),
+                                    )
+                                  : ListView.separated(
+                                      itemCount: filtered.length,
+                                      separatorBuilder: (_, __) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final account = filtered[index];
+
+                                        return ListTile(
+                                          dense: true,
+                                          title: Text(account.name),
+                                          subtitle: account.type.trim().isEmpty
+                                              ? null
+                                              : Text(account.type),
+                                          trailing: account.id == line.accountId
+                                              ? const Icon(Icons.check)
+                                              : null,
+                                          onTap: () {
+                                            Navigator.pop(
+                                              dialogContext,
+                                              account,
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+
+            if (selected == null || !mounted) return;
+
+            setState(() {
+              line.accountId = selected.id;
+            });
+
+            field.didChange(selected.id);
+          },
+          child: InputDecorator(
+            decoration: InputDecoration(
+              hintText: 'Select account',
+              border: const OutlineInputBorder(),
+              errorText: field.errorText,
+              suffixIcon: const Icon(Icons.search),
+            ),
+            isEmpty: selectedAccount == null,
+            child: selectedAccount == null
+                ? null
+                : Text(
+                    selectedAccount.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+          ),
+        );
       },
     );
   }

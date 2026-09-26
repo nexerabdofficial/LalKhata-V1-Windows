@@ -307,6 +307,28 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 
     final note = row['note']?.toString().trim() ?? '';
 
+    // LOAN:
+    // Display-only semantic particulars using the linked loan person.
+    final loanPersonName = row['loan_person_name']?.toString().trim() ?? '';
+
+    if (loanPersonName.isNotEmpty) {
+      if (transactionType == 'LOAN_TAKEN') {
+        return 'Received from $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_GIVEN') {
+        return 'Given to $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_REPAYMENT') {
+        return 'Paid to $loanPersonName';
+      }
+
+      if (transactionType == 'LOAN_COLLECTION') {
+        return 'Received from $loanPersonName';
+      }
+    }
+
     // CUSTOMER:
     // Debit creates/increases receivable.
     // Credit reduces receivable.
@@ -317,6 +339,13 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
               voucher.startsWith('INV') ||
               voucher.startsWith('SALE'))) {
         return 'Sale';
+      }
+
+      // Sales Discount journal — display label only.
+      if (credit > 0 &&
+          row['discount_counterparty_type']?.toString().trim().toUpperCase() ==
+              'SALES_DISCOUNT') {
+        return 'Discount Given';
       }
 
       if (credit > 0) {
@@ -342,6 +371,13 @@ class _AccountLedgerScreenState extends State<AccountLedgerScreen> {
 
       if (debit > 0) {
         return 'Payment';
+      }
+
+      // Purchase Discount journal — display label only.
+      if (credit > 0 &&
+          row['discount_counterparty_type']?.toString().trim().toUpperCase() ==
+              'PURCHASE_DISCOUNT') {
+        return 'Discount Received';
       }
 
       if (credit > 0) {
